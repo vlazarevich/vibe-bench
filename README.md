@@ -4,7 +4,7 @@ Run one text task through two Codex models on your machine, compare the answers 
 
 ## Run the local demo
 
-Install Node.js 24 and pnpm 11.22.0. On Windows x64 or Linux x64, run:
+Install Node.js 24 and pnpm 11.22.0. On Linux x64, run:
 
 ```sh
 pnpm install --frozen-lockfile
@@ -15,6 +15,8 @@ Open the URL printed after `Vibe bench ready`. Select **Compare answers**, read 
 
 The demo uses deterministic fixture text. It does not call a model. The server binds to `127.0.0.1`. A pinned PostgreSQL 18 binary starts automatically, so Docker and a separate database installation are unnecessary. The first install downloads the database binaries.
 
+The application and PostgreSQL target Linux. Windows execution-runtime support is deferred. Existing Windows helpers and local tests remain in the repository, but Windows application and database compatibility are outside the current supported scope.
+
 `pnpm local` starts the same app without adding a fixture run. Leave that terminal running and use a second terminal for runner commands. Stop the server with Ctrl+C. Database contents and runner diagnostics remain under `.local/`. Each worktree has its own directory and automatically allocated ports. `VIBE_LOCAL_ROOT` overrides that directory for both the server and runner. `VIBE_PORT` optionally fixes the HTTP port.
 
 ## Run the actual models
@@ -24,10 +26,10 @@ Install Codex CLI 0.159.2 and authenticate it outside this repository. Copy `.en
 ```dotenv
 VIBE_MODEL_A=gpt-6-luna
 VIBE_MODEL_B=gpt-6-sol
-VIBE_CODEX_BIN=C:/path/to/codex.exe
+VIBE_CODEX_BIN=/path/to/codex
 ```
 
-On Linux, use the native `codex` binary path. A `codex.cmd` wrapper or shell script is not supported. An npm installation keeps the native executable in the platform package beneath `@openai/codex/node_modules/@openai/codex-<platform>/vendor/<target>/bin/`. Both models must be distinct and must be one of the two IDs above. The runner never substitutes another model.
+Use the native `codex` binary path. A wrapper or shell script is not supported. An npm installation keeps the native executable in the platform package beneath `@openai/codex/node_modules/@openai/codex-<platform>/vendor/<target>/bin/`. Both models must be distinct and must be one of the two IDs above. The runner never substitutes another model.
 
 With `pnpm local` or `pnpm demo` running, execute:
 
@@ -48,7 +50,7 @@ For each edit, choose **Save minor change** or **Save new revision**. Both prese
 For a ready text-generation task with materials set to **None**, save the suite and select **Export** beside the task. Save the JSON file locally. Set its absolute path in `.env`:
 
 ```dotenv
-VIBE_SUITE_FILE=C:/path/to/suite-task.json
+VIBE_SUITE_FILE=/path/to/suite-task.json
 ```
 
 Remove `VIBE_TASK_FILE` if it is set. With the same local server running, run `pnpm run:fixture` or `pnpm run:live`. Refresh **Comparisons** to review the result. The run uses the exported content even if the suite has since changed. Remove `VIBE_SUITE_FILE` to return to the default task or `VIBE_TASK_FILE`.
@@ -78,7 +80,7 @@ pnpm exec playwright install chromium
 pnpm check
 ```
 
-`pnpm check` checks TypeScript and import boundaries, runs real PostgreSQL, HTTP, and subprocess tests, builds the app, and drives it in Chromium. Tests use isolated databases and ports under `.artifacts/`. Linux machines may need `pnpm exec playwright install --with-deps chromium` for browser system libraries. CI runs the same checks on Windows and Ubuntu without model credentials.
+`pnpm check` checks TypeScript and import boundaries, runs real PostgreSQL, HTTP, and subprocess tests, builds the app, and drives it in Chromium. Tests use isolated databases and ports under `.artifacts/`. Linux machines may need `pnpm exec playwright install --with-deps chromium` for browser system libraries. Hosted CI runs the same checks on Ubuntu without model credentials. The required merge check is `verify (ubuntu-latest)`.
 
 Fixture checks do not prove live model access. Run `pnpm run:live` separately with the required account and exact model configuration.
 

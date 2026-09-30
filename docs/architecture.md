@@ -2,6 +2,8 @@
 
 The app authors versioned suites and compares two text answers from Codex. React and Vite build the dashboard. Fastify serves it and the HTTP API. PostgreSQL 18 stores accepted runs and evaluation sessions. The runner is a separate local command that initiates report uploads.
 
+The application and PostgreSQL target Linux. Windows support is deferred to the execution runtime. Existing Windows helpers and local tests remain as compatibility code, without a hosted Windows verification requirement. Hosted checks currently use GitHub's Ubuntu runner.
+
 ```mermaid
 flowchart LR
   Browser[React comparison] --> Server[Fastify on loopback]
