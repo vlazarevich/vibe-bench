@@ -1,0 +1,9 @@
+packages:
+  - .
+allowBuilds:
+  '@embedded-postgres/windows-x64': true
+  '@embedded-postgres/linux-x64': true
+  embedded-postgres: true
+  esbuild: true
+patchedDependencies:
+  embedded-postgres@18.4.0-beta.17: patches/embedded-postgres@18.4.0-beta.17.patch
