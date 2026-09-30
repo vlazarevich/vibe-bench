@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { Text } from './text.ts';
 import { assessDefinition, PinnedSuiteTask, SuiteContent, TaskId } from './suites.ts';
 import { canonicalJson, contentDigest } from './canonical.ts';
 
@@ -6,15 +7,15 @@ export const RunId = z.uuid().brand<'RunId'>();
 export const ReportId = z.uuid().brand<'ReportId'>();
 export const AttemptId = z.uuid().brand<'AttemptId'>();
 export const Model = z.enum(['gpt-6-luna', 'gpt-6-sol']);
-export const Task = z.object({ title: z.string().min(1).max(120), prompt: z.string().min(1).max(20_000) }).strict();
+export const Task = z.object({ title: Text.min(1).max(120), prompt: Text.min(1).max(20_000) }).strict();
 export const Outcome = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('succeeded'), text: z.string().min(1).max(100_000) }).strict(),
-  z.object({ kind: z.literal('failed'), reason: z.enum(['timeout', 'exit', 'missing-output', 'process', 'output-limit']), detail: z.string().max(2000) }).strict(),
+  z.object({ kind: z.literal('succeeded'), text: Text.min(1).max(100_000) }).strict(),
+  z.object({ kind: z.literal('failed'), reason: z.enum(['timeout', 'exit', 'missing-output', 'process', 'output-limit']), detail: Text.max(2000) }).strict(),
 ]);
 export const Entrant = z.object({
   attemptId: AttemptId,
   model: Model,
-  cliVersion: z.string().min(1).max(200),
+  cliVersion: Text.min(1).max(200),
   outcome: Outcome,
 }).strict();
 export const SnapshotBody = z.object({

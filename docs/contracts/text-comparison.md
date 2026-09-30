@@ -2,6 +2,8 @@
 
 The executable schemas are [runner.ts](../../packages/contracts/src/runner.ts) and [evaluation.ts](../../packages/contracts/src/evaluation.ts). This document describes their current behavior. Broader runner and artifact contracts remain design guidance for operations not implemented here.
 
+Persisted text must contain valid Unicode and cannot contain U+0000. Invalid text is rejected before database writes. Valid text is stored without rewriting.
+
 ## Runner report
 
 Legacy protocol version 1 contains an immutable task title and prompt, creation time, source `fixture` or `live`, stable report and run UUIDs, and exactly two entrants. Each entrant has a distinct attempt UUID and exact model ID, an executable version, and either completed text or a failure reason. The two allowed models are `gpt-6-luna` and `gpt-6-sol`, and they must differ.

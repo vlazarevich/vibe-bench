@@ -13,7 +13,7 @@ if (process.argv.includes('--version')) {
     const text = model === 'gpt-6-luna'
       ? 'An index is like the alphabetical index at the back of a book. Instead of reading every page to find a topic, you look up the topic and jump to its page. A database index similarly points to matching rows. The tradeoff is extra storage and slower writes, because changes must update the index too.'
       : 'Imagine a library with a catalog. Without it, you inspect every shelf to find a title. With it, a short lookup tells you exactly where to go. A database index is that catalog for a column. It makes lookups faster, but adding or changing a row also means updating the catalog, so writes take more work.';
-    await writeFile(finalPath, prompt.includes('FIXTURE_HTML') ? '<script>window.compromised=true</script>\n' + text : text);
+    await writeFile(finalPath, prompt.includes('FIXTURE_NUL') ? 'invalid\0text' : prompt.includes('FIXTURE_HTML') ? '<script>window.compromised=true</script>\n' + text : text);
     process.stdout.write(JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 0, output_tokens: 0 } }) + '\n');
   }
 }

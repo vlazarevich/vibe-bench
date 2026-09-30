@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { Text } from './text.ts';
 
 export const SuiteId = z.uuid().brand<'SuiteId'>();
 export const ContentId = z.uuid().brand<'ContentId'>();
@@ -20,15 +21,15 @@ export function toGrade(selection: z.infer<typeof RatingSelection>): number {
     case 'thumbs': return selection.value ? 100 : 0;
   }
 }
-const title = z.string().max(120);
-const instructions = z.string().max(20_000);
-const repositoryUrl = z.string().max(2000).refine((value) => {
+const title = Text.max(120);
+const instructions = Text.max(20_000);
+const repositoryUrl = Text.max(2000).refine((value) => {
   if (!value.trim()) return true;
   try { const url = new URL(value); return ['https:', 'http:', 'ssh:'].includes(url.protocol) && (!url.username || (url.protocol === 'ssh:' && url.username === 'git')) && !url.password; } catch { return false; }
 }, 'Use an HTTP(S) or SSH repository URL without embedded credentials');
 export const Materials = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('none') }).strict(),
-  z.object({ kind: z.literal('repository'), url: repositoryUrl, requestedRef: z.string().max(500) }).strict(),
+  z.object({ kind: z.literal('repository'), url: repositoryUrl, requestedRef: Text.max(500) }).strict(),
 ]);
 export const Criterion = z.object({ id: CriterionId, title, instructions, control: RatingControl }).strict();
 export const RankingRule = z.object({ id: RankingRuleId, title, instructions }).strict();

@@ -3,7 +3,8 @@ import { access, mkdir, readFile, readdir, stat } from 'node:fs/promises';
 import { isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
-import { Model, Outcome, Receipt, Report, ReportId, RunId, Task, prepareSnapshot } from '../../../packages/contracts/src/runner.ts';
+import { Entrant, Model, Outcome, Receipt, Report, ReportId, RunId, Task, prepareSnapshot } from '../../../packages/contracts/src/runner.ts';
+import { Text } from '../../../packages/contracts/src/text.ts';
 import { PinnedSuiteTask } from '../../../packages/contracts/src/suites.ts';
 import { durableWrite, loadReport, Progress } from './spool.ts';
 import { Interrupted, readBounded, runProcess } from './processes/run.ts';
@@ -41,7 +42,7 @@ export async function executeRun({ source, stateRoot, models, task = defaultTask
   await mkdir(versionDirectory);
   const versionResult = await runProcess({ executable: command, args: [...prefix, '--version'], cwd: versionDirectory, directory: versionDirectory, input: '', timeoutMs: 30_000, env });
   if (versionResult.kind !== 'exited' || versionResult.code !== 0) throw new Error('Could not read CLI version. Local progress is retained.');
-  const cliVersion = (await readBounded(join(versionDirectory, 'stdout.log'), 200)).trim();
+  const cliVersion = Entrant.shape.cliVersion.parse((await readBounded(join(versionDirectory, 'stdout.log'), 200)).trim());
   if (source === 'live' && cliVersion !== 'codex-cli 0.159.2') throw new Error(`Unsupported CLI version ${cliVersion}. This adapter is verified with codex-cli 0.159.2.`);
   for (const index of [0, 1] satisfies Array<0 | 1>) {
     const attempt = progress.attempts[index];
@@ -62,9 +63,10 @@ export async function executeRun({ source, stateRoot, models, task = defaultTask
         const text = await readBounded(finalPath);
         const events = await readBounded(join(attemptDirectory, 'stdout.log'), 500_000);
         const completed = events.split(/\r?\n/).some((line) => { try { return z.object({ type: z.literal('turn.completed') }).safeParse(JSON.parse(line)).success; } catch { return false; } });
-        outcome = text.trim() && text.length <= 100_000 && completed ? { kind: 'succeeded', text } : { kind: 'failed', reason: 'missing-output', detail: 'CLI did not produce a complete final text result.' };
+        const answer = Outcome.safeParse({ kind: 'succeeded', text });
+        outcome = text.trim() && completed && answer.success ? answer.data : { kind: 'failed', reason: 'missing-output', detail: 'CLI did not produce a complete final text result.' };
       }
-    } catch (error) { if (error instanceof Interrupted) throw error; outcome = { kind: 'failed', reason: 'process', detail: error instanceof Error ? error.message.slice(0, 2000) : 'Process failed' }; }
+    } catch (error) { if (error instanceof Interrupted) throw error; outcome = { kind: 'failed', reason: 'process', detail: Text.max(2000).safeParse(error instanceof Error ? error.message.slice(0, 2000) : '').data || 'Process failed' }; }
     progress.attempts[index] = { kind: 'finished', result: { attemptId: attempt.attemptId, model: attempt.model, cliVersion, outcome } };
     await durableWrite(join(directory, 'progress.json'), progress);
   }

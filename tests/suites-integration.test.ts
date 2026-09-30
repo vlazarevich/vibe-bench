@@ -172,3 +172,18 @@ test('request parser failures remain client errors', async () => {
     expect(await response.json()).toEqual({ error: status === 415 ? 'Unsupported media type' : 'Invalid request' });
   }
 });
+
+test('persisted text rejects NUL and lone surrogates while preserving valid Unicode', async () => {
+  for (const invalid of ['\0', '\ud800', '\udfff']) {
+    expect((await post('/api/suites', { definition: { ...definition(), title: `bad${invalid}` } })).status).toBe(400);
+    const report = { ...legacy, runId: randomUUID(), reportId: randomUUID(), entrants: legacy.entrants.map((entrant) => ({ ...entrant, outcome: { kind: 'succeeded', text: `bad${invalid}` } })) };
+    const response = await fetch(url + '/api/runner/reports', { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify(report) });
+    expect(response.status).toBe(400);
+  }
+  const title = '日本語 😀 e\u0301\n';
+  const created = await create({ ...definition(), title });
+  expect(created.content.definition.title).toBe(title);
+  const report = Report.parse({ ...legacy, runId: randomUUID(), reportId: randomUUID(), entrants: legacy.entrants.map((entrant) => ({ ...entrant, outcome: { kind: 'succeeded', text: title } })) });
+  await uploadReport(report, { url, token });
+  expect(Report.parse((await pool.query('SELECT report FROM runs WHERE id = $1', [report.runId])).rows[0].report)).toEqual(report);
+});
