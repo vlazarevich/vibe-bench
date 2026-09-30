@@ -6,6 +6,12 @@ Run `pnpm install --frozen-lockfile`, then `pnpm exec playwright install chromiu
 
 The pinned `embedded-postgres` patch uses `pg_ctl` on Windows to start PostgreSQL with restricted privileges and stop it with `-m fast -w`. The upstream helper starts the server directly and returns after killing only the parent, which can leave shared memory in use during restart. The persistence test reopens the same database three times to exercise shutdown completion.
 
+The database worker runs inside a Windows Job Object before initialization begins. `tests/database-lifecycle.test.ts` forcibly terminates the owning Node process and also exercises `taskkill /T /F`. It records the real postmaster and worker PIDs, verifies that every process exits and the TCP port closes, then reopens the same database and checks saved data. The app startup test interrupts a fixture run while `/api/health` still returns 503. Linux uses a forced owner exit after readiness and a handled app termination during startup. Test cleanup uses the pinned `pg_ctl` against only its own temporary database if an assertion fails.
+
+The repeated-restart test allows three Windows helper compilations. Lifecycle tests allow initial startup and crash recovery on slow CI hosts. These budgets do not extend the database worker's 90-second startup deadline or 40-second shutdown deadline.
+
+After an abrupt stop, `pg_ctl` can briefly mistake the stale PID file for a ready server during immediate restart. The worker verifies a real SQL connection on its newly allocated port before announcing readiness. The crash-recovery assertions cover this race without deleting the PID file or stored data.
+
 | Command | Evidence |
 | --- | --- |
 | `pnpm typecheck` | Strict schemas and application types compile |

@@ -1,11 +1,13 @@
 import { expect, test } from 'vitest';
 import { execFile, spawn } from 'node:child_process';
-import { mkdir, mkdtemp, readFile, readdir } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
 import { createConnection } from 'node:net';
 import { dirname, join, resolve } from 'node:path';
 import { createRequire } from 'node:module';
 import { promisify } from 'node:util';
 import { z } from 'zod';
+import pg from 'pg';
+import { startDatabase } from '../scripts/local-database.ts';
 
 const exec = promisify(execFile);
 const require = createRequire(import.meta.url);
@@ -16,6 +18,41 @@ async function alive(pid: number) {
     return process.platform !== 'linux' || !/\) Z /.test(await readFile(`/proc/${pid}/stat`, 'utf8'));
   } catch { return false; }
 }
+
+test('stops PostgreSQL when the app is interrupted during fixture startup before readiness', async () => {
+  await mkdir('.artifacts', { recursive: true });
+  const root = await mkdtemp(resolve('.artifacts/database-startup-'));
+  const directory = join(root, 'postgres');
+  const task = join(root, 'task.txt');
+  await writeFile(task, 'FIXTURE_WAIT');
+  const owner = spawn(process.execPath, ['--import', 'tsx', resolve('scripts/local.ts'), '--fixture'], { env: { ...process.env, VIBE_LOCAL_ROOT: root, VIBE_TASK_FILE: task }, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+  let output = '';
+  let diagnostics = '';
+  owner.stdout.on('data', (data) => { output += String(data); });
+  owner.stderr.on('data', (data) => { diagnostics += String(data); });
+  let pids: number[] = [];
+  try {
+    let url = '';
+    await expect.poll(async () => {
+      if (owner.exitCode !== null) throw new Error(`App exited: ${diagnostics}`);
+      try { url = z.object({ url: z.url() }).parse(JSON.parse(await readFile(join(root, 'instance.json'), 'utf8'))).url; return true; } catch { return false; }
+    }, { timeout: 90_000 }).toBe(true);
+    expect((await fetch(url + '/api/health')).status).toBe(503);
+    expect(output).not.toContain('Vibe bench ready');
+    const pidFile = (await readFile(join(directory, 'postmaster.pid'), 'utf8')).split('\n');
+    const postmaster = Number(pidFile[0]);
+    const port = Number(pidFile[3]);
+    pids = [postmaster, ...await descendants(postmaster)];
+    expect(pids.length).toBeGreaterThan(1);
+    owner.kill(process.platform === 'win32' ? 'SIGKILL' : 'SIGTERM');
+    await expect.poll(async () => { const states = await Promise.all(pids.map(alive)); return pids.filter((_, index) => states[index]); }, { timeout: 10_000 }).toEqual([]);
+    expect(await listening(port)).toBe(false);
+  } finally {
+    owner.kill(process.platform === 'win32' ? 'SIGKILL' : 'SIGTERM');
+    await cleanup(directory);
+    if (pids.length > 0) await expect.poll(async () => (await Promise.all(pids.map(alive))).some(Boolean), { timeout: 10_000 }).toBe(false);
+  }
+}, 120_000);
 
 async function descendants(pid: number) {
   if (process.platform === 'win32') {
@@ -56,12 +93,14 @@ for (const mode of process.platform === 'win32' ? ['owner', 'tree'] : ['owner'])
     let diagnostics = '';
     owner.stderr.on('data', (data) => { diagnostics += String(data); });
     let port = 0;
+    let url = '';
     let pids: number[] = [];
     try {
       await expect.poll(async () => {
         if (owner.exitCode !== null) throw new Error(`Database owner exited: ${diagnostics}`);
         try {
           const ready = z.object({ url: z.url() }).parse(JSON.parse(await readFile(join(directory, 'owner-ready.json'), 'utf8')));
+          url = ready.url;
           port = Number(new URL(ready.url).port);
           return true;
         } catch { return false; }
@@ -70,14 +109,24 @@ for (const mode of process.platform === 'win32' ? ['owner', 'tree'] : ['owner'])
       pids = [postmaster, ...await descendants(postmaster)];
       expect(pids.length).toBeGreaterThan(1);
       expect(await listening(port)).toBe(true);
+      const client = new pg.Client({ connectionString: url });
+      await client.connect();
+      try { await client.query("CREATE TABLE saved_value (value text); INSERT INTO saved_value VALUES ('survives owner death')"); }
+      finally { await client.end(); }
       if (mode === 'tree') await exec('taskkill', ['/PID', String(owner.pid), '/T', '/F'], { windowsHide: true });
       else owner.kill('SIGKILL');
       await expect.poll(async () => { const states = await Promise.all(pids.map(alive)); return pids.filter((_, index) => states[index]); }, { timeout: 10_000 }).toEqual([]);
-      expect(await listening(port)).toBe(false);
+      await expect.poll(() => listening(port), { timeout: 10_000 }).toBe(false);
+      const restarted = await startDatabase(directory);
+      const restored = new pg.Client({ connectionString: restarted.url });
+      try {
+        await restored.connect();
+        expect((await restored.query('SELECT value FROM saved_value')).rows).toEqual([{ value: 'survives owner death' }]);
+      } finally { await restored.end(); await restarted.stop(); }
     } finally {
       owner.kill('SIGKILL');
       await cleanup(directory);
       if (pids.length > 0) await expect.poll(async () => (await Promise.all(pids.map(alive))).some(Boolean), { timeout: 10_000 }).toBe(false);
     }
-  }, 110_000);
+  }, 190_000);
 }

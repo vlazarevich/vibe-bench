@@ -24,15 +24,19 @@ try {
   }
 }
 let stop = async () => { await rm(lockPath, { force: true }); };
-try {
+let stopping = false;
+const startup = (async () => {
   const database = await startDatabase(resolve(root, 'postgres'));
   stop = async () => { await database.stop(); await rm(lockPath, { force: true }); };
+  if (stopping) return;
   const pool = await connectDatabase(database.url);
   stop = async () => { await pool.end(); await database.stop(); await rm(lockPath, { force: true }); };
+  if (stopping) return;
   const token = randomBytes(32).toString('hex');
   let ready = false;
   const app = await createApp({ pool, token, webRoot: resolve('dist/web'), ready: () => ready });
   stop = async () => { await app.close(); await pool.end(); await database.stop(); await rm(lockPath, { force: true }); };
+  if (stopping) return;
   const url = await app.listen({ host: '127.0.0.1', port: Number(process.env.VIBE_PORT ?? 0) });
   await durableWrite(resolve(root, 'instance.json'), { url, token });
   if (process.argv.includes('--fixture')) {
@@ -41,7 +45,13 @@ try {
   }
   ready = true;
   process.stdout.write(`Vibe bench ready at ${url}\nState: ${root}\n`);
-  let stopping = false;
-  const shutdown = () => { if (!stopping) { stopping = true; void stop().then(() => process.exit(0), (error: unknown) => { process.stderr.write(String(error)); process.exit(1); }); } };
-  process.once('SIGINT', shutdown); process.once('SIGTERM', shutdown);
-} catch (error) { await stop(); throw error; }
+})();
+let stopped: Promise<void> | undefined;
+const stopOnce = () => stopped ??= stop();
+const shutdown = () => {
+  if (stopping) return;
+  stopping = true;
+  void startup.catch(() => {}).then(stopOnce).then(() => process.exit(0), (error: unknown) => { process.stderr.write(String(error)); process.exit(1); });
+};
+process.once('SIGINT', shutdown); process.once('SIGTERM', shutdown);
+try { await startup; } catch (error) { await stopOnce(); throw error; }

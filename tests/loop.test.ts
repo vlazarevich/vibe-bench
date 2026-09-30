@@ -80,7 +80,7 @@ test('blind responses omit internal identities, authority is required, choice is
     app = await createApp({ pool, token }); url = await app.listen({ port: 0, host: '127.0.0.1' });
     expect(Evaluation.parse(await (await fetch(url + `/api/evaluations/${blind.sessionId}`, { headers: { cookie } })).json())).toEqual(revealed);
   }
-});
+}, 180_000);
 
 test('failed results are retained and never presented as comparable answers', async () => {
   const failed = await executeRun({ source: 'fixture', stateRoot: join(root, 'runner'), models: ['gpt-6-luna', 'gpt-6-sol'], task: { title: 'Failure', prompt: 'FIXTURE_FAIL' } });
