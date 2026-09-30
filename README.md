@@ -80,7 +80,7 @@ pnpm exec playwright install chromium
 pnpm check
 ```
 
-`pnpm check` checks TypeScript and import boundaries, runs real PostgreSQL, HTTP, and subprocess tests, builds the app, and drives it in Chromium. Tests use isolated databases and ports under `.artifacts/`. Linux machines may need `pnpm exec playwright install --with-deps chromium` for browser system libraries. Hosted CI runs the same checks on Ubuntu without model credentials. The required merge check is `verify (ubuntu-latest)`.
+`pnpm check` checks TypeScript and import boundaries, runs real PostgreSQL, HTTP, and subprocess tests, builds the app, and drives it in Chromium. Tests use isolated databases and ports under `.artifacts/`. Linux machines may need `pnpm exec playwright install --with-deps chromium` for browser system libraries. CI runs the same checks on the self-hosted Linux x64 runner without model credentials. Browser system libraries must already be installed. The required merge check is `verify (self-hosted Linux)`.
 
 Fixture checks do not prove live model access. Run `pnpm run:live` separately with the required account and exact model configuration.
 

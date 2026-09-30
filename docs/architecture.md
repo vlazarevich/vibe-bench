@@ -2,7 +2,7 @@
 
 The app authors versioned suites and compares two text answers from Codex. React and Vite build the dashboard. Fastify serves it and the HTTP API. PostgreSQL 18 stores accepted runs and evaluation sessions. The runner is a separate local command that initiates report uploads.
 
-The application, PostgreSQL, and execution runtime support Linux only. Hosted checks use GitHub's Ubuntu runner.
+The application, PostgreSQL, and execution runtime support Linux only. CI uses the self-hosted Linux x64 runner.
 
 ```mermaid
 flowchart LR

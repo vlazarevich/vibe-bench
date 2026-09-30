@@ -28,7 +28,7 @@ After an abrupt stop, `pg_ctl` can briefly mistake the stale PID file for a read
 
 `tests/browser/comparison.spec.ts` drives the built app with a fixture run. It inspects API response bodies before voting, checks that another browser cannot resume a session by URL, reloads before and after voting, and confirms both identities appear only after a committed choice.
 
-CI requires `verify (ubuntu-latest)` from `.github/workflows/checks.yml`. This hosted Ubuntu job is the only required platform check. A missing, skipped, or cancelled job is not passing evidence. Browser traces from failed jobs are uploaded. Test state, logs, screenshots, and traces stay under ignored `.artifacts/`.
+CI requires `verify (self-hosted Linux)` from `.github/workflows/checks.yml`. This self-hosted Linux job is the only required platform check. A missing, skipped, or cancelled job is not passing evidence. Browser traces from failed jobs are uploaded. Test state, logs, screenshots, and traces stay under ignored `.artifacts/`.
 
 `tests/suites.test.ts` checks every required task kind, rating bounds and conversions, draft readiness, malformed references, explicit edit choice, canonical digests and snapshot validation. `tests/suites-integration.test.ts` exercises nested edits over HTTP and PostgreSQL, concurrent saves, historical reads, SQL immutability, local authority, request sizes, protocol-1 upgrade and replay, and restart persistence. The pinned execution test changes the latest prompt to a failing fixture after export and proves the earlier prompt still executes. Its fixture records progress as observed before the first subprocess runs.
 
