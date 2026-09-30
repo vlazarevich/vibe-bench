@@ -43,3 +43,5 @@ Fixture success proves runner mechanics, not account access, live model behavior
 ## Limits
 
 Tests cover empty-database migration, upgrading a persisted protocol-1 database, concurrent migration startup, and reopening suite and report state. The local app does not implement hosted authorization, artifact isolation, scheduler leases, cancellation APIs, or arbitrary untrusted code execution. Those broader contracts need their own tests as code arrives.
+
+`tests/onboarding.test.ts` executes fixture tools as real subprocesses and verifies missing installations, malformed auth output, another provider's OpenCode credential, timeouts, output limits, nonzero exits, and exclusion of credential strings. Real HTTP and PostgreSQL checks cover concurrent duplicate receipts, conflicts, out-of-order observations, stable receipts after restart, remote Host worker registration, browser rejection, and preserved local browser policies. A real CLI subprocess registers without `instance.json`, preserves its identity and sequence, retries saved observations, and rejects concurrent state ownership. These fixtures prove onboarding mechanics, not live model access.

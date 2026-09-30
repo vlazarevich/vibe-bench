@@ -4,6 +4,8 @@ import cookie from '@fastify/cookie';
 import staticFiles from '@fastify/static';
 import type pg from 'pg';
 import { z } from 'zod';
+import { RuntimeRegistration } from '../../../packages/contracts/src/runtime.ts';
+import { registerRuntime, listRuntimes } from './features/runtimes.ts';
 import { Conflict, NotFound } from './errors.ts';
 import { Report } from '../../../packages/contracts/src/runner.ts';
 import { Choice, SessionId, Runs } from '../../../packages/contracts/src/evaluation.ts';
@@ -20,7 +22,7 @@ export async function createApp({ pool, token, webRoot, ready = () => true }: { 
     reply.header('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
     const host = request.headers.host;
     if (!host || !/^(127\.0\.0\.1|localhost):\d+$/.test(host)) return reply.code(403).send({ error: 'Local access only' });
-    if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method) && request.url !== '/api/runner/reports' && request.headers.origin !== `http://${host}`) return reply.code(403).send({ error: 'Same-origin request required' });
+    if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method) && request.url !== '/api/runner/reports' && request.url !== '/api/worker/registrations' && request.headers.origin !== `http://${host}`) return reply.code(403).send({ error: 'Same-origin request required' });
   });
   app.setErrorHandler((error, _request, reply) => {
     if (error instanceof z.ZodError) return reply.code(400).send({ error: 'Invalid request', issues: error.issues.map((issue) => ({ path: issue.path, message: issue.message })) });
@@ -40,6 +42,8 @@ export async function createApp({ pool, token, webRoot, ready = () => true }: { 
     if (provided.length !== expected.length || !timingSafeEqual(provided, expected)) return reply.code(401).send({ error: 'Unauthorized' });
     return acceptReport(pool, Report.parse(request.body));
   });
+  app.post('/api/worker/registrations', async (request) => registerRuntime(pool, RuntimeRegistration.parse(request.body)));
+  app.get('/api/runtimes', async () => listRuntimes(pool));
   app.get('/api/runs', async () => Runs.parse(await listRuns(pool)));
   app.get('/api/suites', async () => listSuites(pool));
   app.post('/api/suites', async (request) => SuiteView.parse(await createSuite(pool, CreateSuite.parse(request.body))));
