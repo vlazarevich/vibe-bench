@@ -29,7 +29,7 @@ flowchart LR
 | `apps/runner/src/spool.ts` | Progress schema and flushed atomic JSON writes |
 | `apps/runner/src/processes/` | Deadlines, bounded logs and Linux process groups |
 | `apps/web/src/` | Suite editor and history, run list, blind text cards, choice and reveal |
-| `scripts/local.ts` | Per-worktree app and embedded PostgreSQL lifecycle |
+| `scripts/local.ts`, `scripts/local-lock.ts` | Per-worktree app lifecycle and kernel-owned state-directory lock |
 | `scripts/local-database.ts`, `scripts/database-worker.ts` | Database owner lifetime and graceful shutdown |
 
 Feature queries stay with their owner. The server stores one report aggregate and one session row per evaluation. PostgreSQL uniqueness serializes duplicate reports. A transaction locks a session while saving its final choice. SQL rows never reach the browser. The browser imports only evaluation and suite authoring schemas. `pnpm boundaries` enforces application import restrictions.
@@ -37,6 +37,8 @@ Feature queries stay with their owner. The server stores one report aggregate an
 ## Local execution
 
 `pnpm demo` builds the UI, starts a pinned embedded PostgreSQL 18 binary, starts Fastify on loopback, and runs one fixture comparison. `pnpm local` starts without fixture execution. Database files and runner state live in `.local/`, or `VIBE_LOCAL_ROOT` when configured. Tests allocate their own directories and TCP ports.
+
+An abstract Unix socket keyed by the canonical state-directory path excludes concurrent local app owners. The kernel releases the lock on process death. The app holds the lock until shutdown finishes.
 
 A dedicated worker owns PostgreSQL from initialization through shutdown. Owner-pipe closure asks the worker to stop PostgreSQL. Startup and shutdown timeouts terminate the owned process group. The app registers shutdown handlers before database startup completes. Saved database files are preserved. Interruption during the first `initdb` can leave an incomplete directory; startup does not delete that directory or claim to repair it automatically.
 
