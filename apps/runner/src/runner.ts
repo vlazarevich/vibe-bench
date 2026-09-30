@@ -3,7 +3,8 @@ import { access, mkdir, readFile, readdir, stat } from 'node:fs/promises';
 import { isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
-import { Model, Outcome, Receipt, Report, ReportId, RunId, Task } from '../../../packages/contracts/src/runner.ts';
+import { Model, Outcome, Receipt, Report, ReportId, RunId, Task, prepareSnapshot } from '../../../packages/contracts/src/runner.ts';
+import { PinnedSuiteTask } from '../../../packages/contracts/src/suites.ts';
 import { durableWrite, loadReport, Progress } from './spool.ts';
 import { Interrupted, readBounded, runProcess } from './processes/run.ts';
 
@@ -24,14 +25,14 @@ export async function uploadReport(report: Report, connection: Connection) {
   return receipt;
 }
 
-export async function executeRun({ source, stateRoot, models, task = defaultTask, executable, timeoutMs = 180_000 }: { source: 'fixture' | 'live'; stateRoot: string; models: [Model, Model]; task?: z.infer<typeof Task>; executable?: string; timeoutMs?: number }) {
-  const validatedTask = Task.parse(task);
-  if (models[0] === models[1]) throw new Error('Choose two distinct models');
+export async function executeRun({ source, stateRoot, models, task = defaultTask, executable, pinned, timeoutMs = 180_000 }: { source: 'fixture' | 'live'; stateRoot: string; models: [Model, Model]; task?: z.infer<typeof Task>; executable?: string; pinned?: PinnedSuiteTask; timeoutMs?: number }) {
+  const snapshot = prepareSnapshot({ task: Task.parse(task), models, timeoutMs, ...(pinned ? { pinned: PinnedSuiteTask.parse(pinned) } : {}) });
+  const validatedTask = snapshot.task;
   const command = source === 'fixture' ? process.execPath : executable;
   if (!command || !isAbsolute(command) || /\.(cmd|bat|ps1)$/i.test(command)) throw new Error('Set VIBE_CODEX_BIN to an absolute native Codex executable path');
   await access(command);
   const prefix = source === 'fixture' ? [fileURLToPath(new URL('../../../tests/fixtures/codex.mjs', import.meta.url))] : [];
-  const progress = Progress.parse({ protocol: 1, reportId: randomUUID(), runId: randomUUID(), source, createdAt: new Date().toISOString(), task: validatedTask, attempts: models.map((model) => ({ kind: 'pending', model, attemptId: randomUUID() })) });
+  const progress = Progress.parse({ protocol: 2, snapshot, reportId: randomUUID(), runId: randomUUID(), source, createdAt: new Date().toISOString(), task: validatedTask, attempts: snapshot.models.map((model) => ({ kind: 'pending', model, attemptId: randomUUID() })) });
   const directory = resolve(stateRoot, progress.runId);
   await mkdir(directory, { recursive: true });
   await durableWrite(join(directory, 'progress.json'), progress);
@@ -53,7 +54,7 @@ export async function executeRun({ source, stateRoot, models, task = defaultTask
     const finalPath = join(attemptDirectory, 'answer.txt');
     let outcome: Outcome;
     try {
-      const result = await runProcess({ executable: command, args: [...prefix, 'exec', '--ignore-user-config', '--ignore-rules', '--skip-git-repo-check', '--ephemeral', '--model', attempt.model, '--sandbox', 'read-only', '--output-last-message', finalPath, '--json', '-'], cwd: workspace, directory: attemptDirectory, input: validatedTask.prompt, timeoutMs, env });
+      const result = await runProcess({ executable: command, args: [...prefix, 'exec', '--ignore-user-config', '--ignore-rules', '--skip-git-repo-check', '--ephemeral', '--model', attempt.model, '--sandbox', 'read-only', '--output-last-message', finalPath, '--json', '-'], cwd: workspace, directory: attemptDirectory, input: validatedTask.prompt, timeoutMs: snapshot.settings.timeoutMs, env });
       if (result.kind === 'timeout') outcome = { kind: 'failed', reason: 'timeout', detail: 'The process tree exceeded its deadline and was stopped.' };
       else if (result.kind === 'output-limit') outcome = { kind: 'failed', reason: 'output-limit', detail: 'Process output exceeded the local limit.' };
       else if (result.code !== 0) outcome = { kind: 'failed', reason: 'exit', detail: `CLI exited with code ${result.code}. Inspect local stderr.log.` };
@@ -69,7 +70,7 @@ export async function executeRun({ source, stateRoot, models, task = defaultTask
   }
   const [first, second] = progress.attempts;
   if (first.kind !== 'finished' || second.kind !== 'finished') throw new Error('Run is incomplete');
-  const report = Report.parse({ protocol: 1, reportId: ReportId.parse(progress.reportId), runId: RunId.parse(progress.runId), source, createdAt: progress.createdAt, task: progress.task, entrants: [first.result, second.result] });
+  const report = Report.parse({ protocol: 2, snapshot, reportId: ReportId.parse(progress.reportId), runId: RunId.parse(progress.runId), source, createdAt: progress.createdAt, task: progress.task, entrants: [first.result, second.result] });
   await durableWrite(join(directory, 'report.json'), report);
   return { report, directory };
 }
@@ -102,4 +103,10 @@ export async function configuredTask() {
 
 export function configuredModels(): [Model, Model] {
   return [Model.parse(process.env.VIBE_MODEL_A), Model.parse(process.env.VIBE_MODEL_B)];
+}
+
+export async function configuredSuite() {
+  if (!process.env.VIBE_SUITE_FILE) return undefined;
+  if (process.env.VIBE_TASK_FILE) throw new Error('Choose VIBE_SUITE_FILE or VIBE_TASK_FILE, not both');
+  return PinnedSuiteTask.parse(JSON.parse(await readFile(process.env.VIBE_SUITE_FILE, 'utf8')));
 }

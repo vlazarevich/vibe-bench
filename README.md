@@ -4,7 +4,7 @@ Run one text task through two Codex models on your machine, compare the answers 
 
 ## Run the local demo
 
-Install Node.js 24 and pnpm 11.22.0. On Windows x64 or Linux x64, run:
+Install Node.js 24 and pnpm 11.22.0. On Linux x64, run:
 
 ```sh
 pnpm install --frozen-lockfile
@@ -15,6 +15,8 @@ Open the URL printed after `Vibe bench ready`. Select **Compare answers**, read 
 
 The demo uses deterministic fixture text. It does not call a model. The server binds to `127.0.0.1`. A pinned PostgreSQL 18 binary starts automatically, so Docker and a separate database installation are unnecessary. The first install downloads the database binaries.
 
+The application and PostgreSQL target Linux. The execution runtime targets Linux and Windows; its full Windows compatibility verification is deferred. Existing Windows helpers and local tests remain in the repository, but Windows application and database compatibility are outside the current supported scope.
+
 `pnpm local` starts the same app without adding a fixture run. Leave that terminal running and use a second terminal for runner commands. Stop the server with Ctrl+C. Database contents and runner diagnostics remain under `.local/`. Each worktree has its own directory and automatically allocated ports. `VIBE_LOCAL_ROOT` overrides that directory for both the server and runner. `VIBE_PORT` optionally fixes the HTTP port.
 
 ## Run the actual models
@@ -24,10 +26,10 @@ Install Codex CLI 0.159.2 and authenticate it outside this repository. Copy `.en
 ```dotenv
 VIBE_MODEL_A=gpt-6-luna
 VIBE_MODEL_B=gpt-6-sol
-VIBE_CODEX_BIN=C:/path/to/codex.exe
+VIBE_CODEX_BIN=/path/to/codex
 ```
 
-On Linux, use the native `codex` binary path. A `codex.cmd` wrapper or shell script is not supported. An npm installation keeps the native executable in the platform package beneath `@openai/codex/node_modules/@openai/codex-<platform>/vendor/<target>/bin/`. Both models must be distinct and must be one of the two IDs above. The runner never substitutes another model.
+Use the native `codex` binary path. A wrapper or shell script is not supported. An npm installation keeps the native executable in the platform package beneath `@openai/codex/node_modules/@openai/codex-<platform>/vendor/<target>/bin/`. Both models must be distinct and must be one of the two IDs above. The runner never substitutes another model.
 
 With `pnpm local` or `pnpm demo` running, execute:
 
@@ -38,6 +40,22 @@ pnpm run:live
 Refresh **Available runs** in the browser. A live run uses the same prompt for both models and records the exact requested model and executable version. The default task asks for a short explanation of database indexes. Set `VIBE_TASK_FILE` to a UTF-8 text file to use another prompt. Its text is snapshotted before either attempt starts. `VIBE_TIMEOUT_MS` sets each attempt's deadline, from 100 to 600000 milliseconds, with a default of 180000.
 
 Codex runs with `--ignore-user-config`, `--ignore-rules`, `--skip-git-repo-check`, `--ephemeral`, `--sandbox read-only`, and the exact configured model. The adapter reads the final-message file and requires a `turn.completed` JSON event. Login credentials stay in your existing external Codex home. The server bearer token is never placed in an attempt workspace or its child environment. This is a local text comparison tool, not a security boundary for arbitrary untrusted execution.
+
+## Author and run a suite task
+
+Open **Suites** in the local app. Create a suite, add categories and tasks, then create criteria and assign them to tasks. Choose a rating control to preview its 0–100 conversion. Add optional ranking guidance and repository configuration as needed. The app saves incomplete drafts and lists fields that need attention.
+
+For each edit, choose **Save minor change** or **Save new revision**. Both preserve previous content. Use **History** to inspect earlier definitions. If another editor saves first, your local edits remain available and the app offers an explicit reload.
+
+For a ready text-generation task with materials set to **None**, save the suite and select **Export** beside the task. Save the JSON file locally. Set its absolute path in `.env`:
+
+```dotenv
+VIBE_SUITE_FILE=/path/to/suite-task.json
+```
+
+Remove `VIBE_TASK_FILE` if it is set. With the same local server running, run `pnpm run:fixture` or `pnpm run:live`. Refresh **Comparisons** to review the result. The run uses the exported content even if the suite has since changed. Remove `VIBE_SUITE_FILE` to return to the default task or `VIBE_TASK_FILE`.
+
+All ten task kinds can be authored. The current runner executes only text generation without repository materials. Repository checkout, rubric judgment collection, and aggregate ranking are outside this feature. Ranking rules are saved written guidance.
 
 ## Inspect failures and retry delivery
 
@@ -62,7 +80,7 @@ pnpm exec playwright install chromium
 pnpm check
 ```
 
-`pnpm check` checks TypeScript and import boundaries, runs real PostgreSQL, HTTP, and subprocess tests, builds the app, and drives it in Chromium. Tests use isolated databases and ports under `.artifacts/`. Linux machines may need `pnpm exec playwright install --with-deps chromium` for browser system libraries. CI runs the same checks on Windows and Ubuntu without model credentials.
+`pnpm check` checks TypeScript and import boundaries, runs real PostgreSQL, HTTP, and subprocess tests, builds the app, and drives it in Chromium. Tests use isolated databases and ports under `.artifacts/`. Linux machines may need `pnpm exec playwright install --with-deps chromium` for browser system libraries. Hosted CI runs the same checks on Ubuntu without model credentials. The required merge check is `verify (ubuntu-latest)`.
 
 Fixture checks do not prove live model access. Run `pnpm run:live` separately with the required account and exact model configuration.
 
@@ -71,6 +89,7 @@ Fixture checks do not prove live model access. Run `pnpm run:live` separately wi
 - [Architecture and implemented module ownership](docs/architecture.md)
 - [Verification and evidence requirements](docs/verification.md)
 - [Implemented text protocol](docs/contracts/text-comparison.md)
+- [Suite authoring and pinned execution](docs/contracts/suites.md)
 - [Broader domain design](docs/contracts/domain.md)
 - [Runner lifecycle guidance](docs/contracts/runner-protocol.md)
 - [Evaluation boundary guidance](docs/contracts/artifacts-evaluation.md)

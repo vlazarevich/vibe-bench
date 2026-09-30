@@ -8,6 +8,8 @@ import { Report } from '../../../packages/contracts/src/runner.ts';
 import { Choice, SessionId, Runs } from '../../../packages/contracts/src/evaluation.ts';
 import { acceptReport, Conflict, listRuns } from './features/runs.ts';
 import { createEvaluation, NotFound, readEvaluation, saveChoice } from './features/evaluation.ts';
+import { ContentId, CreateSuite, SaveSuite, SuiteId, SuiteView, SuiteHistory } from '../../../packages/contracts/src/suites.ts';
+import { createSuite, listSuites, readSuite, readSuiteContent, saveSuite, suiteHistory } from './features/suites.ts';
 
 export async function createApp({ pool, token, webRoot, ready = () => true }: { pool: pg.Pool; token: string; webRoot?: string; ready?: () => boolean }) {
   const app = Fastify({ logger: false, bodyLimit: 1_000_000 });
@@ -17,23 +19,32 @@ export async function createApp({ pool, token, webRoot, ready = () => true }: { 
     reply.header('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
     const host = request.headers.host;
     if (!host || !/^(127\.0\.0\.1|localhost):\d+$/.test(host)) return reply.code(403).send({ error: 'Local access only' });
-    if (request.method === 'POST' && request.url !== '/api/runner/reports' && request.headers.origin !== `http://${host}`) return reply.code(403).send({ error: 'Same-origin request required' });
+    if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method) && request.url !== '/api/runner/reports' && request.headers.origin !== `http://${host}`) return reply.code(403).send({ error: 'Same-origin request required' });
   });
   app.setErrorHandler((error, _request, reply) => {
-    if (error instanceof z.ZodError) return reply.code(400).send({ error: 'Invalid request' });
+    if (error instanceof z.ZodError) return reply.code(400).send({ error: 'Invalid request', issues: error.issues.map((issue) => ({ path: issue.path, message: issue.message })) });
     if (error instanceof Conflict) return reply.code(409).send({ error: error.message });
     if (error instanceof NotFound) return reply.code(404).send({ error: 'Not found' });
     if (error instanceof Error && 'statusCode' in error && error.statusCode === 413) return reply.code(413).send({ error: 'Request too large' });
     return reply.code(500).send({ error: 'Request failed' });
   });
   app.get('/api/health', async (_request, reply) => { if (!ready()) return reply.code(503).send({ ok: false }); await pool.query('SELECT 1'); return { ok: true }; });
-  app.post('/api/runner/reports', async (request, reply) => {
+  app.post('/api/runner/reports', { bodyLimit: 2_100_000 }, async (request, reply) => {
     const provided = Buffer.from(request.headers.authorization ?? '');
     const expected = Buffer.from(`Bearer ${token}`);
     if (provided.length !== expected.length || !timingSafeEqual(provided, expected)) return reply.code(401).send({ error: 'Unauthorized' });
     return acceptReport(pool, Report.parse(request.body));
   });
   app.get('/api/runs', async () => Runs.parse(await listRuns(pool)));
+  app.get('/api/suites', async () => listSuites(pool));
+  app.post('/api/suites', async (request) => SuiteView.parse(await createSuite(pool, CreateSuite.parse(request.body))));
+  app.get('/api/suites/:id', async (request) => SuiteView.parse(await readSuite(pool, z.object({ id: SuiteId }).parse(request.params).id)));
+  app.post('/api/suites/:id', async (request) => SuiteView.parse(await saveSuite(pool, z.object({ id: SuiteId }).parse(request.params).id, SaveSuite.parse(request.body))));
+  app.get('/api/suites/:id/history', async (request) => SuiteHistory.parse(await suiteHistory(pool, z.object({ id: SuiteId }).parse(request.params).id)));
+  app.get('/api/suites/:id/contents/:contentId', async (request) => {
+    const params = z.object({ id: SuiteId, contentId: ContentId }).parse(request.params);
+    return readSuiteContent(pool, params.id, params.contentId);
+  });
   app.post('/api/evaluations', async (request, reply) => {
     const { reviewId } = z.object({ reviewId: z.uuid() }).strict().parse(request.body);
     const existing = z.string().regex(/^[a-f0-9]{64}$/).safeParse(request.cookies.vibe_authority);

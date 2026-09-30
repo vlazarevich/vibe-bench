@@ -2,6 +2,8 @@
 
 Run `pnpm install --frozen-lockfile`, then `pnpm exec playwright install chromium`, then `pnpm check`. The checks require Node 24 and pnpm 11.22.0. PostgreSQL 18 starts from the pinned embedded binary package. No model credentials or Docker daemon are required.
 
+The application and database require Linux verification. The execution runtime targets Linux and Windows; its full Windows compatibility verification is deferred. Existing Windows code paths and local tests remain available, but Windows application and database compatibility are outside the current required scope.
+
 ## Checks
 
 The pinned `embedded-postgres` patch uses `pg_ctl` on Windows to start PostgreSQL with restricted privileges and stop it with `-m fast -w`. The upstream helper starts the server directly and returns after killing only the parent, which can leave shared memory in use during restart. The persistence test reopens the same database three times to exercise shutdown completion.
@@ -28,7 +30,11 @@ After an abrupt stop, `pg_ctl` can briefly mistake the stale PID file for a read
 
 `tests/browser/comparison.spec.ts` drives the built app with a fixture run. It inspects API response bodies before voting, checks that another browser cannot resume a session by URL, reloads before and after voting, and confirms both identities appear only after a committed choice.
 
-CI requires both `verify (ubuntu-latest)` and `verify (windows-latest)` from `.github/workflows/checks.yml`. Missing, skipped, or cancelled jobs are not passing evidence. Browser traces from failed jobs are uploaded. Test state, logs, screenshots, and traces stay under ignored `.artifacts/`.
+CI requires `verify (ubuntu-latest)` from `.github/workflows/checks.yml`. This hosted Ubuntu job is the only required platform check. A missing, skipped, or cancelled job is not passing evidence. Browser traces from failed jobs are uploaded. Test state, logs, screenshots, and traces stay under ignored `.artifacts/`.
+
+`tests/suites.test.ts` checks every required task kind, rating bounds and conversions, draft readiness, malformed references, explicit edit choice, canonical digests and snapshot validation. `tests/suites-integration.test.ts` exercises nested edits over HTTP and PostgreSQL, concurrent saves, historical reads, SQL immutability, local authority, request sizes, protocol-1 upgrade and replay, and restart persistence. The pinned execution test changes the latest prompt to a failing fixture after export and proves the earlier prompt still executes. Its fixture records progress as observed before the first subprocess runs.
+
+`tests/browser/suites.spec.ts` drives all task kinds, criteria, rating controls, ranking rules, materials, explicit save choices, incomplete drafts, validation errors, downloads, reloads, deletion, historical content and two-editor conflicts. Screenshots remain under `.artifacts/`. The original blind comparison test runs alongside it.
 
 ## Live evidence
 
@@ -38,4 +44,4 @@ Fixture success proves runner mechanics, not account access, live model behavior
 
 ## Limits
 
-This is the initial schema, so there is no prior application schema to migrate. Tests cover empty-database migration and reopening persisted state. The local app does not implement hosted authorization, artifact isolation, scheduler leases, cancellation APIs, or arbitrary untrusted code execution. Those broader contracts need their own tests as code arrives.
+Tests cover empty-database migration, upgrading a persisted protocol-1 database, concurrent migration startup, and reopening suite and report state. The local app does not implement hosted authorization, artifact isolation, scheduler leases, cancellation APIs, or arbitrary untrusted code execution. Those broader contracts need their own tests as code arrives.
