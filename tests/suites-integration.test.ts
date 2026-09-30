@@ -106,6 +106,7 @@ test('pinned file executes after later edits, observes snapshot before first sub
   const execution = executeRun({ source: 'fixture', stateRoot: join(root, 'pinned-runner'), pinned, models, timeoutMs: 10_000 });
   models.reverse();
   const completed = await execution;
+  if (process.platform === 'win32') console.info(await readFile(join(completed.directory, 'version', 'supervisor.log'), 'utf8'));
   expect(completed.report.protocol).toBe(2);
   if (completed.report.protocol !== 2) throw new Error('Missing snapshot');
   expect(completed.report.snapshot.origin).toEqual({ kind: 'suite', content: created.content, taskId: task.id });

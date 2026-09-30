@@ -36,7 +36,10 @@ export async function runProcess({ executable, args, cwd, directory, input, time
       const code = Number(output.trim());
       if (!Number.isInteger(code)) throw new Error('Invalid process supervisor result');
       return code === 124 ? { kind: 'timeout' } : { kind: 'exited', code };
-    } finally { clearInterval(monitor); clearTimeout(watchdog); process.removeListener('SIGINT', interrupt); process.removeListener('SIGTERM', interrupt); }
+    } finally {
+      clearInterval(monitor); clearTimeout(watchdog); process.removeListener('SIGINT', interrupt); process.removeListener('SIGTERM', interrupt);
+      await writeFile(join(directory, 'supervisor.log'), errorOutput, { mode: 0o600 });
+    }
   }
   const handles = await Promise.all([open(inputPath, 'r'), open(stdout, 'w', 0o600), open(stderr, 'w', 0o600)]);
   const [stdinHandle, stdoutHandle, stderrHandle] = handles;

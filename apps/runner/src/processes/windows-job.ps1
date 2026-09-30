@@ -1,6 +1,9 @@
 param([Parameter(Mandatory=$true)][string]$ConfigPath)
 $ErrorActionPreference = 'Stop'
-[Console]::Error.WriteLine('Windows supervisor: compiling process helper.')
+$startupClock = [System.Diagnostics.Stopwatch]::StartNew()
+[Console]::Error.WriteLine("Windows supervisor: resolving Add-Type at $($startupClock.ElapsedMilliseconds)ms. ProgramFiles present=$([bool]$env:ProgramFiles), PSModulePath present=$([bool]$env:PSModulePath).")
+$null = Get-Command Add-Type -CommandType Cmdlet
+[Console]::Error.WriteLine("Windows supervisor: compiling process helper at $($startupClock.ElapsedMilliseconds)ms.")
 Add-Type -TypeDefinition @'
 using System;
 using System.Text;
@@ -63,7 +66,7 @@ public static class VibeJob {
   }
 }
 '@
-[Console]::Error.WriteLine('Windows supervisor: helper compiled.')
+[Console]::Error.WriteLine("Windows supervisor: helper compiled at $($startupClock.ElapsedMilliseconds)ms.")
 $config = Get-Content -LiteralPath $ConfigPath -Raw | ConvertFrom-Json
 $code = [VibeJob]::Run($config.executable, [string[]]$config.arguments, $config.cwd, $config.input, $config.output, $config.error, $config.timeoutMs, $config.parentPid)
 Write-Output $code

@@ -31,6 +31,13 @@ for (const mode of ['timeout', 'exit']) {
     const pidFile = join(directory, 'child.pid');
     const result = await runProcess({ executable: process.execPath, args: [resolve('tests/fixtures/process-tree.mjs'), pidFile, mode], cwd: directory, directory, input: '', timeoutMs: 1500, env: childEnvironment() });
     expect(result).toEqual(mode === 'timeout' ? { kind: 'timeout' } : { kind: 'exited', code: 0 });
+    if (process.platform === 'win32') {
+      const supervisor = await readFile(join(directory, 'supervisor.log'), 'utf8');
+      console.info(supervisor);
+      expect(supervisor).toMatch(/resolving Add-Type at \d+ms\. ProgramFiles present=(True|False), PSModulePath present=(True|False)/);
+      expect(supervisor).toMatch(/compiling process helper at \d+ms/);
+      expect(supervisor).toMatch(/helper compiled at \d+ms/);
+    }
     const pid = Number(await readFile(pidFile, 'utf8'));
     expect(Number.isInteger(pid) && pid > 0).toBe(true);
     await expect.poll(() => alive(pid), { timeout: 5000 }).toBe(false);
