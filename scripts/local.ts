@@ -3,10 +3,14 @@ import { randomBytes } from 'node:crypto';
 import { resolve } from 'node:path';
 import { startDatabase } from './local-database.ts';
 import { connectDatabase } from '../apps/server/src/db.ts';
+import { createWorkerApp } from '../apps/server/src/worker-app.ts';
+import { z } from 'zod';
 import { createApp } from '../apps/server/src/app.ts';
 import { configuredTask, deliverSaved, executeRun } from '../apps/runner/src/runner.ts';
 import { durableWrite } from '../apps/runner/src/spool.ts';
 import { acquireLocalLock } from './local-lock.ts';
+
+const workerConfig = process.env.VIBE_WORKER_HOST === undefined && process.env.VIBE_WORKER_PORT === undefined ? undefined : z.object({ host: z.string().min(1), port: z.coerce.number().int().min(1).max(65535) }).parse({ host: process.env.VIBE_WORKER_HOST, port: process.env.VIBE_WORKER_PORT });
 
 const root = resolve(process.env.VIBE_LOCAL_ROOT ?? '.local');
 await mkdir(root, { recursive: true });
@@ -23,7 +27,9 @@ const startup = (async () => {
   const token = randomBytes(32).toString('hex');
   let ready = false;
   const app = await createApp({ pool, token, webRoot: resolve('dist/web'), ready: () => ready });
-  stop = async () => { await app.close(); await pool.end(); await database.stop(); };
+  const worker = workerConfig ? createWorkerApp({ pool }) : undefined;
+  stop = async () => { await worker?.close(); await app.close(); await pool.end(); await database.stop(); };
+  if (worker && workerConfig) await worker.listen(workerConfig);
   if (stopping) return;
   const url = await app.listen({ host: '127.0.0.1', port: Number(process.env.VIBE_PORT ?? 0) });
   await durableWrite(resolve(root, 'instance.json'), { url, token });

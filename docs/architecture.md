@@ -55,3 +55,9 @@ Credentials remain outside workspaces. The runner uses an environment allowlist 
 The local app has a loopback and same-origin boundary. It has no hosted user authentication. Runner bearer authority and browser session authority are separate. Management run and attempt IDs are absent from browser responses; public review IDs and session-scoped card handles are distinct random identifiers.
 
 The [text comparison contract](contracts/text-comparison.md) describes the executable subset. [ADR 0001](decisions/0001-architecture.md) and the broader design contracts remain guidance for later work. Remote scheduling, leases, artifact bundles, S3 storage, richer reporting, React Router, TanStack Query, and Drizzle are not required by this text loop and are not installed. Schema-derived types and explicit SQL implement the current invariants.
+
+## Runtime registration
+
+`packages/contracts/src/runtime.ts` owns protocol-1 runtime observations and receipts. `apps/runner/src/onboarding.ts` owns bounded tool discovery, separate harness readiness, a durable runtime identity and observation sequence, and outbound delivery. `apps/server/src/features/runtimes.ts` owns immutable observations and stable duplicate receipts. Latest runtime inspection selects the greatest observation sequence rather than trusting machine clocks or arrival order.
+
+The existing text runner remains separate. Runtime onboarding initiates all network traffic and opens no worker-side listener. An optional worker-only Fastify listener in `apps/server/src/worker-app.ts` shares the local database lifecycle. Its only endpoint accepts registrations, with browser requests rejected. HTTPS termination belongs to a trusted remote proxy. Registration authentication is deferred to KV-49. Corpus acquisition is deferred to KV-48. Scheduling and job execution are not implemented by registration.

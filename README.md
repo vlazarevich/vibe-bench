@@ -95,3 +95,15 @@ Fixture checks do not prove live model access. Run `pnpm run:live` separately wi
 - [Evaluation boundary guidance](docs/contracts/artifacts-evaluation.md)
 - [Development workflow](docs/agent-workflow.md)
 - [Architecture decision](docs/decisions/0001-architecture.md)
+
+## Runtime onboarding
+
+A Linux runtime registers its machine capabilities through an outbound request. Run `VIBE_API_URL=http://127.0.0.1:<app-port> pnpm runtime:onboard` against the local app. A remote origin must use HTTPS. Configure `VIBE_RUNTIME_SLOTS` from 1 to 256 to declare capacity and `VIBE_RUNTIME_STATE` to choose the durable identity directory. The command does not need a local app, database, or `instance.json` on the worker machine.
+
+The command probes Codex, Claude Code, OpenCode Go, Git, GitHub CLI, Node, .NET, Python, npm, pnpm, make, CMake, GCC, and Docker. Installation and authentication readiness are separate. Authentication probes use each harness's status command. OpenCode Go requires its own provider credential. A credential for another OpenCode provider does not establish Go readiness. Readiness is not proof of model entitlement or successful execution. Model selection remains provider-discovered at execution, with no onboarding model allowlist.
+
+Each state directory owns one stable runtime UUID and monotonic observation sequence. One command owns it at a time. Failed delivery leaves a saved observation. Re-running retries that exact observation before discovering new facts. Accepted observations have stable receipts. Older deliveries cannot replace the latest sequence. The local browser API exposes the latest observations at `GET /api/runtimes`.
+
+For remote workers, configure `VIBE_WORKER_HOST` and `VIBE_WORKER_PORT` before `pnpm local`. This opt-in listener shares the app's database and exposes only `POST /api/worker/registrations`. Put it behind a trusted HTTPS reverse proxy for remote use. Requests carrying browser Origin or Fetch Metadata headers are rejected. The browser listener retains its loopback Host restriction. Registration authentication belongs to KV-49 and is not implemented here. Restrict listener network access accordingly. Onboarding does not claim jobs, schedule execution, or acquire corpus materials.
+
+Only numeric versions and explicit readiness states enter registrations. Probe output is bounded, held in private temporary directories, and removed after each probe. Raw authentication output is never persisted in onboarding state or HTTP payloads. Fixture tests prove discovery mechanics. They do not prove account entitlement or model execution.

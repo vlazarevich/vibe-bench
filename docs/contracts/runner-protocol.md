@@ -55,3 +55,11 @@ Configure finite wall-time, output, log, and disk limits. Cleanup may remove onl
 Record executable version, requested settings, observed model metadata where available, and sanitized raw output. Parser fixtures cover completion, malformed output, unavailable access, timeouts, cancellation, and missing results.
 
 Check installed CLI behavior and official documentation when changing an adapter. Fixture evidence proves behavior for captured shapes. Actual harness/model access requires a separate live check.
+
+## Implemented onboarding
+
+Protocol-1 `RuntimeRegistration` in `packages/contracts/src/runtime.ts` is supported independently of job scheduling. `POST /api/worker/registrations` accepts machine facts, declared slots, tool availability, and explicit harness readiness. `GET /api/runtimes` is local inspection only. Authentication readiness does not establish model entitlement. Models remain provider-discovered at execution.
+
+A stable runtime UUID and durable monotonic observation sequence identify each immutable registration. Replaying identical content returns the original server receipt; conflicting content under the same identity and sequence returns 409. Late observations retain their receipts without replacing a newer sequence in the inspection view. The runtime retains an undelivered observation and retries it before creating another. Its state directory has one kernel-enforced owner.
+
+The optional worker listener admits outbound registration only and rejects browser requests. Its remote HTTPS termination and network restriction are deployment responsibilities. API registration authentication, corpus acquisition, assignment claiming, leases, heartbeats, and job execution are deferred. The existing bearer-authenticated text report endpoint and text runner behavior are unchanged.

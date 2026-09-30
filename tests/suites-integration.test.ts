@@ -162,7 +162,7 @@ test('legacy database migration, legacy spool replay, suite history and snapshot
   expect(Report.parse((await pool.query('SELECT report FROM runs WHERE id = $1', [legacy.runId])).rows[0].report)).toEqual(legacy);
   await expect(uploadReport(legacy, { url, token })).resolves.toMatchObject({ accepted: true });
   expect(SuiteView.parse(await (await fetch(`${url}/api/suites/${created.content.suiteId}`)).json())).toEqual(created);
-  expect((await pool.query('SELECT name FROM schema_migrations ORDER BY name')).rows).toEqual([{ name: '001-text-comparison.sql' }, { name: '002-suites.sql' }]);
+  expect((await pool.query('SELECT name FROM schema_migrations ORDER BY name')).rows).toEqual([{ name: '001-text-comparison.sql' }, { name: '002-suites.sql' }, { name: '003-runtimes.sql' }]);
 });
 
 test('request parser failures remain client errors', async () => {
