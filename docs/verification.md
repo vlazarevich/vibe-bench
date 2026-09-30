@@ -2,15 +2,13 @@
 
 Run `pnpm install --frozen-lockfile`, then `pnpm exec playwright install chromium`, then `pnpm check`. The checks require Node 24 and pnpm 11.22.0. PostgreSQL 18 starts from the pinned embedded binary package. No model credentials or Docker daemon are required.
 
-The application and database require Linux verification. The execution runtime targets Linux and Windows; its full Windows compatibility verification is deferred. Existing Windows code paths and local tests remain available, but Windows application and database compatibility are outside the current required scope.
+The application, database, and execution runtime require Linux verification.
 
 ## Checks
 
-The pinned `embedded-postgres` patch uses `pg_ctl` on Windows to start PostgreSQL with restricted privileges and stop it with `-m fast -w`. The upstream helper starts the server directly and returns after killing only the parent, which can leave shared memory in use during restart. The persistence test reopens the same database three times to exercise shutdown completion.
+The persistence test reopens the same database three times to exercise shutdown completion. `tests/database-lifecycle.test.ts` forcibly terminates the owning Node process, verifies that the real postmaster and workers exit and the TCP port closes, then reopens the database and checks saved data. The app startup test interrupts a fixture run while `/api/health` still returns 503. Test cleanup uses the pinned `pg_ctl` against only its own temporary database if an assertion fails.
 
-The database worker runs inside a Windows Job Object before initialization begins. `tests/database-lifecycle.test.ts` forcibly terminates the owning Node process and also exercises `taskkill /T /F`. It records the real postmaster and worker PIDs, verifies that every process exits and the TCP port closes, then reopens the same database and checks saved data. The app startup test interrupts a fixture run while `/api/health` still returns 503. Linux uses a forced owner exit after readiness and a handled app termination during startup. Test cleanup uses the pinned `pg_ctl` against only its own temporary database if an assertion fails.
-
-The repeated-restart test allows three Windows helper compilations. Lifecycle tests allow initial startup and crash recovery on slow CI hosts. These budgets do not extend the database worker's 90-second startup deadline or 40-second shutdown deadline.
+Lifecycle tests allow initial startup and crash recovery on slow CI hosts. These budgets do not extend the database worker's 90-second startup deadline or 40-second shutdown deadline.
 
 After an abrupt stop, `pg_ctl` can briefly mistake the stale PID file for a ready server during immediate restart. The worker verifies a real SQL connection on its newly allocated port before announcing readiness. The crash-recovery assertions cover this race without deleting the PID file or stored data.
 
@@ -24,7 +22,7 @@ After an abrupt stop, `pg_ctl` can briefly mistake the stale PID file for a read
 
 `tests/loop.test.ts` starts PostgreSQL from an empty directory, migrates it, invokes fixture subprocesses, and uploads through HTTP. It verifies concurrent duplicate ingestion, conflicting replay, immutable accepted input, spool redelivery, anonymous browser responses, session access, stable mapping, concurrent opposing votes, final-choice replay, failure exclusion, and state after database restart.
 
-`tests/processes.test.ts` launches a process with a real descendant. It checks that the descendant is no longer alive after a timeout, normal parent completion, and owner interruption. Windows uses a Job Object. Linux uses a process group. A Linux zombie is dead even if its PID remains visible pending reaping. The tests inspect process state instead of inferring termination from stopped output.
+`tests/processes.test.ts` launches a process with a real descendant. It checks that the descendant is no longer alive after a timeout, normal parent completion, and owner interruption. Linux uses a process group. A Linux zombie is dead even if its PID remains visible pending reaping. The tests inspect process state instead of inferring termination from stopped output.
 
 `tests/spool.test.ts` races sixteen immutable receipt writes on the real filesystem, rejects conflicting content, and verifies that temporary files are removed. Receipts are linked into place once after fsync; duplicate deliveries compare the existing receipt instead of replacing it.
 

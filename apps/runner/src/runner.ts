@@ -13,7 +13,7 @@ export const Connection = z.object({ url: z.url(), token: z.string().min(32) });
 export type Connection = z.infer<typeof Connection>;
 
 export function childEnvironment(): NodeJS.ProcessEnv {
-  const names = ['PATH', 'Path', 'HOME', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA', 'SystemRoot', 'SYSTEMROOT', 'WINDIR', 'TEMP', 'TMP', 'PATHEXT', 'COMSPEC', 'CODEX_HOME', 'OPENAI_API_KEY', 'SSL_CERT_FILE', 'SSL_CERT_DIR', 'HTTPS_PROXY', 'HTTP_PROXY', 'NO_PROXY'];
+  const names = ['PATH', 'HOME', 'TMPDIR', 'CODEX_HOME', 'OPENAI_API_KEY', 'SSL_CERT_FILE', 'SSL_CERT_DIR', 'HTTPS_PROXY', 'HTTP_PROXY', 'NO_PROXY'];
   return Object.fromEntries(names.flatMap((name) => process.env[name] === undefined ? [] : [[name, process.env[name]]]));
 }
 
@@ -29,7 +29,7 @@ export async function executeRun({ source, stateRoot, models, task = defaultTask
   const snapshot = prepareSnapshot({ task: Task.parse(task), models, timeoutMs, ...(pinned ? { pinned: PinnedSuiteTask.parse(pinned) } : {}) });
   const validatedTask = snapshot.task;
   const command = source === 'fixture' ? process.execPath : executable;
-  if (!command || !isAbsolute(command) || /\.(cmd|bat|ps1)$/i.test(command)) throw new Error('Set VIBE_CODEX_BIN to an absolute native Codex executable path');
+  if (!command || !isAbsolute(command)) throw new Error('Set VIBE_CODEX_BIN to an absolute native Codex executable path');
   await access(command);
   const prefix = source === 'fixture' ? [fileURLToPath(new URL('../../../tests/fixtures/codex.mjs', import.meta.url))] : [];
   const progress = Progress.parse({ protocol: 2, snapshot, reportId: randomUUID(), runId: randomUUID(), source, createdAt: new Date().toISOString(), task: validatedTask, attempts: snapshot.models.map((model) => ({ kind: 'pending', model, attemptId: randomUUID() })) });

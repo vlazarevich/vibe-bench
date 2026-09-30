@@ -4,7 +4,7 @@ Status: engineering design draft. Vite + Fastify was confirmed on 2026-09-30. Im
 
 ## Decision
 
-Use a TypeScript workspace with a React/Vite dashboard, a Fastify server, separate Windows/Linux runners, PostgreSQL, and artifact storage. Vite builds static frontend assets. Fastify serves those assets and the API as one hosted deployment.
+Use a TypeScript workspace with a React/Vite dashboard, a Fastify server, separate Linux runners, PostgreSQL, and artifact storage. Vite builds static frontend assets. Fastify serves those assets and the API as one hosted deployment.
 
 Feature modules own their operations, SQL, and tests. Shared packages contain genuine cross-process contracts rather than a universal domain/service/repository framework.
 
@@ -27,7 +27,7 @@ A single TypeScript toolchain reduces duplicated schemas and tooling. Feature ow
 
 ## Consequences
 
-Development and integration tests require PostgreSQL. Runners own durable report spools and subprocess lifetime. Windows process ownership may need a narrow native helper with platform tests.
+Development and integration tests require PostgreSQL. Runners own durable report spools and subprocess lifetime.
 
 Polling works without inbound laptop connectivity but adds delivery latency. Idempotent acceptance does not guarantee exactly-once external execution.
 

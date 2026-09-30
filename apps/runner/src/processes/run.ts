@@ -1,11 +1,9 @@
 import { spawn } from 'node:child_process';
 import { open, readFile, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 export type ProcessResult = { kind: 'exited'; code: number } | { kind: 'timeout' } | { kind: 'output-limit' };
 const MAX_LOG_BYTES = 2_000_000;
-const WINDOWS_SUPERVISOR_STARTUP_MS = 60_000;
 export class Interrupted extends Error { constructor() { super('Run interrupted. Started attempts are retained and will not be relaunched.'); } }
 
 export async function runProcess({ executable, args, cwd, directory, input, timeoutMs, env }: { executable: string; args: string[]; cwd: string; directory: string; input: string; timeoutMs: number; env: NodeJS.ProcessEnv }): Promise<ProcessResult> {
@@ -15,29 +13,6 @@ export async function runProcess({ executable, args, cwd, directory, input, time
   await writeFile(inputPath, input, { mode: 0o600 });
   let limited = false;
   let interrupted = false;
-  if (process.platform === 'win32') {
-    const configPath = join(directory, 'process.json');
-    await writeFile(configPath, JSON.stringify({ executable, arguments: args, cwd, input: inputPath, output: stdout, error: stderr, timeoutMs, parentPid: process.pid }), { mode: 0o600 });
-    const helper = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', fileURLToPath(new URL('./windows-job.ps1', import.meta.url)), '-ConfigPath', configPath], { env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
-    let output = '';
-    let errorOutput = '';
-    helper.stdout.setEncoding('utf8').on('data', (chunk: string) => { output += chunk; });
-    helper.stderr.setEncoding('utf8').on('data', (chunk: string) => { errorOutput += chunk; });
-    const kill = () => { helper.kill(); };
-    const interrupt = () => { interrupted = true; kill(); };
-    process.once('SIGINT', interrupt); process.once('SIGTERM', interrupt);
-    const monitor = setInterval(() => { void checkSize([stdout, stderr]).then((tooLarge) => { if (tooLarge) { limited = true; kill(); } }); }, 100);
-    const watchdog = setTimeout(kill, timeoutMs + WINDOWS_SUPERVISOR_STARTUP_MS);
-    try {
-      const exit = await new Promise<number | null>((resolve, reject) => { helper.once('error', reject); helper.once('close', resolve); });
-      if (interrupted) throw new Interrupted();
-      if (limited) return { kind: 'output-limit' };
-      if (exit !== 0) throw new Error(`Process supervisor failed: ${errorOutput.slice(0, 1000)}`);
-      const code = Number(output.trim());
-      if (!Number.isInteger(code)) throw new Error('Invalid process supervisor result');
-      return code === 124 ? { kind: 'timeout' } : { kind: 'exited', code };
-    } finally { clearInterval(monitor); clearTimeout(watchdog); process.removeListener('SIGINT', interrupt); process.removeListener('SIGTERM', interrupt); }
-  }
   const handles = await Promise.all([open(inputPath, 'r'), open(stdout, 'w', 0o600), open(stderr, 'w', 0o600)]);
   const [stdinHandle, stdoutHandle, stderrHandle] = handles;
   if (!stdinHandle || !stdoutHandle || !stderrHandle) throw new Error('Missing process file handles');

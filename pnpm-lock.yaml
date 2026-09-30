@@ -4,9 +4,6 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
-patchedDependencies:
-  embedded-postgres@18.4.0-beta.17: a6bc18b440db206aac9350786c5f88ca75717eb388161f1be33b29ae17ff8ad6
-
 importers:
 
   .:
@@ -19,7 +16,7 @@ importers:
         version: 8.3.0
       embedded-postgres:
         specifier: 18.4.0-beta.17
-        version: 18.4.0-beta.17(patch_hash=a6bc18b440db206aac9350786c5f88ca75717eb388161f1be33b29ae17ff8ad6)
+        version: 18.4.0-beta.17
       fastify:
         specifier: 5.6.1
         version: 5.6.1
@@ -1484,7 +1481,7 @@ snapshots:
 
   dequal@2.0.3: {}
 
-  embedded-postgres@18.4.0-beta.17(patch_hash=a6bc18b440db206aac9350786c5f88ca75717eb388161f1be33b29ae17ff8ad6):
+  embedded-postgres@18.4.0-beta.17:
     dependencies:
       async-exit-hook: 2.0.1
       pg: 8.16.3

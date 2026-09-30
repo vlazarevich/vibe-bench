@@ -15,7 +15,7 @@ Open the URL printed after `Vibe bench ready`. Select **Compare answers**, read 
 
 The demo uses deterministic fixture text. It does not call a model. The server binds to `127.0.0.1`. A pinned PostgreSQL 18 binary starts automatically, so Docker and a separate database installation are unnecessary. The first install downloads the database binaries.
 
-The application and PostgreSQL target Linux. The execution runtime targets Linux and Windows; its full Windows compatibility verification is deferred. Existing Windows helpers and local tests remain in the repository, but Windows application and database compatibility are outside the current supported scope.
+The application, PostgreSQL, and execution runtime support Linux only.
 
 `pnpm local` starts the same app without adding a fixture run. Leave that terminal running and use a second terminal for runner commands. Stop the server with Ctrl+C. Database contents and runner diagnostics remain under `.local/`. Each worktree has its own directory and automatically allocated ports. `VIBE_LOCAL_ROOT` overrides that directory for both the server and runner. `VIBE_PORT` optionally fixes the HTTP port.
 

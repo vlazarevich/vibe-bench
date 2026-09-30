@@ -1,6 +1,5 @@
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
-import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
@@ -18,17 +17,13 @@ export async function startDatabase(directory: string) {
   const port = await unusedPort();
   const worker = fileURLToPath(new URL('./database-worker.ts', import.meta.url));
   const args = ['--import', 'tsx', worker, directory, String(port)];
-  const windows = process.platform === 'win32';
-  const executable = windows ? join(process.env.SystemRoot ?? 'C:\\Windows', 'System32/WindowsPowerShell/v1.0/powershell.exe') : process.execPath;
-  const command = windows ? ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', fileURLToPath(new URL('./windows-database-job.ps1', import.meta.url)), '-NodePath', process.execPath, '-WorkerPath', worker, '-Directory', directory, '-Port', String(port), '-OwnerPid', String(process.pid)] : args;
-  const child = spawn(executable, command, { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true, detached: !windows });
+  const child = spawn(process.execPath, args, { stdio: ['pipe', 'pipe', 'pipe'], detached: true });
   let diagnostics = '';
   child.stderr.on('data', (chunk) => { diagnostics = (diagnostics + String(chunk)).slice(-8000); });
   child.stdin.on('error', (error) => { diagnostics = (diagnostics + String(error)).slice(-8000); });
   const exited = new Promise<number | null>((resolve) => { child.once('close', resolve); child.once('error', () => resolve(null)); });
   const terminate = () => {
-    if (windows) child.kill('SIGKILL');
-    else if (child.pid) { try { process.kill(-child.pid, 'SIGKILL'); } catch (error) { if (!(error instanceof Error && 'code' in error && error.code === 'ESRCH')) throw error; } }
+    if (child.pid) { try { process.kill(-child.pid, 'SIGKILL'); } catch (error) { if (!(error instanceof Error && 'code' in error && error.code === 'ESRCH')) throw error; } }
   };
   const lines = createInterface({ input: child.stdout });
   const ready = new Promise<string>((resolve, reject) => {
