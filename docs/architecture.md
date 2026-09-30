@@ -26,12 +26,17 @@ flowchart LR
 | `apps/runner/src/processes/` | Deadlines, bounded logs, Windows Job Objects and Linux process groups |
 | `apps/web/src/` | Run list, blind text cards, choice and reveal |
 | `scripts/local.ts` | Per-worktree app and embedded PostgreSQL lifecycle |
+| `scripts/local-database.ts`, `scripts/database-worker.ts`, `scripts/windows-database-job.ps1` | Database owner lifetime, graceful shutdown and Windows process containment |
 
 Feature queries stay with their owner. The server stores one report aggregate and one session row per evaluation. PostgreSQL uniqueness serializes duplicate reports. A transaction locks a session while saving its final choice. SQL rows never reach the browser. The browser imports only evaluation schemas. `pnpm boundaries` enforces application import restrictions.
 
 ## Local execution
 
 `pnpm demo` builds the UI, starts a pinned embedded PostgreSQL 18 binary, starts Fastify on loopback, and runs one fixture comparison. `pnpm local` starts without fixture execution. Database files and runner state live in `.local/`, or `VIBE_LOCAL_ROOT` when configured. Tests allocate their own directories and TCP ports.
+
+A dedicated worker owns PostgreSQL from initialization through shutdown. On Windows, the worker starts suspended inside a kill-on-close Job Object. The job includes `initdb`, `pg_ctl`, the database server, and its workers. The supervisor holds the app's process handle and stops the job if that owner exits. Killing the supervisor also closes the job. Normal shutdown still waits for `pg_ctl stop -m fast -w`, so PostgreSQL can flush and stop cleanly. On Linux, owner-pipe closure asks the worker to stop PostgreSQL. Startup and shutdown timeouts terminate the owned process group. The app registers shutdown handlers before database startup completes.
+
+Forced Windows termination can require PostgreSQL crash recovery when reopening the same data directory. Saved database files are preserved. Interruption during the first `initdb` can leave an incomplete directory; startup does not delete that directory or claim to repair it automatically.
 
 Each attempt has a separate workspace and diagnostic directory. The prompt, model IDs, source, run ID, and attempt IDs are saved before launch. A completed report is saved before upload. Started or incomplete attempts are retained as uncertain after interruption and are never relaunched under the same IDs.
 

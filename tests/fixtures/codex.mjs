@@ -6,6 +6,7 @@ if (process.argv.includes('--version')) {
   for await (const chunk of process.stdin) prompt += chunk;
   const model = process.argv[process.argv.indexOf('--model') + 1];
   const finalPath = process.argv[process.argv.indexOf('--output-last-message') + 1];
+  if (prompt.includes('FIXTURE_WAIT')) await new Promise((resolve) => setTimeout(resolve, 60_000));
   if (prompt.includes('FIXTURE_FAIL')) { process.stderr.write('fixture failure\n'); process.exitCode = 2; }
   else {
     const text = model === 'gpt-6-luna'
