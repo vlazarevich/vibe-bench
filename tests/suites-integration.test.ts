@@ -164,3 +164,11 @@ test('legacy database migration, legacy spool replay, suite history and snapshot
   expect(SuiteView.parse(await (await fetch(`${url}/api/suites/${created.content.suiteId}`)).json())).toEqual(created);
   expect((await pool.query('SELECT name FROM schema_migrations ORDER BY name')).rows).toEqual([{ name: '001-text-comparison.sql' }, { name: '002-suites.sql' }]);
 });
+
+test('request parser failures remain client errors', async () => {
+  for (const [body, type, status] of [['{', 'application/json', 400], ['', 'application/json', 400], ['<suite/>', 'application/xml', 415]] as const) {
+    const response = await fetch(url + '/api/suites', { method: 'POST', headers: { origin: url, 'content-type': type }, body });
+    expect(response.status).toBe(status);
+    expect(await response.json()).toEqual({ error: status === 415 ? 'Unsupported media type' : 'Invalid request' });
+  }
+});

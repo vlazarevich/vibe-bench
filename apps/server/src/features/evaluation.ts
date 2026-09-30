@@ -3,12 +3,11 @@ import type pg from 'pg';
 import { z } from 'zod';
 import { Report, RunId } from '../../../../packages/contracts/src/runner.ts';
 import { Evaluation, Handle, SessionId } from '../../../../packages/contracts/src/evaluation.ts';
-import { Conflict } from './runs.ts';
+import { Conflict, NotFound } from '../errors.ts';
 
 export const authorityHash = (authority: string) => createHash('sha256').update(authority).digest('hex');
 const Mapping = z.tuple([z.object({ handle: Handle, index: z.union([z.literal(0), z.literal(1)]) }), z.object({ handle: Handle, index: z.union([z.literal(0), z.literal(1)]) })]);
 const Stored = z.object({ id: SessionId, mapping: Mapping, selected_handle: Handle.nullable(), report: Report });
-export class NotFound extends Error {}
 
 export async function createEvaluation(pool: pg.Pool, reviewId: string, authority: string) {
   const client = await pool.connect();
