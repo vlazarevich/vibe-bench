@@ -10,7 +10,7 @@ The persistence test reopens the same database three times to exercise shutdown 
 
 Lifecycle tests allow initial startup and crash recovery on slow CI hosts. These budgets do not extend the database worker's 90-second startup deadline or 40-second shutdown deadline.
 
-After an abrupt stop, `pg_ctl` can briefly mistake the stale PID file for a ready server during immediate restart. The worker verifies a real SQL connection on its newly allocated port before announcing readiness. The crash-recovery assertions cover this race without deleting the PID file or stored data.
+The worker verifies a real SQL connection on its newly allocated port before announcing readiness. Restart tests check saved data without deleting the PID file or stored data.
 
 | Command | Evidence |
 | --- | --- |
