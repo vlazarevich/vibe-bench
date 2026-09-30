@@ -1,6 +1,6 @@
 import { access, mkdir } from 'node:fs/promises';
 import { createServer } from 'node:net';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import EmbeddedPostgres from 'embedded-postgres';
 
 export async function unusedPort() {
@@ -13,10 +13,12 @@ export async function unusedPort() {
 }
 
 export async function startDatabase(directory: string) {
-  await mkdir(directory, { recursive: true });
+  await mkdir(dirname(directory), { recursive: true });
   const port = await unusedPort();
-  const database = new EmbeddedPostgres({ databaseDir: directory, user: 'vibe', password: 'local-only', port, persistent: true, postgresFlags: ['-h', '127.0.0.1'], onLog: () => {}, onError: () => {} });
+  let diagnostics = '';
+  const record = (message: unknown) => { diagnostics = (diagnostics + String(message)).slice(-8000); };
+  const database = new EmbeddedPostgres({ databaseDir: directory, user: 'vibe', password: 'local-only', port, persistent: true, postgresFlags: ['-h', '127.0.0.1'], onLog: record, onError: record });
   try { await access(join(directory, 'PG_VERSION')); } catch { await database.initialise(); }
-  await database.start();
+  try { await database.start(); } catch (cause) { throw new Error(`PostgreSQL startup failed: ${diagnostics}`, { cause }); }
   return { url: `postgres://vibe:local-only@127.0.0.1:${port}/postgres`, stop: () => database.stop() };
 }

@@ -1,5 +1,6 @@
 param([Parameter(Mandatory=$true)][string]$ConfigPath)
 $ErrorActionPreference = 'Stop'
+[Console]::Error.WriteLine('Windows supervisor: compiling process helper.')
 Add-Type -TypeDefinition @'
 using System;
 using System.Text;
@@ -43,9 +44,11 @@ public static class VibeJob {
       stderr=CreateFile(error,0x40000000,1,ref security,2,0,IntPtr.Zero); Check(stderr.ToInt64()!=-1);
       var startup=new STARTUPINFO { cb=Marshal.SizeOf(typeof(STARTUPINFO)), flags=0x100, input=stdin, output=stdout, error=stderr };
       var command=new StringBuilder(Quote(executable)); foreach(var arg in args) command.Append(" ").Append(Quote(arg));
+      Console.Error.WriteLine("Windows supervisor: creating suspended child.");
       Check(CreateProcess(executable,command,IntPtr.Zero,IntPtr.Zero,true,0x08000004,IntPtr.Zero,cwd,ref startup,out process));
       if(!AssignProcessToJobObject(job,process.process)) { TerminateProcess(process.process,1); Check(false); }
       Check(ResumeThread(process.thread)!=0xffffffff);
+      Console.Error.WriteLine("Windows supervisor: child running in Job Object.");
       var clock=System.Diagnostics.Stopwatch.StartNew();
       bool timedOut=false, interrupted=false;
       while(WaitForSingleObject(process.process,25)==0x102) {
@@ -60,6 +63,7 @@ public static class VibeJob {
   }
 }
 '@
+[Console]::Error.WriteLine('Windows supervisor: helper compiled.')
 $config = Get-Content -LiteralPath $ConfigPath -Raw | ConvertFrom-Json
 $code = [VibeJob]::Run($config.executable, [string[]]$config.arguments, $config.cwd, $config.input, $config.output, $config.error, $config.timeoutMs, $config.parentPid)
 Write-Output $code
