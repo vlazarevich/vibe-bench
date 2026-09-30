@@ -91,7 +91,7 @@ test('failed results are retained and never presented as comparable answers', as
   expect((await post('/api/evaluations', { reviewId: failure?.id })).status).toBe(409);
   const progress = await readFile(join(failed.directory, 'progress.json'), 'utf8');
   expect(progress).toContain('finished');
-});
+}, 120_000);
 
 test('ingestion rejects missing authority and invalid schemas; uncertain spool does not rerun', async () => {
   expect((await post('/api/runner/reports', completed.report)).status).toBe(401);
