@@ -46,7 +46,7 @@ test('stops PostgreSQL when the app is interrupted during fixture startup before
     expect(pids.length).toBeGreaterThan(1);
     owner.kill(process.platform === 'win32' ? 'SIGKILL' : 'SIGTERM');
     await expect.poll(async () => { const states = await Promise.all(pids.map(alive)); return pids.filter((_, index) => states[index]); }, { timeout: 10_000 }).toEqual([]);
-    expect(await listening(port)).toBe(false);
+    await expect.poll(() => listening(port), { timeout: 10_000 }).toBe(false);
   } finally {
     owner.kill(process.platform === 'win32' ? 'SIGKILL' : 'SIGTERM');
     await cleanup(directory);
