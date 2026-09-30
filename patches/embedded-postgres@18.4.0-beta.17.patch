@@ -1,0 +1,35 @@
+diff --git a/dist/index.js b/dist/index.js
+index d80bf0baaa1e1cd8160503bd2b8b10ebe2bba21b..dc6ee5aca3073db30bdc72e5e350a9f4f90f25b3 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -239,11 +239,11 @@ class EmbeddedPostgres {
+             if (!this.process) {
+                 return;
+             }
+-            // Kill the existing postgres process
+-            yield new Promise((resolve) => {
++            const { pg_ctl } = yield bin;
++            // Stop the existing postgres process
++            yield new Promise((resolve, reject) => {
+                 var _a, _b, _c;
+                 // Register a handler for when the process finally exists
+-                (_a = this.process) === null || _a === void 0 ? void 0 : _a.on('exit', resolve);
+                 // GUARD: Check if we're on Windows, since Windows doesn't support SIGINT
+                 if (platform() === 'win32') {
+                     // GUARD: Double check the pid is there to keep TypeScript happy
+@@ -251,9 +251,14 @@ class EmbeddedPostgres {
+                         throw new Error('Could not find process PID');
+                     }
+                     // Actually kill the process using the Windows taskkill command
+-                    spawn('taskkill', ['/pid', this.process.pid.toString(), '/f', '/t']);
++                    const stopper = spawn(pg_ctl, ['stop', '-D', this.options.databaseDir, '-m', 'fast', '-w', '-t', '30'], { windowsHide: true });
++                    let diagnostics = '';
++                    stopper.stderr.on('data', (chunk) => { diagnostics = (diagnostics + chunk.toString()).slice(-8000); });
++                    stopper.once('error', reject);
++                    stopper.once('close', (code) => code === 0 ? resolve() : reject(new Error(`pg_ctl stop failed (${code}): ${diagnostics}`)));
+                 }
+                 else {
++                    (_a = this.process) === null || _a === void 0 ? void 0 : _a.on('exit', resolve);
+                     // If on a sane OS, simply kill using SIGINT
+                     (_c = this.process) === null || _c === void 0 ? void 0 : _c.kill('SIGINT');
+                 }

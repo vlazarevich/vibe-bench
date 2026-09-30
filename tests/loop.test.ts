@@ -74,10 +74,12 @@ test('blind responses omit internal identities, authority is required, choice is
   expect(original?.outcome.kind === 'succeeded' ? original.outcome.text : '').toBe(selectedCard?.text);
   const judgment = await pool.query('SELECT criterion, selected_at IS NOT NULL AS saved FROM evaluation_sessions');
   expect(judgment.rows).toEqual([{ criterion: 'Which answer is better?', saved: true }]);
-  await app.close(); await pool.end(); await database.stop();
-  database = await startDatabase(join(root, 'postgres')); pool = await connectDatabase(database.url);
-  app = await createApp({ pool, token }); url = await app.listen({ port: 0, host: '127.0.0.1' });
-  expect(Evaluation.parse(await (await fetch(url + `/api/evaluations/${blind.sessionId}`, { headers: { cookie } })).json())).toEqual(revealed);
+  for (let restart = 0; restart < 3; restart++) {
+    await app.close(); await pool.end(); await database.stop();
+    database = await startDatabase(join(root, 'postgres')); pool = await connectDatabase(database.url);
+    app = await createApp({ pool, token }); url = await app.listen({ port: 0, host: '127.0.0.1' });
+    expect(Evaluation.parse(await (await fetch(url + `/api/evaluations/${blind.sessionId}`, { headers: { cookie } })).json())).toEqual(revealed);
+  }
 });
 
 test('failed results are retained and never presented as comparable answers', async () => {

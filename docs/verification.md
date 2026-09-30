@@ -4,6 +4,8 @@ Run `pnpm install --frozen-lockfile`, then `pnpm exec playwright install chromiu
 
 ## Checks
 
+The pinned `embedded-postgres` patch uses `pg_ctl stop -m fast -w` on Windows. The upstream helper returns after killing only the parent, which can leave shared memory in use during restart. The persistence test reopens the same database three times to exercise shutdown completion.
+
 | Command | Evidence |
 | --- | --- |
 | `pnpm typecheck` | Strict schemas and application types compile |
