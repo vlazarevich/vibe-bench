@@ -8,7 +8,7 @@ If the task conflicts with an existing contract, identify the conflict. Update t
 
 Read [architecture.md](docs/architecture.md) to locate the owner, then read the relevant code, contract, and [verification guidance](docs/verification.md). Do not load every document for every task.
 
-The repository currently contains a design draft. There are no application commands or tests yet. Replace design sketches with executable schemas and behavior tests as code arrives.
+The repository implements a local text comparison loop. Follow the working commands in the README and the executable schemas in `packages/contracts/src`. Broader design contracts remain guidance for features not implemented yet.
 
 ## Workflow
 
