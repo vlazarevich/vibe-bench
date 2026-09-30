@@ -18,10 +18,11 @@ test('stops descendants when the owning runner is interrupted', async () => {
   const directory = await mkdtemp(resolve('.artifacts/interrupted-'));
   const driver = spawn(process.execPath, ['--import', 'tsx', resolve('tests/fixtures/process-driver.ts'), directory], { stdio: 'ignore' });
   let pid = 0;
-  await expect.poll(async () => { try { pid = Number(await readFile(join(directory, 'child.pid'), 'utf8')); return pid > 0; } catch { return false; } }, { timeout: 15_000 }).toBe(true);
-  driver.kill('SIGTERM');
+  try {
+    await expect.poll(async () => { try { pid = Number(await readFile(join(directory, 'child.pid'), 'utf8')); return pid > 0; } catch { return false; } }, { timeout: 70_000 }).toBe(true);
+  } finally { driver.kill('SIGTERM'); }
   await expect.poll(() => alive(pid), { timeout: 10_000 }).toBe(false);
-});
+}, 90_000);
 
 for (const mode of ['timeout', 'exit']) {
   test(`terminates real descendants on ${mode}`, async () => {

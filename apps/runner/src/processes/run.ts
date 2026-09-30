@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 export type ProcessResult = { kind: 'exited'; code: number } | { kind: 'timeout' } | { kind: 'output-limit' };
 const MAX_LOG_BYTES = 2_000_000;
+const WINDOWS_SUPERVISOR_STARTUP_MS = 60_000;
 export class Interrupted extends Error { constructor() { super('Run interrupted. Started attempts are retained and will not be relaunched.'); } }
 
 export async function runProcess({ executable, args, cwd, directory, input, timeoutMs, env }: { executable: string; args: string[]; cwd: string; directory: string; input: string; timeoutMs: number; env: NodeJS.ProcessEnv }): Promise<ProcessResult> {
@@ -26,7 +27,7 @@ export async function runProcess({ executable, args, cwd, directory, input, time
     const interrupt = () => { interrupted = true; kill(); };
     process.once('SIGINT', interrupt); process.once('SIGTERM', interrupt);
     const monitor = setInterval(() => { void checkSize([stdout, stderr]).then((tooLarge) => { if (tooLarge) { limited = true; kill(); } }); }, 100);
-    const watchdog = setTimeout(kill, timeoutMs + 30_000);
+    const watchdog = setTimeout(kill, timeoutMs + WINDOWS_SUPERVISOR_STARTUP_MS);
     try {
       const exit = await new Promise<number | null>((resolve, reject) => { helper.once('error', reject); helper.once('close', resolve); });
       if (interrupted) throw new Interrupted();

@@ -1,26 +1,57 @@
 diff --git a/dist/index.js b/dist/index.js
-index d80bf0baaa1e1cd8160503bd2b8b10ebe2bba21b..dc6ee5aca3073db30bdc72e5e350a9f4f90f25b3 100644
+index d80bf0baaa1e1cd8160503bd2b8b10ebe2bba21b..f7b8072a6d8052a30e42a4068d73f77a6d0f6ac7 100644
 --- a/dist/index.js
 +++ b/dist/index.js
-@@ -239,11 +239,11 @@ class EmbeddedPostgres {
+@@ -191,7 +191,7 @@ class EmbeddedPostgres {
+      */
+     start() {
+         return __awaiter(this, void 0, void 0, function* () {
+-            const { postgres } = yield bin;
++            const { postgres, pg_ctl } = yield bin;
+             const locale = getBestLocale();
+             // Optionally retrieve the uid and gid
+             const permissionIds = yield this.getUidAndGid()
+@@ -203,13 +203,20 @@ class EmbeddedPostgres {
+             yield new Promise((resolve, reject) => {
+                 var _a;
+                 // Spawn a postgres server
+-                this.process = spawn(postgres, [
++                const postgresArgs = [
+                     '-D',
+                     this.options.databaseDir,
+                     '-p',
+                     this.options.port.toString(),
+                     ...this.options.postgresFlags,
+-                ], Object.assign(Object.assign({}, permissionIds), { env: Object.assign(Object.assign({}, process.env), { LC_MESSAGES: locale }) }));
++                ];
++                const windows = platform() === 'win32';
++                const args = windows ? ['start', '-D', this.options.databaseDir, '-w', '-t', '30', '-o', postgresArgs.slice(2).map((arg) => '"' + arg.replace(/"/g, '\\"') + '"').join(' ')] : postgresArgs;
++                this.process = spawn(windows ? pg_ctl : postgres, args, Object.assign(Object.assign({}, permissionIds), { windowsHide: true, env: Object.assign(Object.assign({}, process.env), { LC_MESSAGES: locale }) }));
++                if (windows) {
++                    this.process.stdout.on('data', (chunk) => this.options.onLog(chunk.toString('utf-8')));
++                    this.process.once('exit', (code) => code === 0 ? resolve() : reject(new Error(`pg_ctl start failed (${code})`)));
++                }
+                 // Connect to stderr, as that is where the messages get sent
+                 (_a = this.process.stderr) === null || _a === void 0 ? void 0 : _a.on('data', (chunk) => {
+                     // Parse the data as a string and log it
+@@ -239,21 +246,23 @@ class EmbeddedPostgres {
              if (!this.process) {
                  return;
              }
 -            // Kill the existing postgres process
 -            yield new Promise((resolve) => {
 +            const { pg_ctl } = yield bin;
-+            // Stop the existing postgres process
 +            yield new Promise((resolve, reject) => {
                  var _a, _b, _c;
-                 // Register a handler for when the process finally exists
+-                // Register a handler for when the process finally exists
 -                (_a = this.process) === null || _a === void 0 ? void 0 : _a.on('exit', resolve);
                  // GUARD: Check if we're on Windows, since Windows doesn't support SIGINT
                  if (platform() === 'win32') {
                      // GUARD: Double check the pid is there to keep TypeScript happy
-@@ -251,9 +251,14 @@ class EmbeddedPostgres {
+                     if (!((_b = this.process) === null || _b === void 0 ? void 0 : _b.pid)) {
                          throw new Error('Could not find process PID');
                      }
-                     // Actually kill the process using the Windows taskkill command
+-                    // Actually kill the process using the Windows taskkill command
 -                    spawn('taskkill', ['/pid', this.process.pid.toString(), '/f', '/t']);
 +                    const stopper = spawn(pg_ctl, ['stop', '-D', this.options.databaseDir, '-m', 'fast', '-w', '-t', '30'], { windowsHide: true });
 +                    let diagnostics = '';

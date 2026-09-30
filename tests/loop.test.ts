@@ -22,7 +22,7 @@ beforeAll(async () => {
   await mkdir('.artifacts', { recursive: true }); root = await mkdtemp(resolve('.artifacts/integration-'));
   database = await startDatabase(join(root, 'postgres')); pool = await connectDatabase(database.url);
   app = await createApp({ pool, token }); url = await app.listen({ port: 0, host: '127.0.0.1' });
-  completed = await executeRun({ source: 'fixture', stateRoot: join(root, 'runner'), models: ['gpt-6-luna', 'gpt-6-sol'] });
+  completed = await executeRun({ source: 'fixture', stateRoot: join(root, 'runner'), models: ['gpt-6-luna', 'gpt-6-sol'], task: { title: 'Unicode: 日本語 🌍', prompt: 'Explain a database index.' } });
 });
 afterAll(async () => { await app?.close(); await pool?.end(); await database?.stop(); });
 
