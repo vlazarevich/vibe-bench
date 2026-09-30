@@ -2,7 +2,7 @@
 
 Run `pnpm install --frozen-lockfile`, then `pnpm exec playwright install chromium`, then `pnpm check`. The checks require Node 24 and pnpm 11.22.0. PostgreSQL 18 starts from the pinned embedded binary package. No model credentials or Docker daemon are required.
 
-The application and database require Linux verification. Windows execution-runtime support is deferred. Existing Windows code paths and local tests remain available, but Windows application and database compatibility are outside the current required scope.
+The application and database require Linux verification. The execution runtime targets Linux and Windows; its full Windows compatibility verification is deferred. Existing Windows code paths and local tests remain available, but Windows application and database compatibility are outside the current required scope.
 
 ## Checks
 
