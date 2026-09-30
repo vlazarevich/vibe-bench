@@ -1,4 +1,4 @@
-import { mkdir, open, readFile, rename } from 'node:fs/promises';
+import { link, mkdir, open, readFile, rename, rm } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
@@ -12,12 +12,22 @@ const Attempt = z.discriminatedUnion('kind', [
 export const Progress = z.object({ protocol: z.literal(1), reportId: ReportId, runId: RunId, source: z.enum(['fixture', 'live']), createdAt: z.iso.datetime(), task: Task, attempts: z.tuple([Attempt, Attempt]) }).strict();
 export type Progress = z.infer<typeof Progress>;
 
-export async function durableWrite(path: string, value: unknown) {
+export async function durableWrite(path: string, value: unknown, mode: 'replace' | 'create' = 'replace') {
   await mkdir(dirname(path), { recursive: true });
   const temporary = `${path}.${randomUUID()}.tmp`;
+  const content = JSON.stringify(value, null, 2);
   const file = await open(temporary, 'wx', 0o600);
-  try { await file.writeFile(JSON.stringify(value, null, 2)); await file.sync(); } finally { await file.close(); }
-  await rename(temporary, path);
+  try {
+    try { await file.writeFile(content); await file.sync(); } finally { await file.close(); }
+    if (mode === 'replace') await rename(temporary, path);
+    else {
+      try { await link(temporary, path); }
+      catch (error) {
+        if (!(error instanceof Error && 'code' in error && error.code === 'EEXIST')) throw error;
+        if (await readFile(path, 'utf8') !== content) throw new Error('Saved file conflicts with the new value');
+      }
+    }
+  } finally { await rm(temporary, { force: true }); }
 }
 
 export async function loadReport(path: string) {

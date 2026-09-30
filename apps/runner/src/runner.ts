@@ -77,7 +77,7 @@ export async function executeRun({ source, stateRoot, models, task = defaultTask
 export async function deliverSaved(directory: string, connection: Connection) {
   const report = await loadReport(join(directory, 'report.json'));
   const receipt = await uploadReport(report, connection);
-  await durableWrite(join(directory, 'receipt.json'), receipt);
+  await durableWrite(join(directory, 'receipt.json'), receipt, 'create');
   return report;
 }
 

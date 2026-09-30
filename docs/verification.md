@@ -18,6 +18,8 @@ The pinned `embedded-postgres` patch uses `pg_ctl` on Windows to start PostgreSQ
 
 `tests/processes.test.ts` launches a process with a real descendant. It checks that the descendant is no longer alive after a timeout, normal parent completion, and owner interruption. Windows uses a Job Object. Linux uses a process group. A Linux zombie is dead even if its PID remains visible pending reaping. The tests inspect process state instead of inferring termination from stopped output.
 
+`tests/spool.test.ts` races sixteen immutable receipt writes on the real filesystem, rejects conflicting content, and verifies that temporary files are removed. Receipts are linked into place once after fsync; duplicate deliveries compare the existing receipt instead of replacing it.
+
 `tests/browser/comparison.spec.ts` drives the built app with a fixture run. It inspects API response bodies before voting, checks that another browser cannot resume a session by URL, reloads before and after voting, and confirms both identities appear only after a committed choice.
 
 CI requires both `verify (ubuntu-latest)` and `verify (windows-latest)` from `.github/workflows/checks.yml`. Missing, skipped, or cancelled jobs are not passing evidence. Browser traces from failed jobs are uploaded. Test state, logs, screenshots, and traces stay under ignored `.artifacts/`.
