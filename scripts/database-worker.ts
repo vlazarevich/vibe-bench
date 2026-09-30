@@ -24,8 +24,8 @@ try {
   if (!stopping) {
     await database.start();
     const deadline = performance.now() + 30_000;
-    for (;;) {
-      const client = new pg.Client({ connectionString: url, connectionTimeoutMillis: 1000 });
+    while (!stopping) {
+      const client = new pg.Client({ connectionString: url, connectionTimeoutMillis: 1000, query_timeout: 1000 });
       try { await client.connect(); await client.query('SELECT 1'); break; }
       catch (error) { if (performance.now() >= deadline) throw error; await setTimeout(50); }
       finally { await client.end(); }
