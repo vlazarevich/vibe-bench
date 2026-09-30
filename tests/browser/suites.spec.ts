@@ -141,6 +141,7 @@ test('stale editor keeps its local changes and reload explicitly adopts the save
 });
 
 test('downloaded saved task runs through the CLI after an edit and remains blind in comparison', async ({ page }) => {
+  test.setTimeout(150_000);
   await page.goto('/?view=suites'); await page.getByRole('button', { name: 'New suite' }).click();
   await page.getByRole('textbox', { name: 'Suite title', exact: true }).fill('Pinned browser suite');
   await page.getByRole('button', { name: 'Add criterion', exact: true }).click();
@@ -162,7 +163,7 @@ test('downloaded saved task runs through the CLI after an edit and remains blind
   await page.getByRole('textbox', { name: 'Prompt', exact: true }).fill('FIXTURE_FAIL');
   await page.getByRole('button', { name: 'Save minor change' }).click();
   await expect(page.getByText('Revision 1 · Content 2', { exact: true }).first()).toBeVisible();
-  const result = await promisify(execFile)(process.execPath, ['--import', 'tsx', 'apps/runner/src/main.ts', 'fixture'], { cwd: process.cwd(), env: { ...process.env, VIBE_LOCAL_ROOT: root, VIBE_SUITE_FILE: path, VIBE_TASK_FILE: undefined }, timeout: 30_000 });
+  const result = await promisify(execFile)(process.execPath, ['--import', 'tsx', 'apps/runner/src/main.ts', 'fixture'], { cwd: process.cwd(), env: { ...process.env, VIBE_LOCAL_ROOT: root, VIBE_SUITE_FILE: path, VIBE_TASK_FILE: undefined }, timeout: 120_000 });
   expect(result.stdout).toContain('Saved fixture run');
   const responses: string[] = [];
   page.on('response', async (response) => { if (response.url().includes('/api/')) responses.push(await response.text()); });

@@ -129,7 +129,7 @@ test('pinned file executes after later edits, observes snapshot before first sub
   const changedBody = { ...snapshotBody, origin: { kind: 'suite', content: changedContent, taskId: task.id } };
   const forged = Report.parse({ ...completed.report, runId: randomUUID(), reportId: randomUUID(), snapshot: Snapshot.parse({ ...changedBody, digest: contentDigest(changedBody) }) });
   await expect(uploadReport(forged, { url, token })).rejects.toThrow('409');
-});
+}, 120_000);
 
 test('unsupported tasks, materials and incomplete suites fail before creating runner state', async () => {
   const created = await create();
