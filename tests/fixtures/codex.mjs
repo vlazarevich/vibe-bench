@@ -1,5 +1,6 @@
-import { writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 if (process.argv.includes('--version')) {
+  await writeFile('observed-input.json', await readFile('../progress.json', 'utf8'));
   process.stdout.write('vibe-fixture 1\n');
 } else {
   let prompt = '';

@@ -6,6 +6,11 @@ import { Report } from '../../../../packages/contracts/src/runner.ts';
 export class Conflict extends Error {}
 
 export async function acceptReport(pool: pg.Pool, report: Report) {
+  if (report.protocol === 2 && report.snapshot.origin.kind === 'suite') {
+    const content = report.snapshot.origin.content;
+    const pinned = await pool.query('SELECT id FROM suite_contents WHERE id = $1 AND suite_id = $2 AND ordinal = $3 AND revision = $4 AND schema_version = $5 AND digest = $6 AND definition = $7::jsonb AND created_at = $8::timestamptz', [content.contentId, content.suiteId, content.ordinal, content.revision, content.schemaVersion, content.digest, content.definition, content.createdAt]);
+    if (!pinned.rowCount) throw new Conflict('Run snapshot does not match the saved suite content');
+  }
   const digest = createHash('sha256').update(JSON.stringify(report)).digest('hex');
   const inserted = await pool.query('INSERT INTO runs(id, report_id, digest, report, review_id) VALUES($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING RETURNING id', [report.runId, report.reportId, digest, report, randomUUID()]);
   if (inserted.rowCount === 0) {

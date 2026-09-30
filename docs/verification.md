@@ -30,6 +30,10 @@ After an abrupt stop, `pg_ctl` can briefly mistake the stale PID file for a read
 
 CI requires both `verify (ubuntu-latest)` and `verify (windows-latest)` from `.github/workflows/checks.yml`. Missing, skipped, or cancelled jobs are not passing evidence. Browser traces from failed jobs are uploaded. Test state, logs, screenshots, and traces stay under ignored `.artifacts/`.
 
+`tests/suites.test.ts` checks every required task kind, rating bounds and conversions, draft readiness, malformed references, explicit edit choice, canonical digests and snapshot validation. `tests/suites-integration.test.ts` exercises nested edits over HTTP and PostgreSQL, concurrent saves, historical reads, SQL immutability, local authority, request sizes, protocol-1 upgrade and replay, and restart persistence. The pinned execution test changes the latest prompt to a failing fixture after export and proves the earlier prompt still executes. Its fixture records progress as observed before the first subprocess runs.
+
+`tests/browser/suites.spec.ts` drives all task kinds, criteria, rating controls, ranking rules, materials, explicit save choices, incomplete drafts, validation errors, downloads, reloads, deletion, historical content and two-editor conflicts. Screenshots remain under `.artifacts/`. The original blind comparison test runs alongside it.
+
 ## Live evidence
 
 Run `pnpm local`, configure `.env` using the README, and execute `pnpm run:live`. Both exact models, `gpt-6-luna` and `gpt-6-sol`, must complete through Codex CLI 0.159.2. Inspect the saved report, then compare the live answers in the browser and reload after choosing. Record the OS, CLI version, requested model IDs, outcomes, and reviewed commit in the PR.
@@ -38,4 +42,4 @@ Fixture success proves runner mechanics, not account access, live model behavior
 
 ## Limits
 
-This is the initial schema, so there is no prior application schema to migrate. Tests cover empty-database migration and reopening persisted state. The local app does not implement hosted authorization, artifact isolation, scheduler leases, cancellation APIs, or arbitrary untrusted code execution. Those broader contracts need their own tests as code arrives.
+Tests cover empty-database migration, upgrading a persisted protocol-1 database, concurrent migration startup, and reopening suite and report state. The local app does not implement hosted authorization, artifact isolation, scheduler leases, cancellation APIs, or arbitrary untrusted code execution. Those broader contracts need their own tests as code arrives.

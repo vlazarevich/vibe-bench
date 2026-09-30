@@ -34,7 +34,7 @@ test('real fixture subprocesses upload once, changed retry conflicts, and prior 
   expect(completed.report.entrants.map((e) => e.outcome.kind)).toEqual(['succeeded', 'succeeded']);
   await Promise.all([deliverSaved(completed.directory, { url, token }), deliverSaved(completed.directory, { url, token })]);
   expect((await pool.query('SELECT count(*)::int AS count FROM runs')).rows).toEqual([{ count: 1 }]);
-  const changed = Report.parse({ ...completed.report, task: { ...completed.report.task, prompt: 'changed' } });
+  const changed = Report.parse({ ...completed.report, createdAt: '2025-01-01T00:00:00.000Z' });
   await expect(uploadReport(changed, { url, token })).rejects.toThrow('409');
   const saved = z.object({ report: Report }).parse((await pool.query('SELECT report FROM runs')).rows[0]);
   expect(saved.report.task).toEqual(completed.report.task);

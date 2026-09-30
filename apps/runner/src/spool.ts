@@ -2,14 +2,18 @@ import { link, mkdir, open, readFile, rename, rm } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { AttemptId, Entrant, Model, Report, ReportId, RunId, Task } from '../../../packages/contracts/src/runner.ts';
+import { AttemptId, Entrant, Model, Report, ReportId, RunId, Snapshot, Task } from '../../../packages/contracts/src/runner.ts';
 
 const Attempt = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('pending'), attemptId: AttemptId, model: Model }).strict(),
   z.object({ kind: z.literal('started'), attemptId: AttemptId, model: Model }).strict(),
   z.object({ kind: z.literal('finished'), result: Entrant }).strict(),
 ]);
-export const Progress = z.object({ protocol: z.literal(1), reportId: ReportId, runId: RunId, source: z.enum(['fixture', 'live']), createdAt: z.iso.datetime(), task: Task, attempts: z.tuple([Attempt, Attempt]) }).strict();
+const progressFields = { reportId: ReportId, runId: RunId, source: z.enum(['fixture', 'live']), createdAt: z.iso.datetime(), task: Task, attempts: z.tuple([Attempt, Attempt]) };
+export const Progress = z.discriminatedUnion('protocol', [
+  z.object({ protocol: z.literal(1), ...progressFields }).strict(),
+  z.object({ protocol: z.literal(2), ...progressFields, snapshot: Snapshot }).strict(),
+]);
 export type Progress = z.infer<typeof Progress>;
 
 export async function durableWrite(path: string, value: unknown, mode: 'replace' | 'create' = 'replace') {

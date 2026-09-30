@@ -12,7 +12,7 @@ for (const directory of ['apps', 'packages']) {
     source.forEachChild((node) => {
       if (!ts.isImportDeclaration(node) || !ts.isStringLiteral(node.moduleSpecifier)) return;
       const target = node.moduleSpecifier.text;
-      const forbidden = owner.startsWith('apps/web/') ? /server|runner|contracts\/src\/(?!evaluation)/ : owner.startsWith('apps/server/') ? /apps\/runner|runner\/src/ : owner.startsWith('apps/runner/') ? /server|\bpg\b|evaluation/ : /apps\//;
+      const forbidden = owner.startsWith('apps/web/') ? /server|runner|contracts\/src\/(?!(?:evaluation|suites)\.ts$)/ : owner.startsWith('apps/server/') ? /apps\/runner|runner\/src/ : owner.startsWith('apps/runner/') ? /server|\bpg\b|evaluation/ : /apps\//;
       if (forbidden.test(target)) { process.stderr.write(`${owner} cannot import ${target}\n`); violations++; }
     });
   }

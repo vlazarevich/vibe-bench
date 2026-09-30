@@ -4,9 +4,11 @@ The executable schemas are [runner.ts](../../packages/contracts/src/runner.ts) a
 
 ## Runner report
 
-Protocol version 1 contains an immutable task title and prompt, creation time, source `fixture` or `live`, stable report and run UUIDs, and exactly two entrants. Each entrant has a distinct attempt UUID and exact model ID, an executable version, and either completed text or a failure reason. The two allowed models are `gpt-6-luna` and `gpt-6-sol`, and they must differ.
+Legacy protocol version 1 contains an immutable task title and prompt, creation time, source `fixture` or `live`, stable report and run UUIDs, and exactly two entrants. Each entrant has a distinct attempt UUID and exact model ID, an executable version, and either completed text or a failure reason. The two allowed models are `gpt-6-luna` and `gpt-6-sol`, and they must differ.
 
-`POST /api/runner/reports` requires the runner bearer token. The server validates the schema before calculating a canonical parsed-payload digest. The report row and its unique identity form one atomic receipt. An identical replay returns the original accepted identity; changed content or reuse of a run ID conflicts. Failed entrants remain saved and cannot produce an evaluation session.
+New runs use protocol version 2 with an immutable snapshot of the task, evaluation configuration, requested models and execution settings. Suite runs also copy the full exact saved suite content. [Suite authoring](suites.md) describes the snapshot and provenance checks. Protocol-1 reports remain readable and replayable.
+
+`POST /api/runner/reports` requires the runner bearer token. The server validates the schema before calculating a digest of the schema-parsed payload. The report row and its unique identity form one atomic receipt. An identical replay returns the original accepted identity; changed content or reuse of a run ID conflicts. Failed entrants remain saved and cannot produce an evaluation session.
 
 The runner flushes progress before execution and saves its aggregate report before upload. Receipt loss can cause redelivery, not another model invocation. `report:retry` skips accepted entries, delivers complete reports, and counts incomplete directories as uncertain. It never resumes or relaunches uncertain attempts. A new execution always creates new run and attempt IDs.
 
@@ -18,4 +20,4 @@ The runner flushes progress before execution and saves its aggregate report befo
 
 `POST /api/evaluations/:id/choice` accepts one handle from the authorized session. A row lock serializes concurrent choices. The server stores the original criterion, selected handle and selection time. Only the committed selection allows a revealed response with model IDs and executable versions. Repeating that selection succeeds. A different selection conflicts. There are no vote edits, ties, skips, or aggregate scores in this loop.
 
-The browser renders plain text. React escaping and a restrictive content security policy block active markup. The server binds to loopback, checks the Host header and POST Origin, and uses an HTTP-only SameSite=Strict cookie. This authority is local and is not a hosted identity system.
+The browser renders plain text. React escaping and a restrictive content security policy block active markup. The server binds to loopback, checks the Host header and Origin for unsafe browser methods, and uses an HTTP-only SameSite=Strict cookie. This authority is local and is not a hosted identity system.

@@ -39,6 +39,22 @@ Refresh **Available runs** in the browser. A live run uses the same prompt for b
 
 Codex runs with `--ignore-user-config`, `--ignore-rules`, `--skip-git-repo-check`, `--ephemeral`, `--sandbox read-only`, and the exact configured model. The adapter reads the final-message file and requires a `turn.completed` JSON event. Login credentials stay in your existing external Codex home. The server bearer token is never placed in an attempt workspace or its child environment. This is a local text comparison tool, not a security boundary for arbitrary untrusted execution.
 
+## Author and run a suite task
+
+Open **Suites** in the local app. Create a suite, add categories and tasks, then create criteria and assign them to tasks. Choose a rating control to preview its 0–100 conversion. Add optional ranking guidance and repository configuration as needed. The app saves incomplete drafts and lists fields that need attention.
+
+For each edit, choose **Save minor change** or **Save new revision**. Both preserve previous content. Use **History** to inspect earlier definitions. If another editor saves first, your local edits remain available and the app offers an explicit reload.
+
+For a ready text-generation task with materials set to **None**, save the suite and select **Export** beside the task. Save the JSON file locally. Set its absolute path in `.env`:
+
+```dotenv
+VIBE_SUITE_FILE=C:/path/to/suite-task.json
+```
+
+Remove `VIBE_TASK_FILE` if it is set. With the same local server running, run `pnpm run:fixture` or `pnpm run:live`. Refresh **Comparisons** to review the result. The run uses the exported content even if the suite has since changed. Remove `VIBE_SUITE_FILE` to return to the default task or `VIBE_TASK_FILE`.
+
+All ten task kinds can be authored. The current runner executes only text generation without repository materials. Repository checkout, rubric judgment collection, and aggregate ranking are outside this feature. Ranking rules are saved written guidance.
+
 ## Inspect failures and retry delivery
 
 `pnpm run:fixture` creates another deterministic run through the real runner and HTTP API. Fixture runs are labeled in the UI and persisted separately from live evidence.
@@ -71,6 +87,7 @@ Fixture checks do not prove live model access. Run `pnpm run:live` separately wi
 - [Architecture and implemented module ownership](docs/architecture.md)
 - [Verification and evidence requirements](docs/verification.md)
 - [Implemented text protocol](docs/contracts/text-comparison.md)
+- [Suite authoring and pinned execution](docs/contracts/suites.md)
 - [Broader domain design](docs/contracts/domain.md)
 - [Runner lifecycle guidance](docs/contracts/runner-protocol.md)
 - [Evaluation boundary guidance](docs/contracts/artifacts-evaluation.md)

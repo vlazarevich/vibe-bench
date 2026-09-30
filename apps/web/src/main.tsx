@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { z } from 'zod';
 import { Evaluation, Runs } from '../../../packages/contracts/src/evaluation.ts';
 import './style.css';
+import { Suites } from './suites.tsx';
 
 async function request<T>(path: string, schema: z.ZodType<T>, body?: unknown) {
   const response = await fetch(path, body === undefined ? {} : { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
@@ -40,7 +41,8 @@ function App() {
   }
   return <main>
     <header><div className="wordmark">vibe<span>bench</span></div><span className="local">LOCAL COMPARISON</span></header>
-    {evaluation ? <>
+    <nav aria-label="Main navigation"><a href="/">Comparisons</a><a href="/?view=suites">Suites</a></nav>
+    {new URLSearchParams(location.search).get('view') === 'suites' ? <Suites/> : evaluation ? <>
       <button className="back" onClick={() => { setEvaluation(null); history.replaceState(null, '', '/'); void refresh(); }}>← All runs</button>
       <div className="eyebrow">{evaluation.source === 'fixture' ? 'DETERMINISTIC DEMO · NO MODEL CALLS' : 'LIVE CODEX RESULTS'}</div>
       <h1>{evaluation.kind === 'blind' ? 'Which answer is better?' : 'Your choice is saved.'}</h1>
