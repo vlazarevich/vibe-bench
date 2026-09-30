@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { Entrant, Model, Outcome, Receipt, Report, ReportId, RunId, Task, prepareSnapshot } from '../../../packages/contracts/src/runner.ts';
 import { Text } from '../../../packages/contracts/src/text.ts';
 import { PinnedSuiteTask } from '../../../packages/contracts/src/suites.ts';
-import { durableWrite, loadReport, Progress } from './spool.ts';
+import { durableDirectory, durableWrite, loadReport, Progress } from './spool.ts';
 import { Interrupted, readBounded, runProcess } from './processes/run.ts';
 
 export const defaultTask = { title: 'Explain database indexes', prompt: 'Explain how a database index speeds up a lookup to a curious beginner. Use one concrete everyday analogy and include one tradeoff. Keep the answer under 150 words. Return only the answer as plain text. Do not use tools, inspect files, or identify your model.' };
@@ -35,7 +35,7 @@ export async function executeRun({ source, stateRoot, models, task = defaultTask
   const prefix = source === 'fixture' ? [fileURLToPath(new URL('../../../tests/fixtures/codex.mjs', import.meta.url))] : [];
   const progress = Progress.parse({ protocol: 2, snapshot, reportId: randomUUID(), runId: randomUUID(), source, createdAt: new Date().toISOString(), task: validatedTask, attempts: snapshot.models.map((model) => ({ kind: 'pending', model, attemptId: randomUUID() })) });
   const directory = resolve(stateRoot, progress.runId);
-  await mkdir(directory, { recursive: true });
+  await durableDirectory(directory);
   await durableWrite(join(directory, 'progress.json'), progress);
   const env = childEnvironment();
   const versionDirectory = join(directory, 'version');

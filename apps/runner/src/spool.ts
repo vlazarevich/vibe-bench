@@ -1,5 +1,5 @@
 import { link, mkdir, open, readFile, rename, rm } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { AttemptId, Entrant, Model, Report, ReportId, RunId, Snapshot, Task } from '../../../packages/contracts/src/runner.ts';
@@ -16,8 +16,24 @@ export const Progress = z.discriminatedUnion('protocol', [
 ]);
 export type Progress = z.infer<typeof Progress>;
 
+async function syncDirectory(path: string) {
+  await using directory = await open(path, 'r');
+  await directory.sync();
+}
+
+export async function durableDirectory(path: string) {
+  const absolute = resolve(path);
+  const first = await mkdir(absolute, { recursive: true });
+  if (!first) return;
+  const parent = dirname(first);
+  for (let directory = absolute; ; directory = dirname(directory)) {
+    await syncDirectory(directory);
+    if (directory === parent) break;
+  }
+}
+
 export async function durableWrite(path: string, value: unknown, mode: 'replace' | 'create' = 'replace') {
-  await mkdir(dirname(path), { recursive: true });
+  await durableDirectory(dirname(path));
   const temporary = `${path}.${randomUUID()}.tmp`;
   const content = JSON.stringify(value, null, 2);
   const file = await open(temporary, 'wx', 0o600);
@@ -31,7 +47,7 @@ export async function durableWrite(path: string, value: unknown, mode: 'replace'
         if (await readFile(path, 'utf8') !== content) throw new Error('Saved file conflicts with the new value');
       }
     }
-  } finally { await rm(temporary, { force: true }); }
+  } finally { await rm(temporary, { force: true }); await syncDirectory(dirname(path)); }
 }
 
 export async function loadReport(path: string) {
