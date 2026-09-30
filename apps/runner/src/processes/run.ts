@@ -13,9 +13,9 @@ export async function runProcess({ executable, args, cwd, directory, input, time
   await writeFile(inputPath, input, { mode: 0o600 });
   let limited = false;
   let interrupted = false;
-  const handles = await Promise.all([open(inputPath, 'r'), open(stdout, 'w', 0o600), open(stderr, 'w', 0o600)]);
-  const [stdinHandle, stdoutHandle, stderrHandle] = handles;
-  if (!stdinHandle || !stdoutHandle || !stderrHandle) throw new Error('Missing process file handles');
+  await using stdinHandle = await open(inputPath, 'r');
+  await using stdoutHandle = await open(stdout, 'w', 0o600);
+  await using stderrHandle = await open(stderr, 'w', 0o600);
   const child = spawn(executable, args, { cwd, env, detached: true, stdio: [stdinHandle.fd, stdoutHandle.fd, stderrHandle.fd] });
   let timedOut = false;
   const kill = () => { if (child.pid) { try { process.kill(-child.pid, 'SIGKILL'); } catch (error) { if (!(error instanceof Error && 'code' in error && error.code === 'ESRCH')) throw error; } } };
@@ -27,10 +27,10 @@ export async function runProcess({ executable, args, cwd, directory, input, time
     const code = await new Promise<number | null>((resolve, reject) => { child.once('error', reject); child.once('close', resolve); });
     kill();
     if (interrupted) throw new Interrupted();
-    if (limited) return { kind: 'output-limit' };
+    if (limited || await checkSize([stdout, stderr])) return { kind: 'output-limit' };
     if (timedOut) return { kind: 'timeout' };
     return { kind: 'exited', code: code ?? 1 };
-  } finally { clearTimeout(timer); clearInterval(monitor); process.removeListener('SIGINT', interrupt); process.removeListener('SIGTERM', interrupt); await Promise.all(handles.map((h) => h.close())); }
+  } finally { clearTimeout(timer); clearInterval(monitor); process.removeListener('SIGINT', interrupt); process.removeListener('SIGTERM', interrupt); }
 }
 
 async function checkSize(paths: string[]) {
@@ -40,5 +40,7 @@ async function checkSize(paths: string[]) {
 
 export async function readBounded(path: string, limit = 100_000) {
   if ((await stat(path)).size > limit * 4) throw new Error('Output is too large');
-  return readFile(path, 'utf8');
+  const text = await readFile(path, 'utf8');
+  if (text.length > limit) throw new Error('Output is too large');
+  return text;
 }
