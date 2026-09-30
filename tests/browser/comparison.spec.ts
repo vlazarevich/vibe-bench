@@ -26,3 +26,26 @@ test('compare blind text, save one choice, reveal identities and resume after re
   expect(await page.locator('.card pre').allTextContents()).toEqual(order);
   await page.screenshot({ path: '.artifacts/comparison-revealed.png', fullPage: true });
 });
+
+test('keeps the session URL while a choice response is pending', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Compare answers' }).first().click();
+  await expect(page.getByRole('heading', { name: 'Which answer is better?' })).toBeVisible();
+  const sessionUrl = page.url();
+  let release = () => {};
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  await page.route('**/api/evaluations/*/choice', async (route) => {
+    const response = await route.fetch();
+    await gate;
+    await route.fulfill({ response });
+  });
+  try {
+    await page.getByRole('button', { name: 'Choose answer A' }).click();
+    await expect(page.getByRole('button', { name: 'All runs' })).toBeDisabled();
+    expect(page.url()).toBe(sessionUrl);
+  } finally { release(); }
+  await expect(page.getByRole('heading', { name: 'Your choice is saved.' })).toBeVisible();
+  await page.getByRole('button', { name: 'All runs' }).click();
+  await expect(page.getByRole('heading', { name: 'Available runs' })).toBeVisible();
+  expect(new URL(page.url()).search).toBe('');
+});

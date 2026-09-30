@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
-import { mkdir, mkdtemp, readFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import { runProcess } from '../apps/runner/src/processes/run.ts';
+import { readBounded, runProcess } from '../apps/runner/src/processes/run.ts';
 import { childEnvironment } from '../apps/runner/src/runner.ts';
 import { spawn } from 'node:child_process';
 
@@ -36,3 +36,28 @@ for (const mode of ['timeout', 'exit']) {
     await expect.poll(() => alive(pid), { timeout: 5000 }).toBe(false);
   });
 }
+
+test('closes files when process setup fails', async () => {
+  const directory = await mkdtemp(resolve('.artifacts/process-open-failure-'));
+  await mkdir(join(directory, 'stderr.log'));
+  const before = (await readdir('/proc/self/fd')).length;
+  for (let i = 0; i < 5; i++) {
+    await expect(runProcess({ executable: process.execPath, args: [], cwd: directory, directory, input: '', timeoutMs: 1000, env: childEnvironment() })).rejects.toThrow();
+  }
+  expect((await readdir('/proc/self/fd')).length).toBe(before);
+});
+
+test('rejects oversized logs even when a process exits before the first poll', async () => {
+  const directory = await mkdtemp(resolve('.artifacts/process-output-limit-'));
+  const result = await runProcess({ executable: process.execPath, args: ['-e', "require('node:fs').writeSync(1, Buffer.alloc(2100000))"], cwd: directory, directory, input: '', timeoutMs: 1000, env: childEnvironment() });
+  expect(result).toEqual({ kind: 'output-limit' });
+});
+
+test('bounds decoded output without rejecting valid multibyte text', async () => {
+  const directory = await mkdtemp(resolve('.artifacts/process-read-limit-'));
+  const path = join(directory, 'output.txt');
+  await writeFile(path, 'a'.repeat(101));
+  await expect(readBounded(path, 100)).rejects.toThrow('Output is too large');
+  await writeFile(path, '😀'.repeat(50));
+  expect(await readBounded(path, 100)).toBe('😀'.repeat(50));
+});

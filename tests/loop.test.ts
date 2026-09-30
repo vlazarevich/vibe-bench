@@ -102,3 +102,10 @@ test('ingestion rejects missing authority and invalid schemas; uncertain spool d
   expect(childEnvironment()).not.toHaveProperty('VIBE_RUNNER_TOKEN');
   delete process.env.VIBE_RUNNER_TOKEN;
 });
+
+test('invalid CLI text is retained as failed outcomes with a deliverable report', async () => {
+  const invalid = await executeRun({ source: 'fixture', stateRoot: join(root, 'runner'), models: ['gpt-6-luna', 'gpt-6-sol'], task: { title: 'Invalid output', prompt: 'FIXTURE_NUL' } });
+  expect(invalid.report.entrants.map((entrant) => entrant.outcome)).toEqual(Array.from({ length: 2 }, () => ({ kind: 'failed', reason: 'missing-output', detail: 'CLI did not produce a complete final text result.' })));
+  await deliverSaved(invalid.directory, { url, token });
+  expect(await readFile(join(invalid.directory, invalid.report.entrants[0].attemptId, 'answer.txt'), 'utf8')).toBe('invalid\0text');
+});

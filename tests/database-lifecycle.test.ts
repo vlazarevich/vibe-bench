@@ -25,7 +25,7 @@ test('stops PostgreSQL when the app is interrupted during fixture startup before
   const directory = join(root, 'postgres');
   const task = join(root, 'task.txt');
   await writeFile(task, 'FIXTURE_WAIT');
-  const owner = spawn(process.execPath, ['--import', 'tsx', resolve('scripts/local.ts'), '--fixture'], { env: { ...process.env, VIBE_LOCAL_ROOT: root, VIBE_TASK_FILE: task }, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+  const owner = spawn(process.execPath, ['--import', 'tsx', resolve('scripts/local.ts'), '--fixture'], { env: { ...process.env, VIBE_LOCAL_ROOT: root, VIBE_TASK_FILE: task }, stdio: ['ignore', 'pipe', 'pipe'] });
   let output = '';
   let diagnostics = '';
   owner.stdout.on('data', (data) => { output += String(data); });
@@ -44,21 +44,17 @@ test('stops PostgreSQL when the app is interrupted during fixture startup before
     const port = Number(pidFile[3]);
     pids = [postmaster, ...await descendants(postmaster)];
     expect(pids.length).toBeGreaterThan(1);
-    owner.kill(process.platform === 'win32' ? 'SIGKILL' : 'SIGTERM');
+    owner.kill('SIGTERM');
     await expect.poll(async () => { const states = await Promise.all(pids.map(alive)); return pids.filter((_, index) => states[index]); }, { timeout: 10_000 }).toEqual([]);
     await expect.poll(() => listening(port), { timeout: 10_000 }).toBe(false);
   } finally {
-    owner.kill(process.platform === 'win32' ? 'SIGKILL' : 'SIGTERM');
+    owner.kill('SIGTERM');
     await cleanup(directory);
     if (pids.length > 0) await expect.poll(async () => (await Promise.all(pids.map(alive))).some(Boolean), { timeout: 10_000 }).toBe(false);
   }
 }, 120_000);
 
 async function descendants(pid: number) {
-  if (process.platform === 'win32') {
-    const { stdout } = await exec('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', `Get-CimInstance Win32_Process | Where-Object { $_.ParentProcessId -eq ${pid} } | Select-Object -ExpandProperty ProcessId`], { windowsHide: true });
-    return stdout.trim().split(/\s+/).map(Number).filter((id) => id > 0);
-  }
   const children: number[] = [];
   for (const name of await readdir('/proc')) {
     if (!/^\d+$/.test(name)) continue;
@@ -79,17 +75,15 @@ async function cleanup(directory: string) {
   let pid: number;
   try { pid = Number((await readFile(join(directory, 'postmaster.pid'), 'utf8')).split('\n')[0]); } catch { return; }
   if (!await alive(pid)) return;
-  const platform = process.platform === 'win32' ? 'windows' : process.platform;
-  const binary = require.resolve(`@embedded-postgres/${platform}-${process.arch}`, { paths: [dirname(require.resolve('embedded-postgres'))] });
-  const control = join(dirname(binary), '..', 'native', 'bin', process.platform === 'win32' ? 'pg_ctl.exe' : 'pg_ctl');
-  await exec(control, ['stop', '-D', directory, '-m', 'immediate', '-w', '-t', '15'], { windowsHide: true });
+  const binary = require.resolve(`@embedded-postgres/${process.platform}-${process.arch}`, { paths: [dirname(require.resolve('embedded-postgres'))] });
+  const control = join(dirname(binary), '..', 'native', 'bin', 'pg_ctl');
+  await exec(control, ['stop', '-D', directory, '-m', 'immediate', '-w', '-t', '15']);
 }
 
-for (const mode of process.platform === 'win32' ? ['owner', 'tree'] : ['owner']) {
-  test(`PostgreSQL and its workers exit after forced ${mode} termination`, async () => {
+test('PostgreSQL and its workers exit after forced owner termination', async () => {
     await mkdir('.artifacts', { recursive: true });
     const directory = join(await mkdtemp(resolve('.artifacts/database-owner-')), 'postgres');
-    const owner = spawn(process.execPath, ['--import', 'tsx', resolve('tests/fixtures/database-owner.ts'), directory], { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+    const owner = spawn(process.execPath, ['--import', 'tsx', resolve('tests/fixtures/database-owner.ts'), directory], { stdio: ['ignore', 'pipe', 'pipe'] });
     let diagnostics = '';
     owner.stderr.on('data', (data) => { diagnostics += String(data); });
     let port = 0;
@@ -113,8 +107,7 @@ for (const mode of process.platform === 'win32' ? ['owner', 'tree'] : ['owner'])
       await client.connect();
       try { await client.query("CREATE TABLE saved_value (value text); INSERT INTO saved_value VALUES ('survives owner death')"); }
       finally { await client.end(); }
-      if (mode === 'tree') await exec('taskkill', ['/PID', String(owner.pid), '/T', '/F'], { windowsHide: true });
-      else owner.kill('SIGKILL');
+      owner.kill('SIGKILL');
       await expect.poll(async () => { const states = await Promise.all(pids.map(alive)); return pids.filter((_, index) => states[index]); }, { timeout: 10_000 }).toEqual([]);
       await expect.poll(() => listening(port), { timeout: 10_000 }).toBe(false);
       const restarted = await startDatabase(directory);
@@ -129,4 +122,3 @@ for (const mode of process.platform === 'win32' ? ['owner', 'tree'] : ['owner'])
       if (pids.length > 0) await expect.poll(async () => (await Promise.all(pids.map(alive))).some(Boolean), { timeout: 10_000 }).toBe(false);
     }
   }, 190_000);
-}

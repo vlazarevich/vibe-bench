@@ -3,9 +3,10 @@ import { access, mkdir, readFile, readdir, stat } from 'node:fs/promises';
 import { isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
-import { Model, Outcome, Receipt, Report, ReportId, RunId, Task, prepareSnapshot } from '../../../packages/contracts/src/runner.ts';
+import { Entrant, Model, Outcome, Receipt, Report, ReportId, RunId, Task, prepareSnapshot } from '../../../packages/contracts/src/runner.ts';
+import { Text } from '../../../packages/contracts/src/text.ts';
 import { PinnedSuiteTask } from '../../../packages/contracts/src/suites.ts';
-import { durableWrite, loadReport, Progress } from './spool.ts';
+import { durableDirectory, durableWrite, loadReport, Progress } from './spool.ts';
 import { Interrupted, readBounded, runProcess } from './processes/run.ts';
 
 export const defaultTask = { title: 'Explain database indexes', prompt: 'Explain how a database index speeds up a lookup to a curious beginner. Use one concrete everyday analogy and include one tradeoff. Keep the answer under 150 words. Return only the answer as plain text. Do not use tools, inspect files, or identify your model.' };
@@ -13,7 +14,7 @@ export const Connection = z.object({ url: z.url(), token: z.string().min(32) });
 export type Connection = z.infer<typeof Connection>;
 
 export function childEnvironment(): NodeJS.ProcessEnv {
-  const names = ['PATH', 'Path', 'HOME', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA', 'SystemRoot', 'SYSTEMROOT', 'WINDIR', 'TEMP', 'TMP', 'PATHEXT', 'COMSPEC', 'CODEX_HOME', 'OPENAI_API_KEY', 'SSL_CERT_FILE', 'SSL_CERT_DIR', 'HTTPS_PROXY', 'HTTP_PROXY', 'NO_PROXY'];
+  const names = ['PATH', 'HOME', 'TMPDIR', 'CODEX_HOME', 'OPENAI_API_KEY', 'SSL_CERT_FILE', 'SSL_CERT_DIR', 'HTTPS_PROXY', 'HTTP_PROXY', 'NO_PROXY'];
   return Object.fromEntries(names.flatMap((name) => process.env[name] === undefined ? [] : [[name, process.env[name]]]));
 }
 
@@ -29,19 +30,19 @@ export async function executeRun({ source, stateRoot, models, task = defaultTask
   const snapshot = prepareSnapshot({ task: Task.parse(task), models, timeoutMs, ...(pinned ? { pinned: PinnedSuiteTask.parse(pinned) } : {}) });
   const validatedTask = snapshot.task;
   const command = source === 'fixture' ? process.execPath : executable;
-  if (!command || !isAbsolute(command) || /\.(cmd|bat|ps1)$/i.test(command)) throw new Error('Set VIBE_CODEX_BIN to an absolute native Codex executable path');
+  if (!command || !isAbsolute(command)) throw new Error('Set VIBE_CODEX_BIN to an absolute native Codex executable path');
   await access(command);
   const prefix = source === 'fixture' ? [fileURLToPath(new URL('../../../tests/fixtures/codex.mjs', import.meta.url))] : [];
   const progress = Progress.parse({ protocol: 2, snapshot, reportId: randomUUID(), runId: randomUUID(), source, createdAt: new Date().toISOString(), task: validatedTask, attempts: snapshot.models.map((model) => ({ kind: 'pending', model, attemptId: randomUUID() })) });
   const directory = resolve(stateRoot, progress.runId);
-  await mkdir(directory, { recursive: true });
+  await durableDirectory(directory);
   await durableWrite(join(directory, 'progress.json'), progress);
   const env = childEnvironment();
   const versionDirectory = join(directory, 'version');
   await mkdir(versionDirectory);
   const versionResult = await runProcess({ executable: command, args: [...prefix, '--version'], cwd: versionDirectory, directory: versionDirectory, input: '', timeoutMs: 30_000, env });
   if (versionResult.kind !== 'exited' || versionResult.code !== 0) throw new Error('Could not read CLI version. Local progress is retained.');
-  const cliVersion = (await readBounded(join(versionDirectory, 'stdout.log'), 200)).trim();
+  const cliVersion = Entrant.shape.cliVersion.parse((await readBounded(join(versionDirectory, 'stdout.log'), 200)).trim());
   if (source === 'live' && cliVersion !== 'codex-cli 0.159.2') throw new Error(`Unsupported CLI version ${cliVersion}. This adapter is verified with codex-cli 0.159.2.`);
   for (const index of [0, 1] satisfies Array<0 | 1>) {
     const attempt = progress.attempts[index];
@@ -62,9 +63,10 @@ export async function executeRun({ source, stateRoot, models, task = defaultTask
         const text = await readBounded(finalPath);
         const events = await readBounded(join(attemptDirectory, 'stdout.log'), 500_000);
         const completed = events.split(/\r?\n/).some((line) => { try { return z.object({ type: z.literal('turn.completed') }).safeParse(JSON.parse(line)).success; } catch { return false; } });
-        outcome = text.trim() && text.length <= 100_000 && completed ? { kind: 'succeeded', text } : { kind: 'failed', reason: 'missing-output', detail: 'CLI did not produce a complete final text result.' };
+        const answer = Outcome.safeParse({ kind: 'succeeded', text });
+        outcome = text.trim() && completed && answer.success ? answer.data : { kind: 'failed', reason: 'missing-output', detail: 'CLI did not produce a complete final text result.' };
       }
-    } catch (error) { if (error instanceof Interrupted) throw error; outcome = { kind: 'failed', reason: 'process', detail: error instanceof Error ? error.message.slice(0, 2000) : 'Process failed' }; }
+    } catch (error) { if (error instanceof Interrupted) throw error; outcome = { kind: 'failed', reason: 'process', detail: Text.max(2000).safeParse(error instanceof Error ? error.message.slice(0, 2000) : '').data || 'Process failed' }; }
     progress.attempts[index] = { kind: 'finished', result: { attemptId: attempt.attemptId, model: attempt.model, cliVersion, outcome } };
     await durableWrite(join(directory, 'progress.json'), progress);
   }

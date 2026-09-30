@@ -13,3 +13,13 @@ test('concurrent immutable writes converge and conflicting writes preserve the o
   expect(JSON.parse(await readFile(path, 'utf8'))).toEqual(receipt);
   expect(await readdir(directory)).toEqual(['receipt.json']);
 });
+
+test('durable writes create nested state and atomically replace saved progress', async () => {
+  const root = await mkdtemp(resolve('.artifacts/spool-nested-'));
+  const directory = join(root, 'new', 'run');
+  const path = join(directory, 'progress.json');
+  await durableWrite(path, { kind: 'pending' });
+  await durableWrite(path, { kind: 'finished' });
+  expect(JSON.parse(await readFile(path, 'utf8'))).toEqual({ kind: 'finished' });
+  expect(await readdir(directory)).toEqual(['progress.json']);
+});

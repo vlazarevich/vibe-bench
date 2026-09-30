@@ -5,11 +5,8 @@ on:
     branches: [main]
 jobs:
   verify:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest]
-    runs-on: ${{ matrix.os }}
+    name: verify (self-hosted Linux)
+    runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -21,10 +18,10 @@ jobs:
           node-version: 24.19.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm exec playwright install chromium
       - run: pnpm check
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: evidence-${{ matrix.os }}
+          name: evidence-self-hosted-linux
           path: .artifacts/browser-results

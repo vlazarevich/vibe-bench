@@ -4,10 +4,11 @@ import cookie from '@fastify/cookie';
 import staticFiles from '@fastify/static';
 import type pg from 'pg';
 import { z } from 'zod';
+import { Conflict, NotFound } from './errors.ts';
 import { Report } from '../../../packages/contracts/src/runner.ts';
 import { Choice, SessionId, Runs } from '../../../packages/contracts/src/evaluation.ts';
-import { acceptReport, Conflict, listRuns } from './features/runs.ts';
-import { createEvaluation, NotFound, readEvaluation, saveChoice } from './features/evaluation.ts';
+import { acceptReport, listRuns } from './features/runs.ts';
+import { createEvaluation, readEvaluation, saveChoice } from './features/evaluation.ts';
 import { ContentId, CreateSuite, SaveSuite, SuiteId, SuiteView, SuiteHistory } from '../../../packages/contracts/src/suites.ts';
 import { createSuite, listSuites, readSuite, readSuiteContent, saveSuite, suiteHistory } from './features/suites.ts';
 
@@ -25,7 +26,11 @@ export async function createApp({ pool, token, webRoot, ready = () => true }: { 
     if (error instanceof z.ZodError) return reply.code(400).send({ error: 'Invalid request', issues: error.issues.map((issue) => ({ path: issue.path, message: issue.message })) });
     if (error instanceof Conflict) return reply.code(409).send({ error: error.message });
     if (error instanceof NotFound) return reply.code(404).send({ error: 'Not found' });
-    if (error instanceof Error && 'statusCode' in error && error.statusCode === 413) return reply.code(413).send({ error: 'Request too large' });
+    if (error instanceof Error && 'statusCode' in error) {
+      if (error.statusCode === 400) return reply.code(400).send({ error: 'Invalid request' });
+      if (error.statusCode === 413) return reply.code(413).send({ error: 'Request too large' });
+      if (error.statusCode === 415) return reply.code(415).send({ error: 'Unsupported media type' });
+    }
     return reply.code(500).send({ error: 'Request failed' });
   });
   app.get('/api/health', async (_request, reply) => { if (!ready()) return reply.code(503).send({ ok: false }); await pool.query('SELECT 1'); return { ok: true }; });

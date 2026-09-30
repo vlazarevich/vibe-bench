@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { Text } from './text.ts';
 
 export const SuiteId = z.uuid().brand<'SuiteId'>();
 export const ContentId = z.uuid().brand<'ContentId'>();
@@ -20,15 +21,15 @@ export function toGrade(selection: z.infer<typeof RatingSelection>): number {
     case 'thumbs': return selection.value ? 100 : 0;
   }
 }
-const title = z.string().max(120);
-const instructions = z.string().max(20_000);
-const repositoryUrl = z.string().max(2000).refine((value) => {
+const title = Text.max(120);
+const instructions = Text.max(20_000);
+const repositoryUrl = Text.max(2000).refine((value) => {
   if (!value.trim()) return true;
   try { const url = new URL(value); return ['https:', 'http:', 'ssh:'].includes(url.protocol) && (!url.username || (url.protocol === 'ssh:' && url.username === 'git')) && !url.password; } catch { return false; }
 }, 'Use an HTTP(S) or SSH repository URL without embedded credentials');
 export const Materials = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('none') }).strict(),
-  z.object({ kind: z.literal('repository'), url: repositoryUrl, requestedRef: z.string().max(500) }).strict(),
+  z.object({ kind: z.literal('repository'), url: repositoryUrl, requestedRef: Text.max(500) }).strict(),
 ]);
 export const Criterion = z.object({ id: CriterionId, title, instructions, control: RatingControl }).strict();
 export const RankingRule = z.object({ id: RankingRuleId, title, instructions }).strict();
@@ -68,30 +69,30 @@ export const Assessment = z.discriminatedUnion('kind', [
 ]);
 export function assessDefinition(definition: Definition): z.infer<typeof Assessment> {
   const issues: z.infer<typeof Issue>[] = [];
-  const require = (present: boolean, path: Array<string | number>, message: string) => { if (!present) issues.push({ path, message }); };
-  require(Boolean(definition.title.trim()), ['title'], 'Enter a suite title');
-  require(definition.categories.length > 0, ['categories'], 'Add a category');
-  require(definition.evaluation.criteria.length > 0, ['evaluation', 'criteria'], 'Add an evaluation criterion');
+  const requireField = (present: boolean, path: Array<string | number>, message: string) => { if (!present) issues.push({ path, message }); };
+  requireField(Boolean(definition.title.trim()), ['title'], 'Enter a suite title');
+  requireField(definition.categories.length > 0, ['categories'], 'Add a category');
+  requireField(definition.evaluation.criteria.length > 0, ['evaluation', 'criteria'], 'Add an evaluation criterion');
   definition.categories.forEach((category, i) => {
     const path = ['categories', i];
-    require(Boolean(category.title.trim()), [...path, 'title'], 'Enter a category title');
-    require(category.tasks.length > 0, [...path, 'tasks'], 'Add a task to this category');
+    requireField(Boolean(category.title.trim()), [...path, 'title'], 'Enter a category title');
+    requireField(category.tasks.length > 0, [...path, 'tasks'], 'Add a task to this category');
     category.tasks.forEach((task, j) => {
       const taskPath = [...path, 'tasks', j];
-      require(Boolean(task.title.trim()), [...taskPath, 'title'], 'Enter a task title');
-      require(Boolean(task.prompt.trim()), [...taskPath, 'prompt'], 'Enter a task prompt');
-      require(task.criterionIds.length > 0, [...taskPath, 'criterionIds'], 'Assign an evaluation criterion');
+      requireField(Boolean(task.title.trim()), [...taskPath, 'title'], 'Enter a task title');
+      requireField(Boolean(task.prompt.trim()), [...taskPath, 'prompt'], 'Enter a task prompt');
+      requireField(task.criterionIds.length > 0, [...taskPath, 'criterionIds'], 'Assign an evaluation criterion');
     });
   });
   for (const key of ['criteria', 'rankingRules'] satisfies Array<'criteria' | 'rankingRules'>) {
     definition.evaluation[key].forEach((item, i) => {
-      require(Boolean(item.title.trim()), ['evaluation', key, i, 'title'], 'Enter a title');
-      require(Boolean(item.instructions.trim()), ['evaluation', key, i, 'instructions'], 'Enter written guidance');
+      requireField(Boolean(item.title.trim()), ['evaluation', key, i, 'title'], 'Enter a title');
+      requireField(Boolean(item.instructions.trim()), ['evaluation', key, i, 'instructions'], 'Enter written guidance');
     });
   }
   if (definition.materials.kind === 'repository') {
-    require(Boolean(definition.materials.url.trim()), ['materials', 'url'], 'Enter a repository URL');
-    require(Boolean(definition.materials.requestedRef.trim()), ['materials', 'requestedRef'], 'Enter a repository ref');
+    requireField(Boolean(definition.materials.url.trim()), ['materials', 'url'], 'Enter a repository URL');
+    requireField(Boolean(definition.materials.requestedRef.trim()), ['materials', 'requestedRef'], 'Enter a repository ref');
   }
   return issues.length ? { kind: 'incomplete', issues } : { kind: 'ready' };
 }

@@ -43,7 +43,7 @@ function App() {
     <header><div className="wordmark">vibe<span>bench</span></div><span className="local">LOCAL COMPARISON</span></header>
     <nav aria-label="Main navigation"><a href="/">Comparisons</a><a href="/?view=suites">Suites</a></nav>
     {new URLSearchParams(location.search).get('view') === 'suites' ? <Suites/> : evaluation ? <>
-      <button className="back" onClick={() => { setEvaluation(null); history.replaceState(null, '', '/'); void refresh(); }}>← All runs</button>
+      <button className="back" disabled={busy} onClick={() => { setEvaluation(null); history.replaceState(null, '', '/'); void refresh().catch((error: unknown) => setError(error instanceof Error ? error.message : 'Could not load runs')); }}>← All runs</button>
       <div className="eyebrow">{evaluation.source === 'fixture' ? 'DETERMINISTIC DEMO · NO MODEL CALLS' : 'LIVE CODEX RESULTS'}</div>
       <h1>{evaluation.kind === 'blind' ? 'Which answer is better?' : 'Your choice is saved.'}</h1>
       <p className="intro">{evaluation.kind === 'blind' ? 'Read both answers, then choose one. Model identities stay hidden until your choice is saved.' : 'The model identities are now revealed. Your choice and this presentation order survive reloads.'}</p>

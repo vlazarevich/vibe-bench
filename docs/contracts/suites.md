@@ -2,6 +2,8 @@
 
 The executable definitions are in [suites.ts](../../packages/contracts/src/suites.ts). Suite content contains categories, tasks, prompts, reusable criteria, task criterion assignments, optional written ranking rules, and materials configuration. Task kinds and rating controls come from those schemas.
 
+Persisted text must contain valid Unicode and cannot contain U+0000. Invalid text is rejected before database writes. Valid text is stored without rewriting.
+
 ## Drafts and validation
 
 Empty strings and collections represent incomplete drafts. `assessDefinition` returns field paths and actionable messages for missing titles, prompts, criteria, assignments, guidance, or repository settings. Empty ranking rules mean no rules are configured. An existing rule needs a title and written guidance before the suite is ready.

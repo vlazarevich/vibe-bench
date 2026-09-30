@@ -3,7 +3,7 @@ import type pg from 'pg';
 import { z } from 'zod';
 import { Report } from '../../../../packages/contracts/src/runner.ts';
 
-export class Conflict extends Error {}
+import { Conflict } from '../errors.ts';
 
 export async function acceptReport(pool: pg.Pool, report: Report) {
   if (report.protocol === 2 && report.snapshot.origin.kind === 'suite') {

@@ -3,8 +3,7 @@ import type pg from 'pg';
 import { z } from 'zod';
 import { assessDefinition, CreateSuite, SaveSuite, SuiteContent, SuiteId, ContentId, SuiteList } from '../../../../packages/contracts/src/suites.ts';
 import { contentDigest } from '../../../../packages/contracts/src/canonical.ts';
-import { Conflict } from './runs.ts';
-import { NotFound } from './evaluation.ts';
+import { Conflict, NotFound } from '../errors.ts';
 
 const Row = z.object({ id: ContentId, suite_id: SuiteId, ordinal: z.number(), revision: z.number(), schema_version: z.literal(1), digest: z.string(), definition: SuiteContent.shape.definition, created_at: z.date() });
 function content(row: unknown): SuiteContent {
@@ -14,8 +13,9 @@ function content(row: unknown): SuiteContent {
 function view(value: SuiteContent) { return { content: value, assessment: assessDefinition(value.definition) }; }
 
 export async function listSuites(pool: pg.Pool) {
-  const result = await pool.query('SELECT c.* FROM suites s JOIN suite_contents c ON c.id = s.current_content_id ORDER BY c.created_at DESC');
-  return SuiteList.parse(result.rows.map((row: unknown) => { const c = content(row); return { suiteId: c.suiteId, title: c.definition.title, revision: c.revision, ordinal: c.ordinal }; }));
+  const result = await pool.query(`SELECT c.suite_id AS "suiteId", c.definition->>'title' AS title, c.revision, c.ordinal
+    FROM suites s JOIN suite_contents c ON c.id = s.current_content_id ORDER BY c.created_at DESC`);
+  return SuiteList.parse(result.rows);
 }
 export async function readSuite(pool: pg.Pool, suiteId: z.infer<typeof SuiteId>) {
   const result = await pool.query('SELECT c.* FROM suites s JOIN suite_contents c ON c.id = s.current_content_id WHERE s.id = $1', [suiteId]);

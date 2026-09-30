@@ -38,7 +38,7 @@ Adapters translate prepared inputs into executable arguments and parse output. T
 
 Invoke executables with argument arrays and a controlled environment. Never interpolate prompts, repository refs, or model settings into shell strings.
 
-Linux process groups and Windows Job Objects need real descendant-process tests. A parent-only kill or an AbortSignal is not sufficient evidence. Keep any required native helper within the process module and document its build and verification.
+Linux process groups need real descendant-process tests. A parent-only kill or an AbortSignal is not sufficient evidence. Keep any required native helper within the process module and document its build and verification.
 
 Stop and reap the process tree before terminal reporting. Preserve diagnostics when execution, cancellation, or collection fails. Keep final model output separate from diagnostic logs.
 
@@ -46,7 +46,7 @@ Stop and reap the process tree before terminal reporting. Preserve diagnostics w
 
 Each attempt owns its checkout, output directory, temporary directory, and browser profile. Writable workspaces and harness credentials are never shared. A Git object cache may be shared with safe fetch coordination.
 
-Resolve paths beneath assigned roots. Reject traversal, absolute collection paths, and symlinks or reparse points that escape the root. Handle Windows case collisions. Collect declared untracked files while excluding credentials and Git internals.
+Resolve paths beneath assigned roots. Reject traversal, absolute collection paths, and symlinks that escape the root. Collect declared untracked files while excluding credentials and Git internals.
 
 Configure finite wall-time, output, log, and disk limits. Cleanup may remove only owned directories whose retention and publication state permit deletion.
 
