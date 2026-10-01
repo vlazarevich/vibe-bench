@@ -24,7 +24,7 @@ A judgment is one of three states.
 
 Stars accept integers 1 through 5 and produce 20, 40, 60, 80, or 100. The slider accepts integers 0 through 10 and produces multiples of ten. Thumbs accept a boolean and produce 100 for true or 0 for false. A numeric zero is a grade. Skip and Clear are explicit actions, each with a version increment. Equal grades are valid. A client cannot submit a derived grade or use another criterion's control.
 
-The UI requires a selection before saving a grade. An untouched slider does not create a zero grade. Each editor disables additional writes while saving. A failed request offers an exact retry or a reload of saved judgments. A conflicting tab must reload before editing again.
+The UI requires a selection before saving a grade. An untouched slider does not create a zero grade. Each editor disables additional writes while saving. A failed request offers an exact retry or a reload of saved judgments. A conflicting tab must reload before editing again. If a progress refresh fails after saving, the grade stays saved and a page-level alert lets the reviewer retry the progress read without another judgment write.
 
 ## Persistence and concurrency
 

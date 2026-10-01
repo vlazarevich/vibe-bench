@@ -89,3 +89,29 @@ test('a lost save replays once and a conflicting tab must reload before another 
   await secondStars.getByRole('radio', { name: '1 star', exact: true }).check(); await secondStars.getByRole('button', { name: 'Save grade' }).click(); await expect(secondStars).toContainText('Saved grade 20/100');
   await page.reload(); await expect(stars).toContainText('Saved grade 20/100'); await second.close();
 });
+
+test('a saved judgment survives a failed progress refresh and progress can retry without another save', async ({ page, baseURL }) => {
+  const fixture = await seed(baseURL);
+  await page.goto('/?view=grading');
+  await page.getByRole('article').filter({ hasText: fixture.value.title }).getByRole('button', { name: 'Grade results' }).click();
+  const stars = page.getByRole('group', { name: 'stars-5', exact: true }).first();
+  await expect(stars).toBeVisible();
+  const session = new URL(page.url()).searchParams.get('grading');
+  if (!session) throw new Error('Missing grading session');
+  let failRefresh = true, saves = 0;
+  page.on('request', (request) => { if (request.method() === 'POST' && request.url().endsWith('/judgments')) saves++; });
+  await page.route(`**/api/blind-grading/${session}`, async (route) => {
+    if (failRefresh) { failRefresh = false; await route.abort('failed'); }
+    else await route.continue();
+  });
+  await stars.getByRole('radio', { name: '4 stars' }).check();
+  await stars.getByRole('button', { name: 'Save grade' }).click();
+  await expect(stars).toContainText('Saved grade 80/100');
+  await expect(page.getByRole('alert')).toContainText('Saved progress could not be refreshed');
+  await page.getByRole('button', { name: 'Refresh progress', exact: true }).click();
+  await expect(page.getByRole('link', { name: /^First task/ })).toContainText('1 graded · 0 skipped · 5 ungraded');
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  expect(saves).toBe(1);
+  await page.reload();
+  await expect(stars).toContainText('Saved grade 80/100');
+});

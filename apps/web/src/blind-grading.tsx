@@ -26,6 +26,7 @@ export function BlindGrading() {
   const [task, setTask] = useState<BlindGradingTask | null>(null);
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState('');
+  const [progressError, setProgressError] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const [params] = useState(() => new URLSearchParams(location.search));
   const progressRequest = useRef(0);
@@ -51,8 +52,12 @@ export function BlindGrading() {
   async function refreshProgress() {
     if (!session) return;
     const generation = ++progressRequest.current;
-    const loaded = await request(`/api/blind-grading/${session.id}`, BlindGradingSession);
-    if (generation === progressRequest.current) setSession(loaded);
+    try {
+      const loaded = await request(`/api/blind-grading/${session.id}`, BlindGradingSession);
+      if (generation === progressRequest.current) { setSession(loaded); setProgressError(false); }
+    } catch {
+      if (generation === progressRequest.current) setProgressError(true);
+    }
   }
   async function reload() {
     if (!session || !task) return;
@@ -69,6 +74,7 @@ export function BlindGrading() {
     <h1>{session ? session.title : 'Grade configured runs'}</h1>
     <p>Grade each anonymous result independently. Equal grades are allowed. Skip and Clear do not mean zero.</p>
     {busy && <p role="status">Loading grading…</p>}{error && <p role="alert">{error}</p>}
+    {progressError && <div role="alert"><p>Saved progress could not be refreshed.</p><button onClick={() => void refreshProgress()}>Refresh progress</button></div>}
     {!id && <div className="runs">{runs.map((run) => <article className="run" key={run.reviewId}><div><h2>{run.title}</h2><p>{run.source === 'fixture' ? 'Deterministic fixture. No model calls.' : 'Live results'}</p></div><button disabled={busy || !run.ready} onClick={() => void open(run.reviewId)}>{run.ready ? 'Grade results' : 'Awaiting attempts'}</button></article>)}{!busy && runs.length === 0 && <p>No configured runs yet.</p>}</div>}
     {session && <><p>{session.source === 'fixture' ? 'Deterministic fixture. No model calls.' : 'Live results'}</p><nav aria-label="Grading tasks">{session.categories.map((category) => <section key={category.handle}><h2>{category.title}</h2>{category.tasks.map((item) => <a key={item.handle} aria-current={item.handle === task?.handle ? 'page' : undefined} href={`?view=grading&grading=${session.id}&task=${item.handle}`}>{item.title} · {item.progress.graded} graded · {item.progress.skipped} skipped · {item.progress.ungraded} ungraded · {item.progress.unavailable} unavailable</a>)}</section>)}</nav></>}
     {session && task && <section aria-label="Task grading"><h2>{task.title}</h2><p className="grading-prompt">{task.prompt}</p><div className="grading-cards">{task.cards.map((card, index) => <article className="card" key={card.handle} aria-label={`Result ${index + 1}`}><h3>Result {index + 1}</h3>{card.kind === 'completed' ? <><GradingResult session={session.id} result={card.result}/>{card.judgments.map((judgment) => {
