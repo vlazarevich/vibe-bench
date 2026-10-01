@@ -88,3 +88,10 @@ test('required outputs reject absence, escaping symlinks, invalid raster data an
   await writeFile(join(workspace,'index.html'),'<h1>Actual</h1>');
   await expect(collectResults({...args,task:{...task,kind:'browser-scenario'},io:{inputs:[],outputs:[],browser:{kind:'local',entry:'index.html',instructions:'check text'}},text:JSON.stringify({steps:[{kind:'expect-text',selector:'h1',text:'Wrong'}]})})).rejects.toThrow('assertion');
 });
+test('HTML bundle includes referenced local assets and refuses broken references',async () => {
+  const directory=await root(); await writeFile(join(directory,'index.html'),'<html><link href="style.css"><script src="app.js"></script></html>'); await writeFile(join(directory,'style.css'),'body { color: red; }'); await writeFile(join(directory,'app.js'),'document.title = "ready";');
+  const task=TaskDefinition.parse({id:randomUUID(),title:'HTML',kind:'html-interactive',prompt:'page',criterionIds:[]}); const io=TaskIO.parse({inputs:[],outputs:[{path:'index.html',kind:'html'}],browser:null});
+  const options={task,io,workspace:directory,directory,materials:{kind:'none'} as const,text:'done',timeoutMs:5000};
+  const result=await collectResults(options); expect(result.artifacts.map((item) => item.name).sort()).toEqual(['app.js','index.html','style.css']);
+  await rm(join(directory,'app.js')); await expect(collectResults(options)).rejects.toThrow();
+});

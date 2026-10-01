@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
-import { extname, join } from 'node:path';
+import { extname, join, posix } from 'node:path';
 import { z } from 'zod';
 import { chromium } from '@playwright/test';
 import { ArtifactMetadata, type ResultDescriptor } from '../../../packages/contracts/src/configured-runs.ts';
@@ -57,6 +57,22 @@ export async function collectResults({ task, io, workspace, directory, materials
       const entryArtifact = await file(entry.path,'html','text/html');
       const html = Buffer.from(entryArtifact.base64,'base64').toString('utf8'); if (!/<(?:!doctype|html|body|main|div|h1)\b/i.test(html)) throw new Error('HTML entry is not HTML');
       for (const output of await declaredArtifacts(io,workspace)) if (output.name !== entry.path) artifacts.push(output);
+      for (let index = 0; index < artifacts.length; index++) {
+        const document = artifacts[index];
+        if (!document || !['text/html','text/css'].includes(document.mediaType)) continue;
+        const body = Buffer.from(document.base64,'base64').toString('utf8');
+        const references = [...body.matchAll(/(?:src|href)=["']([^"']+)["']|url\(["']?([^"')]+)["']?\)/gi)].map((match) => match[1] ?? match[2] ?? '');
+        for (const reference of references) {
+          if (!reference || reference.startsWith('#') || /^(?:[a-z]+:|\/\/)/i.test(reference)) continue;
+          const path = posix.normalize(posix.join(posix.dirname(document.name),reference.split(/[?#]/)[0] ?? ''));
+          if (artifacts.some((item) => item.name === path)) continue;
+          if (artifacts.length >= 30) throw new Error('HTML asset count exceeds limit');
+          const bytes = await safeFile(workspace,path);
+          const extension = extname(path).toLowerCase();
+          const mediaType = ['.png','.jpg','.jpeg','.webp'].includes(extension) ? await imageType(bytes) : extension === '.css' ? 'text/css' : extension === '.js' ? 'text/javascript' : extension === '.html' ? 'text/html' : 'application/octet-stream';
+          artifacts.push(artifact(path,mediaType.startsWith('image/') ? 'image' : 'html',mediaType,bytes));
+        }
+      }
       result = {kind:'html',entryArtifactId:entryArtifact.id,assetArtifactIds:artifacts.filter((item) => item.id !== entryArtifact.id).map((item) => item.id)}; break;
     }
     case 'coding-bugfix': case 'coding-feature': {
