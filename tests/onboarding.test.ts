@@ -1,5 +1,8 @@
 import Fastify from 'fastify';
 import { registerRuntime } from '../apps/server/src/features/runtimes.ts';
+import { enrollRuntime, runtimeAuthorization } from './runtime-auth.ts';
+import { RuntimeConfiguration } from '../packages/contracts/src/access.ts';
+import { runtimeRoot } from '../apps/runner/src/configuration.ts';
 import { durableWrite } from '../apps/runner/src/spool.ts';
 import { afterAll, beforeAll, expect, test } from 'vitest';
 import { mkdtemp, mkdir, writeFile, readFile, readdir } from 'node:fs/promises';
@@ -25,7 +28,8 @@ let url: string;
 let workerUrl: string;
 let fixturePath: string;
 const originalPath = process.env.PATH;
-const runtimeId = RuntimeId.parse(randomUUID());
+let runtimeId = RuntimeId.parse(randomUUID());
+let configuration: RuntimeConfiguration;
 const secret = 'NEVER-STORE-CREDENTIAL';
 beforeAll(async () => {
   await mkdir('.artifacts', { recursive: true }); root = await mkdtemp(resolve('.artifacts/onboarding-'));
@@ -40,6 +44,7 @@ beforeAll(async () => {
   database = await startDatabase(join(root, 'postgres')); pool = await connectDatabase(database.url);
   app = await createApp({ pool, token: 'secret' }); url = await app.listen({ host: '127.0.0.1', port: 0 });
   worker = createWorkerApp({ pool }); workerUrl = await worker.listen({ host: '127.0.0.1', port: 0 });
+  configuration = await enrollRuntime(url); runtimeId = configuration.runtimeId;
 });
 afterAll(async () => { process.env.PATH = originalPath; await worker?.close(); await app?.close(); await pool?.end(); await database?.stop(); });
 async function discover(observation = 1) {
@@ -48,7 +53,7 @@ async function discover(observation = 1) {
   finally { process.env.PATH = originalPath; }
 }
 async function post(registration: unknown, headers = {}, endpoint = workerUrl) {
-  return fetch(endpoint + '/api/worker/registrations', { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(registration) });
+  return fetch(endpoint + '/api/worker/registrations', { method: 'POST', headers: { 'Content-Type': 'application/json', authorization: runtimeAuthorization(configuration), ...headers }, body: JSON.stringify(registration) });
 }
 
 test('fixture subprocess discovery reports installation and auth independently without secrets or model allowlists', async () => {
@@ -91,12 +96,13 @@ test('explicit unauthenticated statuses differ from failed status probes', async
 });
 
 test('worker HTTP validates protocol, shape, JSON, content type and size before persistence', async () => {
-  const registration = { ...await discover(), runtimeId: RuntimeId.parse(randomUUID()) };
+  configuration = await enrollRuntime(url); runtimeId = configuration.runtimeId;
+  const registration = await discover();
   const count = Number((await pool.query('SELECT count(*) FROM runtime_observations')).rows[0].count);
   expect((await post({ ...registration, protocol: 2 })).status).toBe(400);
   expect((await post({ ...registration, secret })).status).toBe(400);
   for (const [body, contentType, status] of [['{', 'application/json', 400], ['{}', 'application/octet-stream', 415], ['x'.repeat(32_001), 'application/json', 413]] satisfies [string, string, number][]) {
-    const response = await fetch(workerUrl + '/api/worker/registrations', { method: 'POST', headers: { 'Content-Type': contentType }, body });
+    const response = await fetch(workerUrl + '/api/worker/registrations', { method: 'POST', headers: { 'Content-Type': contentType, authorization: runtimeAuthorization(configuration) }, body });
     expect(response.status).toBe(status);
   }
   expect(Number((await pool.query('SELECT count(*) FROM runtime_observations')).rows[0].count)).toBe(count);
@@ -131,13 +137,14 @@ test('real HTTP persistence serializes duplicates, rejects conflicts, preserves 
 
 function hostPost(endpoint: string, registration: RuntimeRegistration) {
   return new Promise<number | undefined>((resolve, reject) => {
-    const req = request(endpoint + '/api/worker/registrations', { method: 'POST', headers: { Host: 'public.example:443', 'Content-Type': 'application/json' } }, (response) => { response.resume(); response.on('end', () => resolve(response.statusCode)); });
+    const req = request(endpoint + '/api/worker/registrations', { method: 'POST', headers: { Host: 'public.example:443', 'Content-Type': 'application/json', authorization: runtimeAuthorization(configuration) } }, (response) => { response.resume(); response.on('end', () => resolve(response.statusCode)); });
     req.on('error', reject); req.end(JSON.stringify(registration));
   });
 }
 
 test('worker listener admits outbound workers and rejects browser authority, while local Host policies remain', async () => {
-  const registration = { ...await discover(), runtimeId: RuntimeId.parse(randomUUID()) };
+  configuration = await enrollRuntime(url); runtimeId = configuration.runtimeId;
+  const registration = await discover();
   expect(await hostPost(workerUrl, registration)).toBe(200);
   expect((await post(registration, { Origin: 'https://public.example' })).status).toBe(403);
   expect((await post(registration, { 'Sec-Fetch-Site': 'same-origin' })).status).toBe(403);
@@ -150,26 +157,34 @@ test('worker listener admits outbound workers and rejects browser authority, whi
 
 test('real CLI is outbound-only with stable identity, durable retry and exclusive state ownership', async () => {
   const stateRoot = join(root, 'cli');
-  const cli = () => promisify(execFile)(process.execPath, ['--import', 'tsx', 'apps/runner/src/onboard-main.ts'], { cwd: resolve('.'), env: { ...process.env, PATH: fixturePath, VIBE_API_URL: workerUrl, VIBE_RUNTIME_STATE: stateRoot, VIBE_RUNTIME_SLOTS: '2' } });
-  await cli(); const identity = JSON.parse(await readFile(join(stateRoot, 'identity.json'), 'utf8'));
-  expect(await readdir(stateRoot)).toEqual(expect.arrayContaining(['identity.json', 'receipt.json']));
-  expect(await readdir(stateRoot)).not.toContain('instance.json');
-  await cli(); expect(JSON.parse(await readFile(join(stateRoot, 'identity.json'), 'utf8'))).toEqual({ ...identity, observation: 2 });
-  const release = await acquireLocalLock(stateRoot);
-  try { await expect(onboard({ apiUrl: workerUrl, stateRoot, slots: 2 })).rejects.toThrow('already running'); } finally { await release(); }
-  await expect(onboard({ apiUrl: 'http://127.0.0.1:1', stateRoot, slots: 2 })).rejects.toThrow();
-  const pending = JSON.parse(await readFile(join(stateRoot, 'pending.json'), 'utf8'));
+  const cliConfiguration = {...await enrollRuntime(url),apiUrl:workerUrl};
+  await durableWrite(join(stateRoot,'config.json'),cliConfiguration);
+  const observationRoot = runtimeRoot(stateRoot,cliConfiguration);
+  const cli = () => promisify(execFile)(process.execPath, ['--import', 'tsx', 'apps/runner/src/onboard-main.ts'], { cwd: resolve('.'), env: { ...process.env, PATH: fixturePath, VIBE_RUNTIME_STATE: stateRoot, VIBE_RUNTIME_SLOTS: '2' } });
+  await cli(); const identity = JSON.parse(await readFile(join(observationRoot, 'identity.json'), 'utf8'));
+  expect(await readdir(observationRoot)).toEqual(expect.arrayContaining(['identity.json', 'receipt.json']));
+  expect(await readdir(observationRoot)).not.toContain('instance.json');
+  await cli(); expect(JSON.parse(await readFile(join(observationRoot, 'identity.json'), 'utf8'))).toEqual({ ...identity, observation: 2 });
+  const release = await acquireLocalLock(observationRoot);
+  try { await expect(onboard({ stateRoot, slots: 2 })).rejects.toThrow('already running'); } finally { await release(); }
+  await durableWrite(join(stateRoot,'config.json'),{...cliConfiguration,apiUrl:'http://127.0.0.1:1'});
+  await expect(onboard({ stateRoot, slots: 2 })).rejects.toThrow();
+  const pending = JSON.parse(await readFile(join(observationRoot, 'pending.json'), 'utf8'));
+  await durableWrite(join(stateRoot,'config.json'),cliConfiguration);
   await cli();
-  expect(JSON.parse(await readFile(join(stateRoot, 'receipt.json'), 'utf8')).observation).toBe(pending.observation);
-  expect(await readdir(stateRoot)).not.toContain('pending.json');
-  expect((await readFile(join(stateRoot, 'receipt.json'), 'utf8'))).not.toContain(secret);
+  expect(JSON.parse(await readFile(join(observationRoot, 'receipt.json'), 'utf8')).observation).toBe(pending.observation);
+  expect(await readdir(observationRoot)).not.toContain('pending.json');
+  expect((await readFile(join(observationRoot, 'receipt.json'), 'utf8'))).not.toContain(secret);
+
 }, 60_000);
 
 test('a response lost after commit retains the exact observation and retrieves its original receipt', async () => {
-  const registration = { ...await discover(), runtimeId: RuntimeId.parse(randomUUID()) };
+  configuration = await enrollRuntime(url); runtimeId = configuration.runtimeId;
+  const registration = await discover();
   const stateRoot = join(root, 'lost-response');
-  await durableWrite(join(stateRoot, 'identity.json'), { runtimeId: registration.runtimeId, observation: registration.observation });
-  await durableWrite(join(stateRoot, 'pending.json'), registration);
+  const observationRoot = runtimeRoot(stateRoot,configuration);
+  await durableWrite(join(observationRoot, 'identity.json'), { runtimeId: registration.runtimeId, observation: registration.observation });
+  await durableWrite(join(observationRoot, 'pending.json'), registration);
   const proxy = Fastify(); let drop = true;
   proxy.post('/api/worker/registrations', async (request, reply) => {
     const receipt = await registerRuntime(pool, RuntimeRegistration.parse(request.body));
@@ -178,11 +193,12 @@ test('a response lost after commit retains the exact observation and retrieves i
   });
   const proxyUrl = await proxy.listen({ host: '127.0.0.1', port: 0 });
   try {
-    await expect(onboard({ apiUrl: proxyUrl, stateRoot, slots: 2 })).rejects.toThrow();
-    expect(JSON.parse(await readFile(join(stateRoot, 'pending.json'), 'utf8'))).toEqual(registration);
+    await durableWrite(join(stateRoot,'config.json'),{...configuration,apiUrl:proxyUrl});
+    await expect(onboard({ stateRoot, slots: 2 })).rejects.toThrow();
+    expect(JSON.parse(await readFile(join(observationRoot, 'pending.json'), 'utf8'))).toEqual(registration);
     const originalReceipt = await registerRuntime(pool, registration);
-    expect(await onboard({ apiUrl: proxyUrl, stateRoot, slots: 2 })).toEqual(originalReceipt);
-    expect(await readdir(stateRoot)).not.toContain('pending.json');
+    expect(await onboard({ stateRoot, slots: 2 })).toEqual(originalReceipt);
+    expect(await readdir(observationRoot)).not.toContain('pending.json');
   } finally { await proxy.close(); }
 });
 

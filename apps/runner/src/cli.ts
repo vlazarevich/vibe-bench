@@ -2,11 +2,11 @@ import { access } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { z } from 'zod';
-import { configureRuntime, readConfiguration, runtimeRoot } from './configuration.ts';
+import { configureRuntime, readConfiguration, runtimeRoot, reconnectDelay } from './configuration.ts';
 import { onboard } from './onboarding.ts';
 import { runWorkerOnce } from './execution.ts';
 
-export function reconnectDelay(failures: number) { return Math.min(60_000, 1_000 * 2 ** Math.min(6, Math.max(0, failures - 1))); }
+export { reconnectDelay } from './configuration.ts';
 export async function main(args: string[]) {
   if (args.length === 1 && args[0] === '--version') { process.stdout.write(`${process.env.VIBE_RUNTIME_VERSION ?? 'development'}\n`); return; }
   if (!args.length || args.length === 1 && args[0] === '--help') { process.stdout.write('vibe-runtime config <base64url-enrollment>\nvibe-runtime config\nvibe-runtime onboard\nvibe-runtime work [--once]\nvibe-runtime --version\n'); return; }

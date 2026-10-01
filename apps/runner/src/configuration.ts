@@ -36,7 +36,7 @@ export async function configureRuntime(stateRoot: string, encoded?: string) {
       const command = EnrollmentCommand.parse(JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8')));
       try { pending = PendingEnrollment.parse(JSON.parse(await readFile(pendingPath, 'utf8'))); }
       catch (error) { if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error; pending = { command, exchange: EnrollmentExchange.parse({ requestId: randomUUID(), key: command.key, credentialId: randomUUID(), secret: randomBytes(32).toString('hex') }) }; }
-      if (JSON.stringify(pending.command) !== JSON.stringify(command)) throw new Error('A different enrollment is pending. Retry config without an argument to recover it.');
+      if (JSON.stringify(pending.command) !== JSON.stringify(command)) pending = { command, exchange: EnrollmentExchange.parse({ requestId: randomUUID(), key: command.key, credentialId: randomUUID(), secret: randomBytes(32).toString('hex') }) };
     } else pending = PendingEnrollment.parse(JSON.parse(await readFile(pendingPath, 'utf8')));
     await durableWrite(pendingPath, pending);
     const receipt = EnrollmentReceipt.parse(await post(pending.command.apiUrl, '/api/worker/enrollments', pending.exchange));
@@ -48,3 +48,5 @@ export async function configureRuntime(stateRoot: string, encoded?: string) {
     return configuration;
   } finally { await release(); }
 }
+
+export function reconnectDelay(failures: number) { return Math.min(60_000, 1_000 * 2 ** Math.min(6, Math.max(0, failures - 1))); }

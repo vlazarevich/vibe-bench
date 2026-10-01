@@ -8,17 +8,17 @@ import { ClaimRequest, ClaimReceipt, RunAssignment, PreparationReport, AttemptRe
 import { contentDigest } from '../../../packages/contracts/src/canonical.ts';
 import { acquireLocalLock } from '../../../scripts/local-lock.ts';
 import { durableDirectory, durableWrite } from './spool.ts';
-import { prepareMaterials, createWorkspace, safeFile } from './materials.ts';
+import { prepareMaterials, PreparedMaterials, createWorkspace, safeFile } from './materials.ts';
 import { executeAdapter, checkExecutable, Unavailable, type Executables } from './adapters.ts';
 import { collectResults, diagnostics, metadata, declaredArtifacts, imageType } from './artifacts.ts';
-import { runtimeRoot, workerPost } from './configuration.ts';
+import { runtimeRoot, workerPost, reconnectDelay } from './configuration.ts';
 import { RuntimeConfiguration } from '../../../packages/contracts/src/access.ts';
 import { Interrupted } from './processes/run.ts';
 
 type WorkerOptions = { configuration: RuntimeConfiguration; stateRoot: string; executables: Executables };
 async function exists(path: string) { try { await access(path); return true; } catch { return false; } }
 async function readAssignment(path: string) { return RunAssignment.parse(JSON.parse(await readFile(path, 'utf8'))); }
-async function uploadAssignment(options: WorkerOptions, assignment: RunAssignment, root: string) {
+async function uploadAssignment(options: WorkerOptions, assignment: RunAssignment, root: string, accepted: () => void = () => {}) {
   const directory = join(root, assignment.runId);
   const reports: { kind: 'preparation' | 'attempt'; path: string; terminalPath?: string }[] = [{kind:'preparation',path:join(directory,'preparation.json')}];
   for (const slot of assignment.attempts) reports.push({kind:'attempt',path:join(directory,slot.attemptId,'started.json'),terminalPath:join(directory,slot.attemptId,'terminal.json')},{kind:'attempt',path:join(directory,slot.attemptId,'terminal.json')});
@@ -38,6 +38,7 @@ async function uploadAssignment(options: WorkerOptions, assignment: RunAssignmen
     const receipt = WorkReceipt.parse(await workerPost(options.configuration,report.kind === 'preparation' ? '/api/worker/preparations' : '/api/worker/attempts',body));
     if (receipt.reportId !== body.reportId || receipt.runId !== body.runId) throw new Error('Worker receipt identity mismatch');
     await durableWrite(receiptPath,receipt,'create');
+    accepted();
   }
 }
 export async function runWorkerOnce(options: WorkerOptions) {
@@ -61,12 +62,21 @@ export async function runWorkerOnce(options: WorkerOptions) {
       await durableWrite(join(root,assignment.runId,'assignment.json'),assignment,'create');
     }
     let uploading: Promise<void> | null = null;
-    const upload = () => { if (!uploading) uploading = uploadAssignment(options, assignment, root).catch(() => {}).finally(() => { uploading = null; }); };
+    let failures = 0; let retryAt = 0; let uploadError: unknown;
+    const accepted = () => { failures = 0; retryAt = 0; uploadError = undefined; };
+    const upload = () => {
+      if (uploading || Date.now() < retryAt) return;
+      uploading = uploadAssignment(options, assignment, root, accepted).catch((error: unknown) => {
+        uploadError = error; failures++; retryAt = Date.now() + reconnectDelay(failures);
+        process.stderr.write(`Saved result delivery unavailable. Retrying in ${reconnectDelay(failures) / 1000}s.\n`);
+      }).finally(() => { uploading = null; });
+    };
     const timer = setInterval(upload, 250);
     upload();
     try { await executeAssignment(options, assignment, root); }
     finally { clearInterval(timer); await uploading; }
-    await uploadAssignment(options, assignment, root);
+    if (uploadError !== undefined && Date.now() < retryAt) throw uploadError;
+    await uploadAssignment(options, assignment, root, accepted);
     await durableWrite(claimPath,{protocol:1,requestId:randomUUID(),runtimeId:options.configuration.runtimeId});
     await rm(currentPath);
     return {kind:'finished',runId:assignment.runId} as const;
@@ -77,7 +87,8 @@ async function executeAssignment(options: WorkerOptions, assignment: RunAssignme
   if (digest !== contentDigest(snapshot) || snapshot.content.digest !== contentDigest({schemaVersion:snapshot.content.schemaVersion,definition:snapshot.content.definition}) || snapshot.runtimeId !== options.configuration.runtimeId) throw new Error('Assignment snapshot integrity failed');
   const directory = join(root,assignment.runId); await durableDirectory(directory);
   const identity = {protocol:1,runtimeId:options.configuration.runtimeId,assignmentId:assignment.assignmentId,runId:assignment.runId} as const;
-  let materials;
+  if ((await Promise.all(assignment.attempts.map(slot => exists(join(directory,slot.attemptId,'terminal.json'))))).every(Boolean)) return;
+  let materials: PreparedMaterials | undefined;
   const preparationPath = join(directory,'preparation.json');
   let preparation: PreparationReport;
   if (await exists(preparationPath)) preparation = PreparationReport.parse(JSON.parse(await readFile(preparationPath,'utf8')));
@@ -86,7 +97,10 @@ async function executeAssignment(options: WorkerOptions, assignment: RunAssignme
     catch (error) { if (error instanceof Interrupted) throw error; preparation = PreparationReport.parse({...identity,reportId:randomUUID(),preparation:{kind:'failed',reason:'Repository preparation failed. See local Git diagnostics.'}}); }
     await durableWrite(preparationPath,preparation,'create');
   }
-  if (preparation.preparation.kind !== 'failed' && !materials) materials = await prepareMaterials(snapshot.content.definition.materials,join(directory,'materials'));
+  if (preparation.preparation.kind !== 'failed' && !materials) {
+    materials = PreparedMaterials.parse(JSON.parse(await readFile(join(directory,'materials','prepared.json'),'utf8')));
+    if (materials.kind !== preparation.preparation.kind || materials.kind === 'repository' && preparation.preparation.kind === 'repository' && (materials.commit !== preparation.preparation.commit || materials.manifestDigest !== preparation.preparation.manifestDigest || contentDigest(materials.manifest) !== materials.manifestDigest)) throw new Error('Saved materials do not match immutable preparation');
+  }
   for (const slot of assignment.attempts) {
     const attemptDirectory = join(directory,slot.attemptId); await durableDirectory(attemptDirectory);
     const terminalPath = join(attemptDirectory,'terminal.json');
@@ -102,7 +116,7 @@ async function executeAssignment(options: WorkerOptions, assignment: RunAssignme
     try {
       if (await exists(startedPath)) throw new Error('Attempt was started before interruption. Execution is uncertain and was not relaunched.');
       if (!materials) throw new Error('Repository preparation failed');
-      const executable = snapshot.source === 'fixture' ? process.execPath : await checkExecutable(options.executables[entrant.harness]);
+      const executable = snapshot.source === 'fixture' ? process.execPath : await checkExecutable(options.executables[entrant.harness] ?? entrant.harness);
       const defaults = TaskIO.parse({inputs:[],outputs:task.kind === 'image-generation' ? [{path:'result.png',kind:'image'}] : ['html-static','html-interactive'].includes(task.kind) ? [{path:'index.html',kind:'html'}] : [],browser:null});
       const io = materials.kind === 'repository' ? materials.manifest.tasks[task.id] ?? defaults : defaults;
       if (entrant.harness === 'opencode' && snapshot.source === 'live' && !entrant.model.startsWith('opencode-go/')) throw new Unavailable('OpenCode Go requires an opencode-go provider model');
