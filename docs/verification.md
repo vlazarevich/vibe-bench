@@ -1,6 +1,6 @@
 # Verify implemented behavior
 
-Run `pnpm install --frozen-lockfile`, then `pnpm exec playwright install chromium`, then `pnpm check`. The checks require Node 24 and pnpm 11.22.0. PostgreSQL 18 starts from the pinned embedded binary package. No model credentials or Docker daemon are required.
+Run `pnpm install --frozen-lockfile`, then `pnpm exec playwright install chromium`, then `pnpm check`, `pnpm build:runtime`, and `pnpm test:binary`. The complete checks require Node 24.21.0 and pnpm 11.22.0. PostgreSQL 18 starts from the pinned embedded binary package. No model credentials or Docker daemon are required.
 
 The application, database, and execution runtime require Linux verification.
 
@@ -19,6 +19,8 @@ The worker verifies a real SQL connection on its newly allocated port before ann
 | `pnpm test` | Real PostgreSQL, real HTTP, fixture CLI subprocesses and process-tree behavior |
 | `pnpm build` | Production Vite assets |
 | `pnpm test:browser` | Real Chromium comparison, blind responses, reload, cookie authority, final choice and reveal |
+| `pnpm build:runtime` | Standalone Linux x64 executable and checksummed release archive |
+| `pnpm test:binary` | Installed CLI, installer failures, and the configured-run matrix through the compiled executable |
 
 `tests/loop.test.ts` starts PostgreSQL from an empty directory, migrates it, invokes fixture subprocesses, and uploads through HTTP. It verifies concurrent duplicate ingestion, conflicting replay, immutable accepted input, spool redelivery, anonymous browser responses, session access, stable mapping, concurrent opposing votes, final-choice replay, failure exclusion, and state after database restart.
 
@@ -32,7 +34,7 @@ CI requires `verify (self-hosted Linux)` from `.github/workflows/checks.yml`. Th
 
 `tests/configured-runs.test.ts` verifies immutable configuration, subset matrices, concurrent claims, replay conflicts, artifact publication, and restart persistence through HTTP and PostgreSQL. `tests/configured-runtime.test.ts` verifies the three adapter formats, exact model and settings arguments, malformed and failed harness output, pinned Git materials, separate workspaces, output collection, interrupted work, and real Chromium recordings.
 
-`tests/configured-loop.test.ts` runs all ten task kinds across all three fixture harnesses through the worker API and PostgreSQL. It checks 30 completed attempts, intentional failures and skips, downloaded artifact hashes, pinned suite inputs, and state after database restart. `tests/browser/configured-runs.spec.ts` drives selection, preview, durable creation, lost-response retry, historical inputs, outcomes, and inert downloads.
+`tests/configured-loop.test.ts` runs all ten task kinds across all three fixture harnesses through the worker API and PostgreSQL. Each password mode runs against both the main and dedicated worker listeners. Each case checks 30 completed attempts, intentional failures and skips, downloaded artifact hashes, pinned suite inputs, and state after database restart. `pnpm test:binary` repeats these cases through the compiled CLI. `tests/browser/configured-runs.spec.ts` drives selection, preview, durable creation, lost-response retry, historical inputs, outcomes, and inert downloads.
 
 For live configured execution, create a run in **Runs**, register the runtime, and run `pnpm runtime:work --once`. Record requested models, executable versions, outcomes, and downloaded artifacts. Verify a browser scenario with a real recording and an observable action. Fixture success does not establish model or subscription access. Unavailable combinations must have explicit skipped or failed outcomes, not fabricated results.
 
