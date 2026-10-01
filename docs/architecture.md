@@ -67,3 +67,9 @@ The existing text runner remains separate. Runtime onboarding initiates all netw
 `packages/contracts/src/configured-runs.ts` owns the management snapshot and result descriptors. `task-io.ts` owns pinned repository declarations and browser plans. `work.ts` owns the outbound claim and report protocol. `apps/server/src/features/configured-runs.ts` owns matrix creation, claims, immutable preparation, attempt outcomes, artifact bytes, and durable receipts. These records use separate tables from the original pairwise evaluator.
 
 `apps/runner/src/execution.ts` owns the durable worker loop. Materials, adapters, artifact collection, and browser recording stay in runner-owned modules. One runtime claims a whole run and executes attempts in order. Every attempt has an independent checkout. The server derives run progress from immutable per-attempt records. The [configured-run contract](contracts/configured-runs.md) defines the supported lifecycle and artifact shapes.
+
+## Result viewing
+
+`packages/contracts/src/artifact-viewer.ts` owns strict supplied-URL result presentations and bounded preview inputs. `apps/server/src/features/artifact-viewer.ts` projects primary and declared result files, validates text bytes, and serializes isolated media decoding. Storage reads remain in `configured-runs.ts`. `artifact-viewer-routes.ts` owns management route validation.
+
+`html-preview.ts` owns two bounded interactive sessions and exact manifest asset serving. `isolated-chromium.ts` owns Bubblewrap runtime mounts, network isolation, process deadlines, and teardown. `apps/web/src/result-viewer.tsx` renders the same presentation for any authorized caller. Run management loads a result only when its viewer is expanded. Grading and blind session authority belong to their existing owners.

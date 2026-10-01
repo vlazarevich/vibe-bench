@@ -194,3 +194,15 @@ export async function readArtifact(pool: pg.Pool, runId: string, artifactId: str
   if (!result.rowCount) throw new NotFound();
   return z.instanceof(Buffer).parse(result.rows[0].bytes);
 }
+
+export async function readAttemptResult(pool: pg.Pool, runId: string, attemptId: string) {
+  const run = await readConfiguredRun(pool, ConfiguredRunId.parse(runId));
+  const attempt = run.attempts.find((item) => item.attemptId === attemptId);
+  if (!attempt || attempt.state.kind !== 'terminal' || attempt.state.outcome.kind !== 'completed') throw new NotFound();
+  const rows = await pool.query('SELECT metadata, bytes FROM configured_artifacts WHERE attempt_id = $1', [attemptId]);
+  return {
+    outcome: attempt.state.outcome,
+    outputs: run.preparation?.kind === 'repository' ? run.preparation.manifest.tasks[attempt.taskId]?.outputs ?? [] : [],
+    artifacts: rows.rows.map((row) => ({ metadata: ArtifactMetadata.parse(row.metadata), bytes: z.instanceof(Buffer).parse(row.bytes) })),
+  };
+}

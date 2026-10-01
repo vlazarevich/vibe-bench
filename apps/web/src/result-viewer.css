@@ -1,0 +1,15 @@
+.result-viewer { margin: 1rem 0; min-width: 0; }
+.result-text { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 32rem; overflow: auto; padding: 1rem; background: #f5f6f8; color: #17202b; border: 1px solid #d7dde5; border-radius: .4rem; }
+.result-image, .result-video { display: block; max-width: 100%; max-height: 36rem; object-fit: contain; margin: .75rem 0; }
+.result-file { margin: 1rem 0; }
+.result-code { display: grid; grid-template-columns: minmax(10rem, 1fr) minmax(0, 3fr); gap: 1rem; }
+.result-code nav { overflow-wrap: anywhere; }
+.result-code nav ul { padding-left: 1rem; list-style: none; }
+.result-code nav button { text-align: left; margin: .2rem 0; }
+.result-code nav button[aria-pressed=true] { outline: 2px solid #5270a0; }
+.diff-added { display: block; background: #d9f4df; }
+.diff-removed { display: block; background: #fbe0df; }
+.html-preview-frame { display: block; width: 100%; max-width: 960px; border: 1px solid #bec8d4; margin: 1rem 0; }
+.html-preview-frame:focus { outline: 3px solid #5270a0; }
+.preview-controls { display: flex; flex-wrap: wrap; align-items: end; gap: .5rem; }
+@media (max-width: 640px) { .result-code { grid-template-columns: 1fr; } }

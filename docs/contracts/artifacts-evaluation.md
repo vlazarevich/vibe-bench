@@ -1,6 +1,6 @@
 # Artifacts and evaluation boundaries
 
-Status: design guidance. Result schemas and behavior tests become authoritative when implemented.
+Status: configured result viewing is implemented by `artifact-viewer.ts` and its HTTP and browser tests. Session judgment sections remain design guidance.
 
 ## Collection and publication
 
@@ -18,7 +18,9 @@ Escape text and code, and sanitize rendered Markdown. Validate download media ty
 
 An HTML bundle declares its entry page and local assets. A bundle is not authorization to start an application server.
 
-Run active HTML on a separate origin inside a restricted iframe. Keep application credentials, session authority, parent state, top navigation, and unsolicited external requests inaccessible. Enforce restrictions with browser sandboxing, CSP, and response headers, then verify them in a real browser.
+Run active HTML in server-owned Chromium inside Bubblewrap user, PID, mount, and network namespaces. Mount only browser/runtime libraries and fonts read-only, with private temporary storage, `/proc`, and minimal devices. Pass a fixed environment without application secrets. Never mount the workspace or user home. Missing isolation fails closed.
+
+The dashboard receives PNG frames and sends validated click, text, key, scroll, or refresh actions. It receives no executable submitted HTML. The browser uses a synthetic origin and can load only exact manifest assets through intercepted requests. CSP and request/WebSocket interception reinforce the network namespace. Host loopback, dashboard cookies, parent state, and host files are inaccessible. Each action has a deadline and backpressure. Preview capacity is reserved before launch, limited to two sessions, and released on failure, idle expiry, explicit close, or shutdown. A two-minute browser lifetime bounds a busy script.
 
 Treat SVG and other active media according to the same isolation boundary. Never infer safe rendering solely from a file extension.
 
@@ -39,3 +41,9 @@ Validate session authority on every read and write. A card or session ID alone i
 Save the original selection and criterion snapshot with each judgment. Use optimistic concurrency for edits. Keep skipped and ungraded judgments distinct from numeric zero.
 
 Attempt inclusion, reveal timing, allowed edits, and aggregate formulas are product policy supplied by the current task. Keep those decisions out of storage adapters and execution code. Explicitly separate any demonstration-only evaluation behavior from persisted production judgments.
+
+## Configured result presentation
+
+`ResultPresentation` is a strict discriminated schema. The reusable viewer consumes supplied same-origin URLs and constructs no management identifiers. The server selects primary result references and declared outputs. It omits diagnostics and uses neutral download labels when requested by the caller. Session authorization and session-scoped URLs remain the caller's responsibility.
+
+Text uses the complete UTF-8 `answer.txt` when present, with summary fallback for older outcomes without an answer artifact. Invalid UTF-8 and binary files show an unsupported message and retain their downloads. Code displays a changed-file tree, saved final bytes, and the unified patch. Unchanged repository files and original input images are not captured. Images and WebM recordings require supported byte signatures and successful isolated browser decoding before a typed media route serves them. Media validation runs serially. HTML source and other declared HTML outputs render as escaped text.
