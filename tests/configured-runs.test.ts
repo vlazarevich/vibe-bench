@@ -37,6 +37,7 @@ function post(path: string, body: unknown, endpoint = url, headers: Record<strin
 async function setup(value = definition(), entrants = 2) {
   const runtime = RuntimeRegistration.parse({ protocol: 1, runtimeId: randomUUID(), observation: 1, observedAt: new Date().toISOString(), capacity: { slots: 10 }, machine: { platform: 'linux', architecture: 'x64', logicalCpus: 4, memoryBytes: 1_000_000 }, tools: ToolName.options.map((name) => ({ name, availability: { kind: 'unavailable', reason: 'missing' } })), harnesses: { codex: { kind: 'not-ready' }, claude: { kind: 'not-ready' }, opencodeGo: { kind: 'not-ready' } }, modelPolicy: 'provider-discovered-at-execution' });
   await registerRuntime(pool, runtime);
+  expect(await (await fetch(url + '/api/runtime-access')).json()).toContainEqual({ runtimeId: runtime.runtimeId, active: false });
   credentials.set(runtime.runtimeId, runtimeAuthorization(await enrollRuntime(url, runtime.runtimeId)));
   const suite = await createSuite(pool, { definition: value });
   const input = CreateConfiguredRun.parse({ requestId: randomUUID(), contentId: suite.content.contentId, runtimeId: runtime.runtimeId, selection: { kind: 'all' }, source: 'fixture', entrants: Array.from({ length: entrants }, (_, i) => ({ id: randomUUID(), harness: 'codex', model: `requested-${i}`, settings: { timeoutMs: 3000 } })) });

@@ -94,6 +94,6 @@ export async function revokeRuntime(pool: pg.Pool, runtimeId: z.infer<typeof Run
   return { ok: true };
 }
 export async function runtimeAccess(pool: pg.Pool) {
-  const result = await pool.query('SELECT runtime_id, bool_or(revoked_at IS NULL) AS active FROM runtime_credentials GROUP BY runtime_id');
+  const result = await pool.query(`SELECT identities.runtime_id, coalesce(bool_or(c.revoked_at IS NULL) FILTER (WHERE c.credential_id IS NOT NULL), false) AS active FROM (SELECT runtime_id FROM runtime_credentials UNION SELECT runtime_id FROM runtime_observations) identities LEFT JOIN runtime_credentials c USING(runtime_id) GROUP BY identities.runtime_id`);
   return RuntimeAccess.parse(result.rows.map((row) => ({ runtimeId: row.runtime_id, active: row.active })));
 }
