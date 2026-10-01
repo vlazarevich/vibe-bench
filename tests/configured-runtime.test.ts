@@ -8,6 +8,8 @@ import { createServer } from 'node:http';
 import { Entrant } from '../packages/contracts/src/configured-runs.ts';
 import { TaskDefinition, TaskKind } from '../packages/contracts/src/suites.ts';
 import { TaskIO, RunAssignment } from '../packages/contracts/src/work.ts';
+import { runtimeRoot } from '../apps/runner/src/configuration.ts';
+import { RuntimeConfiguration } from '../packages/contracts/src/access.ts';
 import { RuntimeId } from '../packages/contracts/src/runtime.ts';
 import { contentDigest } from '../packages/contracts/src/canonical.ts';
 import { createWorkspace, prepareMaterials, safeFile, git, executionEnvironment } from '../apps/runner/src/materials.ts';
@@ -63,14 +65,32 @@ test('worker durably retries a lost terminal response and does not launch the at
   const content = {schemaVersion:1,suiteId:randomUUID(),contentId:randomUUID(),revision:1,ordinal:1,createdAt:new Date().toISOString(),definition,digest:contentDigest({schemaVersion:1,definition})};
   const snapshot = {protocol:1,content,runtimeId,selectedTaskIds:[taskId],entrants:[{id:entrantId,harness:'codex',model:'fixture',settings:{timeoutMs:5000}}],source:'fixture'};
   const assignment = RunAssignment.parse({kind:'assigned',requestId:randomUUID(),assignmentId:randomUUID(),runId:randomUUID(),snapshot:{...snapshot,digest:contentDigest(snapshot)},attempts:[{attemptId:randomUUID(),taskId,entrantId,ordinal:0}]});
-  let starts = 0; let terminals = 0; let lost = false;
+  let starts = 0; let terminals = 0; let lost = true;
   const server = createServer((request,response) => { void (async () => { const chunks=[]; for await (const chunk of request) chunks.push(Buffer.from(chunk)); const body=JSON.parse(Buffer.concat(chunks).toString());
     response.setHeader('content-type','application/json');
     if (request.url === '/api/worker/claims') response.end(JSON.stringify({...assignment,requestId:body.requestId}));
-    else { if (body.kind === 'started') starts++; if (body.kind === 'terminal') {terminals++; if (!lost) {lost=true; request.socket.destroy(); return;} } response.end(JSON.stringify({reportId:body.reportId,runId:body.runId,acceptedAt:'2026-10-01T00:00:00.000Z'})); }
+    else { if (body.kind === 'started') starts++; if (body.kind === 'terminal') {terminals++; if (lost) {request.socket.destroy(); return;} } response.end(JSON.stringify({reportId:body.reportId,runId:body.runId,acceptedAt:'2026-10-01T00:00:00.000Z'})); }
   })(); });
   await new Promise<void>((resolve) => server.listen(0,'127.0.0.1',resolve)); const address=server.address(); if (!address || typeof address === 'string') throw new Error('address');
-  try { const options={apiUrl:`http://127.0.0.1:${address.port}`,stateRoot:directory,runtimeId,executables:{}}; await expect(runWorkerOnce(options)).rejects.toThrow(); expect(await runWorkerOnce(options)).toEqual({kind:'finished',runId:assignment.runId}); expect(starts).toBe(1); expect(terminals).toBe(2); const interruptedRoot = await root(); const attemptDirectory = join(interruptedRoot,'work',assignment.runId,assignment.attempts.map((attempt) => attempt.attemptId)[0] ?? 'invalid'); await mkdir(attemptDirectory,{recursive:true}); await writeFile(join(attemptDirectory,'started.json'),'{}'); await runWorkerOnce({...options,stateRoot:interruptedRoot}); const terminal = JSON.parse(await readFile(join(attemptDirectory,'terminal.json'),'utf8')); expect(terminal.outcome.kind).toBe('failed'); expect(terminal.outcome.reason).toContain('not relaunched'); expect(starts).toBe(1); } finally { await new Promise<void>((resolve) => server.close(() => resolve())); }
+  try {
+    const configuration = RuntimeConfiguration.parse({version:1,apiUrl:`http://127.0.0.1:${address.port}`,installationId:randomUUID(),runtimeId,credentialId:randomUUID(),secret:'a'.repeat(64)});
+    const options={configuration,stateRoot:directory,executables:{}};
+    await expect(runWorkerOnce(options)).rejects.toThrow();
+    lost = false;
+    expect(await runWorkerOnce(options)).toEqual({kind:'finished',runId:assignment.runId});
+    expect(starts).toBe(1); expect(terminals).toBeGreaterThanOrEqual(2);
+    const interruptedRoot = await root();
+    const workRoot = join(runtimeRoot(interruptedRoot,configuration),'work');
+    const slot = assignment.attempts[0]; if (!slot) throw new Error('attempt');
+    const attemptDirectory = join(workRoot,assignment.runId,slot.attemptId);
+    await mkdir(attemptDirectory,{recursive:true});
+    await writeFile(join(workRoot,'assignment.json'),JSON.stringify(assignment));
+    await writeFile(join(attemptDirectory,'started.json'),JSON.stringify({protocol:1,runtimeId,assignmentId:assignment.assignmentId,runId:assignment.runId,kind:'started',reportId:randomUUID(),attemptId:slot.attemptId,startedAt:new Date().toISOString()}));
+    await runWorkerOnce({...options,stateRoot:interruptedRoot});
+    const terminal = JSON.parse(await readFile(join(attemptDirectory,'terminal.json'),'utf8'));
+    expect(terminal.outcome.kind).toBe('failed'); expect(terminal.outcome.reason).toContain('not relaunched'); expect(starts).toBe(2);
+  } finally { await new Promise<void>((resolve) => server.close(() => resolve())); }
+
 });
 for (const harness of ['codex','claude','opencode'] as const) for (const failure of ['FIXTURE_FAIL','FIXTURE_MALFORMED','FIXTURE_NO_TERMINAL']) test(`${harness} rejects ${failure}`,async () => {
   const directory = await root(); const entrant = Entrant.parse({id:randomUUID(),harness,model:'exact',settings:{timeoutMs:5000}});

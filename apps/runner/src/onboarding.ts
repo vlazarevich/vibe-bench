@@ -1,13 +1,13 @@
 import { availableParallelism, totalmem, platform, arch } from 'node:os';
-import { randomUUID } from 'node:crypto';
-import { mkdtemp, readFile, rm, mkdir } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 import { z } from 'zod';
 import { RuntimeRegistration, RuntimeId, ToolName, RuntimeReceipt, type ToolAvailability, type HarnessReadiness } from '../../../packages/contracts/src/runtime.ts';
 import { runProcess, readBounded, Interrupted } from './processes/run.ts';
 import { acquireLocalLock } from '../../../scripts/local-lock.ts';
-import { durableWrite } from './spool.ts';
+import { durableDirectory, durableWrite } from './spool.ts';
+import { readConfiguration, runtimeRoot, workerPost } from './configuration.ts';
 
 const Identity = z.object({ runtimeId: RuntimeId, observation: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER) }).strict();
 const AuthJson = z.object({ loggedIn: z.boolean() });
@@ -76,11 +76,11 @@ export function onboardingUrl(value: string) {
   return new URL('/api/worker/registrations', url);
 }
 
-export async function onboard({ apiUrl, stateRoot, slots }: { apiUrl: string; stateRoot: string; slots: number }) {
+export async function onboard({ stateRoot, slots }: { stateRoot: string; slots: number }) {
   z.number().int().min(1).max(256).parse(slots);
-  const url = onboardingUrl(apiUrl);
-  const root = resolve(stateRoot);
-  await mkdir(root, { recursive: true, mode: 0o700 });
+  const configuration = await readConfiguration(stateRoot);
+  const root = runtimeRoot(stateRoot, configuration);
+  await durableDirectory(root);
   const release = await acquireLocalLock(root);
   try {
     const pendingPath = join(root, 'pending.json');
@@ -90,28 +90,15 @@ export async function onboard({ apiUrl, stateRoot, slots }: { apiUrl: string; st
       if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error;
       let identity: z.infer<typeof Identity>;
       try { identity = Identity.parse(JSON.parse(await readFile(join(root, 'identity.json'), 'utf8'))); }
-      catch (error) { if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error; identity = Identity.parse({ runtimeId: randomUUID(), observation: 0 }); }
+      catch (error) { if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error; identity = Identity.parse({ runtimeId: configuration.runtimeId, observation: 0 }); }
+      if (identity.runtimeId !== configuration.runtimeId) throw new Error('Runtime observation identity mismatch');
       identity = Identity.parse({ ...identity, observation: identity.observation + 1 });
       await durableWrite(join(root, 'identity.json'), identity);
       registration = await discoverRuntime({ ...identity, slots });
       await durableWrite(pendingPath, registration);
     }
-    const response = await fetch(url, { method: 'POST', redirect: 'error', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(registration), signal: AbortSignal.timeout(15_000) });
-    if (!response.ok) { await response.body?.cancel(); throw new Error(`Registration rejected (${response.status})`); }
-    if (!response.body) throw new Error('Missing registration receipt');
-    const reader = response.body.getReader();
-    const chunks: Uint8Array[] = [];
-    let size = 0;
-    try {
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        size += value.byteLength;
-        if (size > 32_000) { await reader.cancel(); throw new Error('Registration receipt is too large'); }
-        chunks.push(value);
-      }
-    } finally { reader.releaseLock(); }
-    const receipt = RuntimeReceipt.parse(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+    if (registration.runtimeId !== configuration.runtimeId) throw new Error('Runtime observation identity mismatch');
+    const receipt = RuntimeReceipt.parse(await workerPost(configuration, '/api/worker/registrations', registration));
     if (receipt.runtimeId !== registration.runtimeId || receipt.observation !== registration.observation || receipt.observedAt !== registration.observedAt) throw new Error('Registration receipt does not match observation');
     await durableWrite(join(root, 'receipt.json'), receipt);
     await rm(pendingPath);

@@ -1,5 +1,6 @@
-import { access, mkdir } from 'node:fs/promises';
-import { join } from 'node:path';
+import { constants } from 'node:fs';
+import { access, mkdir, stat } from 'node:fs/promises';
+import { join, delimiter, isAbsolute } from 'node:path';
 import { z } from 'zod';
 import type { Entrant } from '../../../packages/contracts/src/configured-runs.ts';
 import { executionEnvironment } from './materials.ts';
@@ -7,7 +8,14 @@ import { runProcess, readBounded } from './processes/run.ts';
 
 export type Executables = Partial<Record<Entrant['harness'], string | undefined>>;
 export class Unavailable extends Error {}
-export async function checkExecutable(executable: string | undefined) { if (!executable) throw new Unavailable('Harness executable is not configured'); try { await access(executable); } catch { throw new Unavailable('Harness executable is not installed'); } return executable; }
+export async function checkExecutable(executable: string | undefined) {
+  if (!executable) throw new Unavailable('Harness executable is not configured');
+  const candidates = executable.includes('/') ? [executable] : (process.env.PATH ?? '').split(delimiter).filter(isAbsolute).map(directory => join(directory, executable));
+  for (const candidate of candidates) {
+    try { await access(candidate, constants.X_OK); if ((await stat(candidate)).isFile()) return candidate; } catch {}
+  }
+  throw new Unavailable('Harness executable is not installed or executable');
+}
 const Event = z.object({ type: z.string(), part: z.object({ text: z.string().optional(), reason: z.string().optional() }).passthrough().optional() }).passthrough();
 export async function executeAdapter({ entrant, executable, workspace, directory, prompt, images = [], writable, prefix = [] }: { prefix?: string[]; entrant: Entrant; executable: string; workspace: string; directory: string; prompt: string; images?: string[]; writable: boolean }) {
   await mkdir(directory, { recursive: true });

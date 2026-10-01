@@ -1,4 +1,4 @@
-import { afterAll, expect, test } from 'vitest';
+import { afterEach, expect, test } from 'vitest';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
@@ -9,9 +9,11 @@ import { startDatabase } from '../scripts/local-database.ts';
 import { connectDatabase } from '../apps/server/src/db.ts';
 import { createApp } from '../apps/server/src/app.ts';
 import { createWorkerApp } from '../apps/server/src/worker-app.ts';
+import { enrollRuntime } from './runtime-auth.ts';
+import { durableWrite } from '../apps/runner/src/spool.ts';
 import { runWorkerOnce } from '../apps/runner/src/execution.ts';
 import { ConfiguredRunView, RunPreview } from '../packages/contracts/src/configured-runs.ts';
-import { RuntimeId, ToolName } from '../packages/contracts/src/runtime.ts';
+import { onboard } from '../apps/runner/src/onboarding.ts';
 import { SuiteView, TaskKind } from '../packages/contracts/src/suites.ts';
 import { RepositoryManifest, SafeRelativePath } from '../packages/contracts/src/task-io.ts';
 import { contentDigest } from '../packages/contracts/src/canonical.ts';
@@ -26,9 +28,14 @@ const repositoryServer = createServer((request, response) => { void (async () =>
   catch { response.statusCode = 404; response.end(); }
 })(); });
 let repositoryRoot = '';
-afterAll(async () => { await worker?.close(); await app?.close(); await pool?.end(); await database?.stop(); if (repositoryServer.listening) await new Promise<void>((done) => repositoryServer.close(() => done())); });
+afterEach(async () => { await worker?.close(); await app?.close(); await pool?.end(); await database?.stop(); if (repositoryServer.listening) await new Promise<void>((done) => repositoryServer.close(() => done())); });
 
-test('configured worker persists every task kind across HTTP and PostgreSQL, retains mixed outcomes and reopens pinned inputs', async () => {
+test.each([
+  { passwordMode: 'passwordless', listener: 'main' },
+  { passwordMode: 'passwordless', listener: 'dedicated' },
+  { passwordMode: 'protected', listener: 'main' },
+  { passwordMode: 'protected', listener: 'dedicated' },
+])('$passwordMode dashboard with $listener worker listener persists every task kind and reopens pinned inputs', async ({ passwordMode, listener }) => {
   await mkdir('.artifacts', { recursive: true });
   const root = await mkdtemp(resolve('.artifacts/configured-loop-'));
   repositoryRoot = join(root, 'remote'); await mkdir(repositoryRoot);
@@ -55,23 +62,36 @@ test('configured worker persists every task kind across HTTP and PostgreSQL, ret
   await new Promise<void>((done) => repositoryServer.listen(0,'127.0.0.1',done));
   const address = repositoryServer.address(); if (!address || typeof address === 'string') throw new Error('Repository server did not bind');
   database = await startDatabase(join(root,'postgres')); pool = await connectDatabase(database.url);
-  app = await createApp({pool,token:'test-only'}); worker = createWorkerApp({pool});
-  const url = await app.listen({host:'127.0.0.1',port:0}); const workerUrl = await worker.listen({host:'127.0.0.1',port:0});
-  async function post(path: string, body: unknown, endpoint=url) {
-    const response = await fetch(endpoint+path,{method:'POST',headers:{'content-type':'application/json',...(endpoint===url ? {origin:url} : {})},body:JSON.stringify(body)});
+  const password = passwordMode === 'protected' ? 'configured-matrix-password' : '';
+  app = await createApp({pool,token:'test-only',password});
+  const url = await app.listen({host:'127.0.0.1',port:0});
+  let workerUrl = url;
+  if (listener === 'dedicated') { worker = createWorkerApp({pool}); workerUrl = await worker.listen({host:'127.0.0.1',port:0}); }
+  let cookie = '';
+  if (password) {
+    const login = await fetch(url+'/api/access/login',{method:'POST',headers:{'content-type':'application/json',origin:url},body:JSON.stringify({password})});
+    expect(login.status).toBe(200); cookie = login.headers.get('set-cookie')?.split(';')[0] ?? ''; expect(cookie).not.toBe('');
+  }
+  async function post(path: string, body: unknown) {
+    const response = await fetch(url+path,{method:'POST',headers:{'content-type':'application/json',origin:url,cookie},body:JSON.stringify(body)});
     const value: unknown = await response.json(); expect(response.status, JSON.stringify(value)).toBe(200); return value;
   }
-  const runtimeId=RuntimeId.parse(randomUUID());
-  await post('/api/worker/registrations',{protocol:1,runtimeId,observation:1,observedAt:new Date().toISOString(),capacity:{slots:1},machine:{platform:'linux',architecture:'x64',logicalCpus:2,memoryBytes:1024},tools:ToolName.options.map(name=>({name,availability:{kind:'available',version:'1.0.0'}})),harnesses:{codex:{kind:'ready'},claude:{kind:'ready'},opencodeGo:{kind:'ready'}},modelPolicy:'provider-discovered-at-execution'},workerUrl);
+  const configuration={...await enrollRuntime(url,undefined,cookie),apiUrl:workerUrl}; const runtimeId=configuration.runtimeId;
+  const options={configuration,stateRoot:join(root,'runtime'),executables:{}};
+  await durableWrite(join(options.stateRoot,'config.json'),configuration);
+  const binary=process.env.VIBE_RUNTIME_BINARY;
+  const binaryEnvironment={...process.env,VIBE_RUNTIME_STATE:options.stateRoot,VIBE_RUNTIME_SLOTS:'1'};
+  if (binary) await exec(binary,['onboard'],{env:binaryEnvironment,maxBuffer:1000000});
+  else await onboard({stateRoot:options.stateRoot,slots:1});
   const definition={title:'All configured outputs',description:'Fixture integration evidence',categories:[{id:randomUUID(),title:'Tasks',tasks:[...tasks,failedTask,skippedTask]}],evaluation:{conversion:'rating-control-v1',criteria:[{id:criterion,title:'Clarity',instructions:'Prefer clear outputs.',control:'stars-5'}],rankingRules:[]},materials:{kind:'repository',url:`http://127.0.0.1:${address.port}/repo.git`,requestedRef:'main'}};
   const suite=SuiteView.parse(await post('/api/suites',{definition}));
   const config={contentId:suite.content.contentId,runtimeId,selection:{kind:'all'},source:'fixture',entrants:['codex','claude','opencode'].map(harness=>({id:randomUUID(),harness,model:'exact-fixture-model',settings:{timeoutMs:15000}}))};
   const preview=RunPreview.parse(await post('/api/configured-runs/preview',config)); expect(preview.matrix).toHaveLength(36);
   const run=ConfiguredRunView.parse(await post('/api/configured-runs',{...config,requestId:randomUUID()}));
   await post(`/api/suites/${suite.content.suiteId}`,{expectedContentId:suite.content.contentId,change:'minor',definition:{...definition,title:'Later edited title'}});
-  const options={apiUrl:workerUrl,stateRoot:join(root,'runtime'),runtimeId,executables:{}};
-  expect(await runWorkerOnce(options)).toEqual({kind:'finished',runId:run.runId});
-  const result=ConfiguredRunView.parse(await (await fetch(url+`/api/configured-runs/${run.runId}`)).json());
+  const workOnce = async () => binary ? JSON.parse((await exec(binary,['work','--once'],{env:binaryEnvironment,maxBuffer:1000000})).stdout.trim().split('\n').at(-1) ?? '{}') : runWorkerOnce(options);
+  expect(await workOnce()).toEqual({kind:'finished',runId:run.runId});
+  const result=ConfiguredRunView.parse(await (await fetch(url+`/api/configured-runs/${run.runId}`,{headers:{cookie}})).json());
   expect(result.status).toBe('finished'); expect(result.snapshot).toEqual(run.snapshot);
   expect(result.preparation).toEqual({kind:'repository',commit,manifestDigest:contentDigest(manifest),manifest});
   const states=result.attempts.map(attempt=>attempt.state);
@@ -81,14 +101,14 @@ test('configured worker persists every task kind across HTTP and PostgreSQL, ret
   for (const state of states) {
     if(state.kind!=='terminal')throw new Error('Attempt did not finish');
     for(const artifact of state.outcome.artifacts){
-      const response=await fetch(url+`/api/configured-runs/${run.runId}/artifacts/${artifact.id}`);
+      const response=await fetch(url+`/api/configured-runs/${run.runId}/artifacts/${artifact.id}`,{headers:{cookie}});
       expect(response.status).toBe(200);expect(response.headers.get('content-disposition')).toContain('attachment');
       const bytes=Buffer.from(await response.arrayBuffer());expect(bytes.length).toBe(artifact.bytes);expect(createHash('sha256').update(bytes).digest('hex')).toBe(artifact.sha256);
     }
   }
-  expect(await runWorkerOnce(options)).toEqual({kind:'idle'});
-  await worker.close();await app.close();await pool.end();await database.stop();
-  database=await startDatabase(join(root,'postgres'));pool=await connectDatabase(database.url);app=await createApp({pool,token:'test-only'});
+  expect(await workOnce()).toEqual({kind:'idle'});
+  await worker?.close(); worker=undefined; await app.close();await pool.end();await database.stop();
+  database=await startDatabase(join(root,'postgres'));pool=await connectDatabase(database.url);app=await createApp({pool,token:'test-only',password});
   const restartedUrl=await app.listen({host:'127.0.0.1',port:0});
-  expect(await (await fetch(restartedUrl+`/api/configured-runs/${run.runId}`)).json()).toEqual(result);
+  expect(await (await fetch(restartedUrl+`/api/configured-runs/${run.runId}`,{headers:{cookie}})).json()).toEqual(result);
 },60000);

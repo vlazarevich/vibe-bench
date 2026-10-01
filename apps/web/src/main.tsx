@@ -3,6 +3,8 @@ import { createRoot } from 'react-dom/client';
 import { z } from 'zod';
 import { Evaluation, Runs } from '../../../packages/contracts/src/evaluation.ts';
 import './style.css';
+import { Access } from './access.tsx';
+import { Runtimes } from './runtimes.tsx';
 import { Suites } from './suites.tsx';
 import { BlindGrading } from './blind-grading.tsx';
 import { ConfiguredRuns } from './configured-runs.tsx';
@@ -44,8 +46,8 @@ function App() {
   }
   return <main>
     <header><div className="wordmark">vibe<span>bench</span></div><span className="local">LOCAL COMPARISON</span></header>
-    <nav aria-label="Main navigation"><a href="/">Comparisons</a><a href="/?view=grading">Grading</a><a href="/?view=suites">Suites</a><a href="/?view=runs">Runs</a></nav>
-    {new URLSearchParams(location.search).get('view') === 'grading' ? <BlindGrading/> : new URLSearchParams(location.search).get('view') === 'runs' ? <ConfiguredRuns/> : new URLSearchParams(location.search).get('view') === 'suites' ? <Suites/> : evaluation ? <>
+    <nav aria-label="Main navigation"><a href="/">Comparisons</a><a href="/?view=grading">Grading</a><a href="/?view=suites">Suites</a><a href="/?view=runs">Runs</a><a href="/?view=runtimes">Runtimes</a></nav>
+    {new URLSearchParams(location.search).get('view') === 'runtimes' ? <Runtimes/> : new URLSearchParams(location.search).get('view') === 'grading' ? <BlindGrading/> : new URLSearchParams(location.search).get('view') === 'runs' ? <ConfiguredRuns/> : new URLSearchParams(location.search).get('view') === 'suites' ? <Suites/> : evaluation ? <>
       <button className="back" disabled={busy} onClick={() => { setEvaluation(null); history.replaceState(null, '', '/'); void refresh().catch((error: unknown) => setError(error instanceof Error ? error.message : 'Could not load runs')); }}>← All runs</button>
       <div className="eyebrow">{evaluation.source === 'fixture' ? 'DETERMINISTIC DEMO · NO MODEL CALLS' : 'LIVE CODEX RESULTS'}</div>
       <h1>{evaluation.kind === 'blind' ? 'Which answer is better?' : 'Your choice is saved.'}</h1>
@@ -71,4 +73,4 @@ function App() {
 }
 const root = document.getElementById('root');
 if (!root) throw new Error('Missing application root');
-createRoot(root).render(<App/>);
+createRoot(root).render(<Access><App/></Access>);

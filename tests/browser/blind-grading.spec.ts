@@ -67,7 +67,7 @@ test('navigate pinned anonymous tasks, grade all controls, skip, clear, reload, 
   const foreign = await browser.newContext(); const otherPage = await foreign.newPage();
   await otherPage.goto(sessionURL); await expect(otherPage.getByRole('alert')).toHaveText('Not found');
   expect((await foreign.request.get(new URL(source, baseURL).toString())).status()).toBe(404); await foreign.close();
-  expect(paths.every((path) => path.startsWith('/api/blind-grading'))).toBe(true);
+  expect(paths.every((path) => path === '/api/access/session' || path.startsWith('/api/blind-grading'))).toBe(true);
   const transport = bodies.join('\n');
   for (const forbidden of [canary, fixture.run.runId, fixture.input.runtimeId, fixture.suite.content.contentId, ...fixture.assignment.attempts.map((attempt) => attempt.attemptId)]) expect(transport).not.toContain(forbidden);
 });

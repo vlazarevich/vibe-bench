@@ -26,9 +26,9 @@ Reserve an assignment before launch. Repeating a claim request retrieves its ass
 
 Do not relaunch uncertain work under its old attempt ID. If automatic recovery is absent, expose the uncertainty rather than implying that recovery succeeded.
 
-When implementing lease-based recovery, the server owns expiry decisions. Claims reserve capacity transactionally. Heartbeats, report acceptance, upload staging, and publication all check the active generation and lease. Expired owners cannot publish results.
+Claims reserve capacity transactionally. An assigned runtime continues execution and local collection during dashboard disconnection or credential rejection. Delivery waits for authorization and connectivity without discarding saved results.
 
-Re-execution creates a new attempt and preserves prior diagnostics. A worker that cannot renew stops its process tree before its local lease safety deadline. Use monotonic time and renewal margins for that local deadline.
+Re-execution creates a new attempt and preserves prior diagnostics. There is no lease-expiry behavior that stops assigned work when the API is unavailable.
 
 Cancellation records intent and prevents new claims before signalling workers. Confirm a terminal cancellation only after process-tree termination is known. A disconnected worker remains cancellation-pending or receives a lost-worker outcome; do not claim a confirmed kill. Preserve completion already accepted before cancellation.
 
@@ -58,8 +58,8 @@ Check installed CLI behavior and official documentation when changing an adapter
 
 ## Implemented onboarding
 
-Protocol-1 `RuntimeRegistration` in `packages/contracts/src/runtime.ts` is supported independently of job scheduling. `POST /api/worker/registrations` accepts machine facts, declared slots, tool availability, and explicit harness readiness. `GET /api/runtimes` is local inspection only. Authentication readiness does not establish model entitlement. Models remain provider-discovered at execution.
+Protocol-1 `RuntimeRegistration` in `packages/contracts/src/runtime.ts` is supported independently of job scheduling. `POST /api/worker/registrations` accepts machine facts, declared slots, tool availability, and explicit harness readiness. `GET /api/runtimes` requires dashboard authority when the app password is enabled. Authentication readiness does not establish model entitlement. Models remain provider-discovered at execution.
 
 A stable runtime UUID and durable monotonic observation sequence identify each immutable registration. Replaying identical content returns the original server receipt; conflicting content under the same identity and sequence returns 409. Late observations retain their receipts without replacing a newer sequence in the inspection view. The runtime retains an undelivered observation and retries it before creating another. Its state directory has one kernel-enforced owner.
 
-The optional worker listener admits registration and configured-run work requests and rejects browser requests. Its remote HTTPS termination and network restriction are deployment responsibilities. Worker authentication, a capability corpus, leases, and heartbeats remain deferred. [Configured runs](configured-runs.md) define implemented claiming, preparation, execution, and result delivery. The existing bearer-authenticated text report endpoint and text runner behavior are unchanged.
+The optional worker listener admits registration and configured-run work requests and rejects browser requests. Its remote HTTPS termination and network restriction are deployment responsibilities. Individual revocable credentials authorize both listeners. A capability corpus and heartbeats remain deferred. [Configured runs](configured-runs.md) define implemented claiming, preparation, execution, and result delivery. The existing bearer-authenticated text report endpoint and text runner behavior are unchanged.
