@@ -16,7 +16,8 @@
     "run:fixture": "node --env-file-if-exists=.env --import tsx apps/runner/src/main.ts fixture",
     "run:live": "node --env-file-if-exists=.env --import tsx apps/runner/src/main.ts live",
     "report:retry": "node --env-file-if-exists=.env --import tsx apps/runner/src/main.ts retry",
-    "runtime:onboard": "node --env-file-if-exists=.env --import tsx apps/runner/src/onboard-main.ts"
+    "runtime:onboard": "node --env-file-if-exists=.env --import tsx apps/runner/src/onboard-main.ts",
+    "runtime:work": "node --env-file-if-exists=.env --import tsx apps/runner/src/worker-main.ts"
   },
   "dependencies": {
     "@fastify/cookie": "11.0.2",
