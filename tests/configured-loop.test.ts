@@ -9,9 +9,11 @@ import { startDatabase } from '../scripts/local-database.ts';
 import { connectDatabase } from '../apps/server/src/db.ts';
 import { createApp } from '../apps/server/src/app.ts';
 import { createWorkerApp } from '../apps/server/src/worker-app.ts';
+import { enrollRuntime, runtimeAuthorization } from './runtime-auth.ts';
+import { durableWrite } from '../apps/runner/src/spool.ts';
 import { runWorkerOnce } from '../apps/runner/src/execution.ts';
 import { ConfiguredRunView, RunPreview } from '../packages/contracts/src/configured-runs.ts';
-import { RuntimeId, ToolName } from '../packages/contracts/src/runtime.ts';
+import { ToolName } from '../packages/contracts/src/runtime.ts';
 import { SuiteView, TaskKind } from '../packages/contracts/src/suites.ts';
 import { RepositoryManifest, SafeRelativePath } from '../packages/contracts/src/task-io.ts';
 import { contentDigest } from '../packages/contracts/src/canonical.ts';
@@ -58,10 +60,10 @@ test('configured worker persists every task kind across HTTP and PostgreSQL, ret
   app = await createApp({pool,token:'test-only'}); worker = createWorkerApp({pool});
   const url = await app.listen({host:'127.0.0.1',port:0}); const workerUrl = await worker.listen({host:'127.0.0.1',port:0});
   async function post(path: string, body: unknown, endpoint=url) {
-    const response = await fetch(endpoint+path,{method:'POST',headers:{'content-type':'application/json',...(endpoint===url ? {origin:url} : {})},body:JSON.stringify(body)});
+    const response = await fetch(endpoint+path,{method:'POST',headers:{'content-type':'application/json',...(endpoint===url ? {origin:url} : {authorization:runtimeAuthorization(configuration)})},body:JSON.stringify(body)});
     const value: unknown = await response.json(); expect(response.status, JSON.stringify(value)).toBe(200); return value;
   }
-  const runtimeId=RuntimeId.parse(randomUUID());
+  const configuration={...await enrollRuntime(url),apiUrl:workerUrl}; const runtimeId=configuration.runtimeId;
   await post('/api/worker/registrations',{protocol:1,runtimeId,observation:1,observedAt:new Date().toISOString(),capacity:{slots:1},machine:{platform:'linux',architecture:'x64',logicalCpus:2,memoryBytes:1024},tools:ToolName.options.map(name=>({name,availability:{kind:'available',version:'1.0.0'}})),harnesses:{codex:{kind:'ready'},claude:{kind:'ready'},opencodeGo:{kind:'ready'}},modelPolicy:'provider-discovered-at-execution'},workerUrl);
   const definition={title:'All configured outputs',description:'Fixture integration evidence',categories:[{id:randomUUID(),title:'Tasks',tasks:[...tasks,failedTask,skippedTask]}],evaluation:{conversion:'rating-control-v1',criteria:[{id:criterion,title:'Clarity',instructions:'Prefer clear outputs.',control:'stars-5'}],rankingRules:[]},materials:{kind:'repository',url:`http://127.0.0.1:${address.port}/repo.git`,requestedRef:'main'}};
   const suite=SuiteView.parse(await post('/api/suites',{definition}));
@@ -69,8 +71,10 @@ test('configured worker persists every task kind across HTTP and PostgreSQL, ret
   const preview=RunPreview.parse(await post('/api/configured-runs/preview',config)); expect(preview.matrix).toHaveLength(36);
   const run=ConfiguredRunView.parse(await post('/api/configured-runs',{...config,requestId:randomUUID()}));
   await post(`/api/suites/${suite.content.suiteId}`,{expectedContentId:suite.content.contentId,change:'minor',definition:{...definition,title:'Later edited title'}});
-  const options={apiUrl:workerUrl,stateRoot:join(root,'runtime'),runtimeId,executables:{}};
-  expect(await runWorkerOnce(options)).toEqual({kind:'finished',runId:run.runId});
+  const options={configuration,stateRoot:join(root,'runtime'),executables:{}};
+  await durableWrite(join(options.stateRoot,'config.json'),configuration);
+  const workOnce = async () => process.env.VIBE_RUNTIME_BINARY ? JSON.parse((await exec(process.env.VIBE_RUNTIME_BINARY,['work','--once'],{env:{...process.env,VIBE_RUNTIME_STATE:options.stateRoot},maxBuffer:1000000})).stdout.trim().split('\n').at(-1) ?? '{}') : runWorkerOnce(options);
+  expect(await workOnce()).toEqual({kind:'finished',runId:run.runId});
   const result=ConfiguredRunView.parse(await (await fetch(url+`/api/configured-runs/${run.runId}`)).json());
   expect(result.status).toBe('finished'); expect(result.snapshot).toEqual(run.snapshot);
   expect(result.preparation).toEqual({kind:'repository',commit,manifestDigest:contentDigest(manifest),manifest});
@@ -86,7 +90,7 @@ test('configured worker persists every task kind across HTTP and PostgreSQL, ret
       const bytes=Buffer.from(await response.arrayBuffer());expect(bytes.length).toBe(artifact.bytes);expect(createHash('sha256').update(bytes).digest('hex')).toBe(artifact.sha256);
     }
   }
-  expect(await runWorkerOnce(options)).toEqual({kind:'idle'});
+  expect(await workOnce()).toEqual({kind:'idle'});
   await worker.close();await app.close();await pool.end();await database.stop();
   database=await startDatabase(join(root,'postgres'));pool=await connectDatabase(database.url);app=await createApp({pool,token:'test-only'});
   const restartedUrl=await app.listen({host:'127.0.0.1',port:0});
