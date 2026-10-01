@@ -28,7 +28,7 @@ test('saved HTTP projections render each kind and only publish primary and decla
     const response = await fetch(url + record.resultUrl); expect(response.status).toBe(200);
     const presentation = ResultPresentation.parse(await response.json()); expect(presentation.kind).toBe(record.kind);
     expect(JSON.stringify(presentation)).not.toContain('diagnostics');
-    if (presentation.kind === 'text') { expect(presentation.text).toContain('Full answer <script>'); expect(presentation.text.length).toBeGreaterThan(100_000); expect(presentation.text).not.toBe('Short summary only'); }
+    if (presentation.kind === 'text') { expect(presentation.text).toContain('Full answer <script>'); expect(presentation.text.length).toBeGreaterThan(100_000); expect(presentation.text).not.toBe('Short summary only'); expect(presentation.download?.bytes).toBe(153056); }
     if (presentation.kind === 'image') expect(presentation.images[0]?.kind).toBe('image');
     if (presentation.kind === 'browser') expect(presentation.recording.kind).toBe('video');
     const extra = presentation.outputs.find((file) => file.download.name === 'extra.txt'); expect(extra?.kind).toBe('text');
@@ -53,6 +53,8 @@ test('neutral projection rejects malformed bytes and unsafe supplied URLs withou
   const neutral = await projectResult(saved, { names: 'neutral', artifact: (_id, purpose) => `/cards/file/${purpose}`, html: () => '/cards/preview' });
   expect(JSON.stringify(neutral)).not.toContain(record.attemptId); expect(JSON.stringify(neutral)).not.toContain('extra.txt');
   await expect(projectResult(saved, { names: 'neutral', artifact: () => '//attacker', html: () => '/cards/preview' })).rejects.toThrow();
+  const legacy = await projectResult({ ...saved, artifacts: saved.artifacts.filter((file) => file.metadata.name !== 'answer.txt') }, { names: 'neutral', artifact: (_id, purpose) => `/cards/file/${purpose}`, html: () => '/cards/preview' });
+  expect(legacy.kind === 'text' && legacy.download).toBeNull();
   const answer = saved.artifacts.find((file) => file.metadata.name === 'answer.txt'); if (!answer) throw new Error(); answer.bytes = Buffer.from([0xc3, 0x28]);
   const invalid = await projectResult(saved, { names: 'neutral', artifact: (_id, purpose) => `/cards/file/${purpose}`, html: () => '/cards/preview' });
   expect(invalid.outputs.filter((file) => file.kind === 'unsupported')).toHaveLength(2);

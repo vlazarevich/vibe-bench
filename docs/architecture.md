@@ -81,3 +81,5 @@ The existing text runner remains separate. Runtime onboarding initiates all netw
 The grading feature reads immutable configured-run inputs and outcomes. It stores one immutable session mapping and one mutable row per completed card and assigned criterion. Each cell has its own version and transaction lock. Session authority uses a separate cookie from the pairwise demo. The browser selects **Grading** without mounting management views or requesting their records.
 
 The [blind-grading contract](contracts/blind-grading.md) defines task-sized reads, pinned criterion snapshots, stable card order, exact retries, and anonymous artifact access. Execution failures and skips remain visible with neutral status. This feature does not reveal identities or calculate aggregate scores.
+
+`grading-viewer-routes.ts` authorizes an existing session/card mapping before calling the shared result projection. Public file URLs use immutable outcome ordinals and neutral labels. The adapter changes no mapping or judgment storage. Both management and grading use the same bounded HTML preview service.

@@ -11,7 +11,7 @@ export const FileView = z.discriminatedUnion('kind', [
 export type FileView = z.infer<typeof FileView>;
 const outputs = z.array(FileView).max(32);
 export const ResultPresentation = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('text'), text: Text.max(8_000_000), outputs }).strict(),
+  z.object({ kind: z.literal('text'), text: Text.max(8_000_000), download: Download.nullable(), outputs }).strict(),
   z.object({ kind: z.literal('image'), images: z.array(FileView).max(32), outputs }).strict(),
   z.object({ kind: z.literal('code'), patch: FileView, files: z.array(z.object({ path: Text.max(500), change: z.enum(['added', 'modified', 'deleted']), content: FileView.nullable() }).strict()).max(1000), outputs }).strict(),
   z.object({ kind: z.literal('html'), preview: z.discriminatedUnion('kind', [z.object({ kind: z.literal('interactive'), sessionUrl: LocalUrl }).strict(), z.object({ kind: z.literal('unavailable'), reason: Text.max(500) }).strict()]), source: FileView, outputs }).strict(),

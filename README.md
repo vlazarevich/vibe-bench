@@ -79,11 +79,11 @@ Use **Live** for actual harness execution. **Fixture** uses deterministic subpro
 
 For repository materials, the runtime resolves one exact commit per run and gives each attempt an independent checkout. Keep task input and output declarations in that repository's `vibe-bench.json`. The [configured-run contract](docs/contracts/configured-runs.md) describes result types and the supported browser action format. Repository content is maintained separately from Vibe bench.
 
-Configured runs collect text, raster images, HTML bundles, code patches and changed files, or browser recordings. Browser scenarios use a fresh Chromium context and WebM recording. Install Chromium with `pnpm exec playwright install chromium` on the runtime. HTML and other files download as attachments. Rich viewers and scoring are not part of this flow.
+Configured runs collect text, raster images, HTML bundles, code patches and changed files, or browser recordings. Browser scenarios use a fresh Chromium context and WebM recording. Install Chromium with `pnpm exec playwright install chromium` on the runtime. Original files download as attachments. Inspect rich results in **Runs** or **Grading**.
 
 ## Grade configured results
 
-Open **Grading**, select a finished configured run, then navigate its categories and tasks. Grade each anonymous completed result against its pinned criteria. Stars, the 0–10 slider, and thumbs retain the original selection and convert it to a 0–100 grade. Equal grades are allowed. **Skip** and **Clear** remain distinct from a zero grade. Failed or execution-skipped attempts stay visible with no grading controls.
+Open **Grading**, select a finished configured run, then navigate its categories and tasks. Expand **View result** to inspect each anonymous completed result, then grade it against its pinned criteria. Stars, the 0–10 slider, and thumbs retain the original selection and convert it to a 0–100 grade. Equal grades are allowed. **Skip** and **Clear** remain distinct from a zero grade. Failed or execution-skipped attempts stay visible with no grading controls.
 
 Saved judgments and anonymous result order survive reloads and application restarts. Keep the grading cookie to resume the same session. Another browser cannot resume from the URL alone. Conflicting edits require reloading the saved judgment. Fixture results remain labeled. The [blind-grading contract](docs/contracts/blind-grading.md) documents persistence, authority, and anonymous downloads. The **Comparisons** tab remains the separate pairwise demonstration with a final choice and identity reveal.
 

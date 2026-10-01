@@ -38,7 +38,7 @@ function CodeResult({ result }: { result: Extract<ResultPresentation, { kind: 'c
 export function ResultViewer({ result }: { result: ResultPresentation }) {
   let primary;
   switch (result.kind) {
-    case 'text': primary = <pre className="result-text">{result.text}</pre>; break;
+    case 'text': primary = <><pre className="result-text">{result.text}</pre>{result.download && <a href={result.download.url} download>Download answer</a>}</>; break;
     case 'image': primary = result.images.map((file) => <ResultFile key={file.download.url} file={file}/>); break;
     case 'code': primary = <CodeResult result={result}/>; break;
     case 'html': primary = <>{result.preview.kind === 'interactive' ? <HtmlResultPreview sessionUrl={result.preview.sessionUrl}/> : <p role="status">{result.preview.reason}</p>}<details><summary>HTML source</summary><ResultFile file={result.source}/></details></>; break;

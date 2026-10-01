@@ -38,9 +38,9 @@ A save includes `expectedVersion`. The transaction locks only the target judgmen
 
 A 256-bit capability in the `vibe_grading_authority` HttpOnly, SameSite=Strict cookie authorizes sessions. The database stores its SHA-256 hash. Creation refreshes the cookie's 30-day lifetime. Clearing or losing the cookie loses resume access. URLs never convey authority. Missing or foreign authority returns the same 404 for session, task, judgment, and artifact operations. The existing loopback Host and same-origin mutation rules apply. Responses use `Cache-Control: no-store`.
 
-Explicit schemas construct public fields. Responses exclude model and harness identity, runtime and management IDs, settings, diagnostic reasons, observations, original filenames, hashes, and storage paths. Artifact media types come from an allowlist, with `application/octet-stream` for other declarations. Only artifact IDs referenced by the completed result descriptor enter the session's anonymous mapping. Undeclared files and diagnostic artifacts do not become downloads. A diagnostic reference inside an accepted HTML asset list is omitted while the result remains gradeable.
+Explicit schemas construct public fields. Responses exclude model and harness identity, runtime and management IDs, settings, diagnostic reasons, observations, original filenames, hashes, and storage paths. Artifact media types come from an allowlist, with `application/octet-stream` for other declarations. Only artifact IDs referenced by the completed result descriptor enter the session's existing anonymous asset mapping. The rich viewer separately projects primary results and declared outputs after authorizing the mapped card. Stable file ordinals within each immutable outcome replace artifact IDs in its URLs. Diagnostics and unpublished files do not become viewer downloads. A diagnostic reference inside an accepted HTML asset list is omitted while the result remains gradeable.
 
-Text answers use escaped submitted text. Images and WebM recordings use authenticated, opaque asset URLs. HTML, patches, and unsupported formats have explicit download-only presentation. Downloads use the neutral `result.bin` filename. HTML and SVG never execute inside grading. Artifact responses have a restrictive sandbox CSP and `nosniff`. The submitted bytes remain unchanged and can identify their author through their own content.
+The shared `ResultViewer` shows complete saved text, decoded images and WebM, changed code files and patches, and declared outputs. Code paths and source text remain submitted content, even when they identify the author. Metadata filenames stay neutral. HTML runs only in the isolated server browser described by the [artifact contract](artifacts-evaluation.md), and the dashboard receives PNG frames. Every preview action and close reauthorizes the session and card. Management and grading share the two-preview capacity. Unsupported files retain downloads with the neutral `result.bin` filename. HTML and SVG never execute inside the grading dashboard. Artifact responses have a restrictive sandbox CSP and `nosniff`. The submitted bytes remain unchanged and can identify their author through their own content.
 
 ## HTTP reference
 
@@ -51,7 +51,12 @@ Text answers use escaped submitted text. Images and WebM recordings use authenti
 | `GET /api/blind-grading/:id` | Authorized session navigation and per-task progress |
 | `GET /api/blind-grading/:id/tasks/:task` | One authorized anonymous task and its judgments |
 | `POST /api/blind-grading/:id/judgments` | Save `{card, criterion, expectedVersion, value}` |
-| `GET /api/blind-grading/:id/assets/:asset` | Authorized neutral result bytes |
+| `GET /api/blind-grading/:id/assets/:asset` | Existing authorized neutral result bytes |
+| `GET /api/blind-grading/:id/cards/:card/result` | Strict shared result presentation |
+| `GET /api/blind-grading/:id/cards/:card/files/:file/:purpose` | Published file by ordinal, with `download`, `text`, or `media` purpose |
+| `POST /api/blind-grading/:id/cards/:card/preview` | Open isolated HTML with an empty object body |
+| `POST /api/blind-grading/:id/cards/:card/preview/:previewId/input` | Authorized bounded preview action |
+| `DELETE /api/blind-grading/:id/cards/:card/preview/:previewId` | Authorized preview close |
 
 Session, category, task, card, criterion, and asset handles are distinct branded UUID types. Wrong handles and cross-task associations return 404. Invalid payloads return 400. Stale versions and incompatible controls return 409. There is no reveal, winner, forced ordering, rank, or aggregation endpoint in this feature.
 

@@ -1,3 +1,4 @@
+import { registerGradingViewer } from './features/grading-viewer-routes.ts';
 import { registerArtifactViewer } from './features/artifact-viewer-routes.ts';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import Fastify from 'fastify';
@@ -62,7 +63,8 @@ export async function createApp({ pool, token, webRoot, ready = () => true }: { 
     const bytes = await readArtifact(pool, params.id, params.artifactId);
     return reply.header('Content-Type', 'application/octet-stream').header('Content-Disposition', 'attachment; filename="artifact.bin"').header('X-Content-Type-Options', 'nosniff').send(bytes);
   });
-  registerArtifactViewer(app, pool);
+  const previews = registerArtifactViewer(app, pool);
+  registerGradingViewer(app, pool, previews);
   app.get('/api/blind-grading/runs', async () => listGradingRuns(pool));
   app.post('/api/blind-grading', async (request, reply) => {
     const { reviewId } = z.object({ reviewId: GradingReviewId }).strict().parse(request.body);

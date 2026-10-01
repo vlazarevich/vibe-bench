@@ -56,12 +56,12 @@ export async function projectResult(saved: SavedResult, links: ResultLinks): Pro
     case 'text': {
       const answer = saved.artifacts.find((file) => file.metadata.name === 'answer.txt' && file.metadata.kind === 'text');
       if (answer) used.add(answer.metadata.id);
-      primary = { kind: 'text', text: answer ? decodeText(answer.bytes) ?? 'The answer contains unsupported text bytes. Download the answer file to inspect it.' : saved.outcome.summary };
+      primary = { kind: 'text', download: answer ? download(answer) : null, text: answer ? decodeText(answer.bytes) ?? 'The answer contains unsupported text bytes. Download the answer file to inspect it.' : saved.outcome.summary };
       if (answer && decodeText(answer.bytes) === null) used.delete(answer.metadata.id);
       break;
     }
     case 'image': primary = { kind: 'image', images: await Promise.all(result.artifactIds.map((id) => fileView(artifact(id), 'image'))) }; break;
-    case 'html': primary = { kind: 'html', source: await fileView(artifact(result.entryArtifactId), 'text'), preview: { kind: 'interactive', sessionUrl: links.html() } }; result.assetArtifactIds.forEach(artifact); break;
+    case 'html': primary = { kind: 'html', source: await fileView(artifact(result.entryArtifactId), 'text'), preview: { kind: 'interactive', sessionUrl: links.html() } }; break;
     case 'code': primary = { kind: 'code', patch: await fileView(artifact(result.patchArtifactId), 'text'), files: await Promise.all(result.changedFiles.map(async (entry) => {
       const file = saved.artifacts.find((item) => item.metadata.name === entry.path && item.metadata.kind === 'code');
       return { ...entry, content: entry.change === 'deleted' || !file ? null : await fileView(artifact(file.metadata.id), 'text') };

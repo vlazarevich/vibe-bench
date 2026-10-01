@@ -57,7 +57,7 @@ export async function seedArtifactRun(url: string) {
       case 'html-interactive': {
         const entry = artifact('index.html', 'html', 'text/html', Buffer.from(interactiveHtml));
         const assets = [artifact('assets/style.css', 'text', 'text/css', Buffer.from('body {background: rgb(20, 80, 130);} button {width: 180px;height:80px;font-size:24px;}')), artifact('assets/app.js', 'code', 'text/javascript', Buffer.from(interactiveJs)), artifact('assets/picture.png', 'image', 'image/png', png)];
-        artifacts.push(entry, ...assets); result = { kind: 'html', entryArtifactId: entry.id, assetArtifactIds: assets.map((asset) => asset.id) }; break;
+        artifacts.push(entry, ...assets); result = { kind: 'html', entryArtifactId: entry.id, assetArtifactIds: artifacts.filter((asset) => asset.id !== entry.id && asset.kind !== 'diagnostic').map((asset) => asset.id) }; break;
       }
       case 'browser-scenario': { const video = artifact('recording.webm', 'recording', 'video/webm', recording), screenshot = artifact('screenshot.png', 'image', 'image/png', png); artifacts.push(video, screenshot); result = { kind: 'browser', recordingArtifactId: video.id, format: 'webm', screenshotArtifactIds: [screenshot.id] }; break; }
       default: throw new Error('Unexpected task');

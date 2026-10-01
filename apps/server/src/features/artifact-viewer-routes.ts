@@ -47,4 +47,5 @@ export function registerArtifactViewer(app: FastifyInstance, pool: pg.Pool) {
     await previews.close(baseUrl(params), params.previewId);
     return reply.code(204).send();
   });
+  return previews;
 }

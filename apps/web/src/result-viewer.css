@@ -14,3 +14,4 @@
 .preview-controls { display: flex; flex-wrap: wrap; align-items: end; gap: .5rem; }
 .preview-controls label { display: grid; gap: .35rem; }
 @media (max-width: 640px) { .result-code { grid-template-columns: 1fr; } }
+.result-viewer .preview-controls button { width: auto; }
