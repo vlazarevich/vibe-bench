@@ -134,5 +134,13 @@ esac
     assert.equal(createHash('sha256').update(await readFile(join(installed, 'vibe-runtime'))).digest('hex'), previous);
     assert.deepEqual(await readdir(installed), ['vibe-runtime']);
     assert.throws(() => install({ VIBE_RUNTIME_VERSION: '../../unexpected' }), /release tag/);
+    await writeFile(join(commands, 'uname'), '#!/bin/sh\nif [ "$1" = -s ]; then printf "Linux\\n"; else printf "aarch64\\n"; fi\n', { mode: 0o755 });
+    assert.throws(() => install(), /Only Linux x64 is supported/);
+    await writeFile(join(commands, 'uname'), '#!/bin/sh\nprintf "Darwin\\n"\n', { mode: 0o755 });
+    assert.throws(() => install(), /Only Linux x64 is supported/);
+    await rm(join(commands, 'uname'));
+    await writeFile(join(commands, 'getconf'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+    assert.throws(() => install(), /glibc/);
+    assert.equal(createHash('sha256').update(await readFile(join(installed, 'vibe-runtime'))).digest('hex'), previous);
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
