@@ -11,7 +11,7 @@ export const BrowserStep = z.discriminatedUnion('kind', [
 ]);
 export const BrowserPlan = z.object({ steps: z.array(BrowserStep).min(1).max(100) }).strict();
 export type BrowserPlan = z.infer<typeof BrowserPlan>;
-export const TaskIO = z.object({ inputs: z.array(SafeRelativePath).max(32), outputs: z.array(z.object({ path: SafeRelativePath, kind: z.enum(['image', 'html', 'code', 'text']) }).strict()).max(32), browser: z.object({ startUrl: z.url().max(2000).refine((url) => ['http:', 'https:'].includes(new URL(url).protocol)), instructions: z.string().max(20_000) }).strict().nullable() }).strict();
+export const TaskIO = z.object({ inputs: z.array(SafeRelativePath).max(32), outputs: z.array(z.object({ path: SafeRelativePath, kind: z.enum(['image', 'html', 'code', 'text']) }).strict()).max(32), browser: z.discriminatedUnion('kind', [z.object({ kind: z.literal('local'), entry: SafeRelativePath, instructions: z.string().max(20_000) }).strict(), z.object({ kind: z.literal('remote'), startUrl: z.url().max(2000).refine((url) => ['http:', 'https:'].includes(new URL(url).protocol)), instructions: z.string().max(20_000) }).strict()]).nullable() }).strict();
 export type TaskIO = z.infer<typeof TaskIO>;
 export const RepositoryManifest = z.object({ version: z.literal(1), tasks: z.record(TaskId, TaskIO) }).strict();
 export type RepositoryManifest = z.infer<typeof RepositoryManifest>;
