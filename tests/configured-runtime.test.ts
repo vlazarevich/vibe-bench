@@ -106,3 +106,18 @@ test('browser collection accepts a JSON code fence from the harness and still ex
   expect(collected.artifacts.some(artifact=>artifact.mediaType==='video/webm')).toBe(true);
   await expect(collectResults({task,io,workspace,directory,materials:{kind:'none'},text:'```json\n{"steps":[{"kind":"execute","code":"arbitrary"}]}\n```',timeoutMs:10000})).rejects.toThrow();
 });
+
+test('coding collection preserves Unicode filenames and classifies staged additions', async () => {
+  const directory = await root(); const source = await repository(directory);
+  await writeFile(join(source,'café.txt'),'before');
+  await git(['add','café.txt'],source,directory);
+  await git(['-c','user.name=Test','-c','user.email=test@example.com','commit','-m','Unicode material'],source,directory);
+  const materials = await prepareMaterials({kind:'repository',url:source,requestedRef:'main'},join(directory,'materials'));
+  const workspace = join(directory,'workspace'); await createWorkspace(materials,workspace,directory);
+  await writeFile(join(workspace,'café.txt'),'after'); await writeFile(join(workspace,'added.txt'),'new');
+  await git(['add','added.txt'],workspace,directory);
+  const task=TaskDefinition.parse({id:randomUUID(),title:'Coding',kind:'coding-feature',prompt:'Edit files',criterionIds:[]});
+  const output=await collectResults({task,io:TaskIO.parse({inputs:[],outputs:[],browser:null}),workspace,directory,materials,text:'Done',timeoutMs:10000});
+  expect(output.result).toMatchObject({kind:'code',changedFiles:expect.arrayContaining([{path:'café.txt',change:'modified'},{path:'added.txt',change:'added'}])});
+  expect(output.artifacts.find(artifact=>artifact.name==='café.txt')?.base64).toBe(Buffer.from('after').toString('base64'));
+});

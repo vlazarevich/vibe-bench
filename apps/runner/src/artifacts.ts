@@ -77,7 +77,14 @@ export async function collectResults({ task, io, workspace, directory, materials
     }
     case 'coding-bugfix': case 'coding-feature': {
       if (materials.kind !== 'repository') throw new Error('Coding tasks require repository materials');
-      const changes = (await git(['diff','--name-status','--no-renames',materials.commit,'--'],workspace,directory)).trim().split('\n').filter(Boolean).map((line) => { const [status,...parts] = line.split('\t'); return {path:parts.join('\t'),change:status === 'D' ? 'deleted' : 'modified'}; });
+      const entries = (await git(['diff','--name-status','-z','--no-renames',materials.commit,'--'],workspace,directory)).split('\0');
+      entries.pop();
+      const changes = [];
+      for (let index = 0; index < entries.length; index += 2) {
+        const status = z.enum(['A','M','D','T']).parse(entries[index]);
+        const path = z.string().min(1).parse(entries[index + 1]);
+        changes.push({path,change:status === 'D' ? 'deleted' : status === 'A' ? 'added' : 'modified'});
+      }
       const untracked = (await git(['ls-files','--others','--exclude-standard','-z'],workspace,directory)).split('\0').filter(Boolean);
       const changedFiles = z.array(z.object({path:z.string(),change:z.enum(['added','modified','deleted'])})).parse([...changes,...untracked.map((path) => ({path,change:'added'}))]);
       if (untracked.length) await git(['add','--intent-to-add','--',...untracked],workspace,directory);
