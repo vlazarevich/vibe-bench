@@ -53,12 +53,15 @@ test('single-use enrollment serializes competitors, supports exact lost acknowle
   const created = await (await post('/api/runtime-enrollments', { target: { kind: 'new' } }, cookie)).json();
   const command = EnrollmentCommand.parse(JSON.parse(Buffer.from(created.command.split(' ')[2], 'base64url').toString()));
   const exchange = { requestId: randomUUID(), key: command.key, credentialId: randomUUID(), secret: randomBytes(32).toString('hex') };
-  const responses = await Promise.all(Array.from({ length: 8 }, (_, index) => post('/api/worker/enrollments', index === 0 ? exchange : { ...exchange, credentialId: randomUUID() }, '', workerUrl)));
+  const exchanges = Array.from({ length: 8 }, (_, index) => index === 0 ? exchange : { ...exchange, credentialId: randomUUID() });
+  const responses = await Promise.all(exchanges.map((input) => post('/api/worker/enrollments', input, '', workerUrl)));
   expect(responses.filter((response) => response.status === 200)).toHaveLength(1);
   const winner = responses.find((response) => response.status === 200); if (!winner) throw new Error();
   const receipt = EnrollmentReceipt.parse(await winner.json());
   expect((await pool.query('SELECT count(*)::int AS n FROM runtime_credentials WHERE runtime_id=$1', [receipt.runtimeId])).rows[0].n).toBe(1);
-  if (receipt.credentialId === exchange.credentialId) expect(await (await post('/api/worker/enrollments', exchange, '', workerUrl)).json()).toEqual(receipt);
+  const accepted = exchanges.find((input) => input.credentialId === receipt.credentialId);
+  const retries = await Promise.all(Array.from({ length: 4 }, () => post('/api/worker/enrollments', accepted, '', workerUrl)));
+  for (const retry of retries) expect(await retry.json()).toEqual(receipt);
   const expiring = await (await post('/api/runtime-enrollments', { target: { kind: 'new' } }, cookie)).json();
   const expired = EnrollmentCommand.parse(JSON.parse(Buffer.from(expiring.command.split(' ')[2], 'base64url').toString()));
   await pool.query('UPDATE runtime_enrollments SET expires_at=now() WHERE key_hash=$1', [createHash('sha256').update(expired.key).digest('hex')]);

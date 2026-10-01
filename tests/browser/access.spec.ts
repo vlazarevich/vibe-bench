@@ -4,6 +4,7 @@ import { join, resolve } from 'node:path';
 import { startDatabase } from '../../scripts/local-database.ts';
 import { connectDatabase } from '../../apps/server/src/db.ts';
 import { createApp } from '../../apps/server/src/app.ts';
+import { PreviewOpened } from '../../packages/contracts/src/artifact-viewer.ts';
 import { EnrollmentCommand, EnrollmentReceipt } from '../../packages/contracts/src/access.ts';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { seedArtifactRun } from '../artifact-fixtures.ts';
@@ -41,11 +42,30 @@ test('protected dashboard login, rich result access, enrollment and revocation w
     await expect(page.getByRole('heading', { name: fixture.run.snapshot.content.definition.title, exact: true })).toBeVisible();
     await page.getByRole('link', { name: 'Grading', exact: true }).click();
     await expect(page.getByRole('heading', { name: fixture.run.snapshot.content.definition.title, exact: true })).toBeVisible();
+    await page.locator('article.run').filter({ hasText: fixture.run.snapshot.content.definition.title }).getByRole('button', { name: 'Grade results' }).click();
+    await page.getByRole('link', { name: /^text-generation/ }).click();
+    await page.getByText('View result', { exact: true }).click();
+    await expect(page.getByRole('region', { name: 'Result preview', exact: true })).toContainText('Full answer <script>');
+    await page.getByRole('radio', { name: '4 stars' }).check();
+    await page.getByRole('button', { name: 'Save grade', exact: true }).click();
+    await page.getByRole('link', { name: /^html-interactive/ }).click();
+    await page.getByText('View result', { exact: true }).click();
+    const previewResponse = page.waitForResponse((response) => response.url().endsWith('/preview') && response.request().method() === 'POST');
+    await page.getByRole('button', { name: 'Open interactive preview' }).click();
+    const openedResponse = await previewResponse;
+    const opened = PreviewOpened.parse(await openedResponse.json());
+    await expect(page.getByRole('application')).toBeVisible();
+    const previewEndpoint = `${openedResponse.url()}/${opened.previewId}`;
+    const resultLink = page.getByRole('region', { name: 'Result preview', exact: true }).locator('a[href$="/files/0/download"]');
+    const artifactPath = await resultLink.getAttribute('href'); if (!artifactPath) throw new Error();
     await page.reload(); await expect(page.getByRole('button', { name: 'Log out' })).toBeVisible();
     await page.getByRole('button', { name: 'Log out' }).click();
     await expect(page.getByRole('heading', { name: 'Sign in to Vibe bench' })).toBeVisible();
     expect((await context.request.get(url + `/api/configured-runs/${fixture.run.runId}`)).status()).toBe(401);
     expect((await context.request.get(url + '/api/blind-grading/runs')).status()).toBe(401);
+    expect((await context.request.get(url + artifactPath)).status()).toBe(401);
+    expect((await context.request.post(`${previewEndpoint}/input`, { headers: { origin: url }, data: { kind: 'refresh' } })).status()).toBe(401);
+    expect((await context.request.delete(previewEndpoint, { headers: { origin: url } })).status()).toBe(401);
   } finally { await context.close(); await app.close(); await pool.end(); await database.stop(); }
 });
 

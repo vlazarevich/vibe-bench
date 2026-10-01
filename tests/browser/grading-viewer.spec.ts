@@ -69,7 +69,7 @@ test('blind grading displays every rich result and saves judgments with session-
     }
     await page.reload();
     await expect(page.getByRole('group', { name: 'Clarity', exact: true })).toContainText('Saved grade 80/100');
-    expect(requests.every((path) => path.startsWith('/api/blind-grading'))).toBe(true);
+    expect(requests.every((path) => path === '/api/access/session' || path.startsWith('/api/blind-grading'))).toBe(true);
     const transport = presentations.join('\n');
     for (const forbidden of [fixture.run.runId, fixture.run.snapshot.runtimeId, ...fixture.records.flatMap((record) => [record.attemptId, ...record.artifacts.map((artifact) => artifact.id)]), 'diagnostics/log.html', 'extra.txt', 'output.png', 'recording.webm']) expect(transport).not.toContain(forbidden);
     expect(transport).toContain('src/result.ts');
