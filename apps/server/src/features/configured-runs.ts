@@ -141,8 +141,8 @@ export async function acceptAttemptReport(pool: pg.Pool, report: AttemptReport) 
     if (preparation.kind === 'failed' && report.outcome.kind === 'completed') throw new Conflict('Cannot complete after preparation failed');
     validateArtifacts(report, snapshot, slot.rows[0].task_id, preparation);
     for (const artifact of report.artifacts) {
-      if ((await client.query('SELECT 1 FROM configured_artifacts WHERE id = $1', [artifact.id])).rowCount) throw new Conflict('Artifact ID was already used');
-      await client.query('INSERT INTO configured_artifacts(id, attempt_id, metadata, bytes) VALUES($1,$2,$3,$4)', [artifact.id, report.attemptId, artifactMetadata(artifact), Buffer.from(artifact.base64, 'base64')]);
+      const inserted = await client.query('INSERT INTO configured_artifacts(id, attempt_id, metadata, bytes) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING', [artifact.id, report.attemptId, artifactMetadata(artifact), Buffer.from(artifact.base64, 'base64')]);
+      if (!inserted.rowCount) throw new Conflict('Artifact ID was already used');
     }
     await client.query('INSERT INTO attempt_outcomes(attempt_id, outcome, observed) VALUES($1,$2,$3)', [report.attemptId, report.outcome, report.observed]);
   });
@@ -152,6 +152,7 @@ function artifactMetadata(artifact: z.infer<typeof ArtifactMetadata> & { base64:
 
 function validateArtifacts(report: Extract<AttemptReport, { kind: 'terminal' }>, snapshot: ExecutionSnapshot, taskId: string, preparation: Preparation) {
   const artifacts = new Map(report.artifacts.map((artifact) => [artifact.id, artifact]));
+  if (new Set(report.artifacts.map((artifact) => artifact.name)).size !== report.artifacts.length) throw new Conflict('Artifact paths must be unique');
   if (artifacts.size !== report.artifacts.length || report.artifacts.reduce((total, artifact) => total + artifact.bytes, 0) > MAX_ARTIFACT_BYTES) throw new Conflict('Artifact IDs must be unique and total bytes bounded');
   if (contentDigest(report.outcome.artifacts) !== contentDigest(report.artifacts.map((artifact) => artifactMetadata(artifact)))) throw new Conflict('Artifact metadata does not match uploaded artifacts');
   for (const artifact of report.artifacts) {
@@ -178,6 +179,8 @@ function validateArtifacts(report: Extract<AttemptReport, { kind: 'terminal' }>,
     if (kind === 'recording' && (artifact.mediaType !== 'video/webm' || bytes.subarray(0, 4).toString('hex') !== '1a45dfa3')) throw new Conflict('Browser recording must be WebM');
     if (kind === 'image' && !((artifact.mediaType === 'image/png' && bytes.length >= 24 && bytes.subarray(0, 8).toString('hex') === '89504e470d0a1a0a' && bytes.readUInt32BE(16) > 0 && bytes.readUInt32BE(20) > 0) || (artifact.mediaType === 'image/jpeg' && bytes.length > 4 && bytes.subarray(0, 3).toString('hex') === 'ffd8ff') || (artifact.mediaType === 'image/webp' && bytes.length > 12 && bytes.toString('ascii', 0, 4) === 'RIFF' && bytes.toString('ascii', 8, 12) === 'WEBP'))) throw new Conflict('Image artifact has no supported raster signature');
   }
+  const references = result.kind === 'image' ? result.artifactIds : result.kind === 'html' ? [result.entryArtifactId, ...result.assetArtifactIds] : result.kind === 'browser' ? [result.recordingArtifactId, ...result.screenshotArtifactIds] : [];
+  if (new Set(references).size !== references.length) throw new Conflict('Result artifact references must be unique');
   switch (result.kind) {
     case 'text': break;
     case 'image': result.artifactIds.forEach((id) => requireArtifact(id, 'image')); break;

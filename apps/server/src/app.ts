@@ -25,7 +25,7 @@ export async function createApp({ pool, token, webRoot, ready = () => true }: { 
     reply.header('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
     const host = request.headers.host;
     if (!host || !/^(127\.0\.0\.1|localhost):\d+$/.test(host)) return reply.code(403).send({ error: 'Local access only' });
-    if (request.url.startsWith('/api/worker/') && (request.headers.origin || Object.keys(request.headers).some((header) => header.startsWith('sec-fetch-')))) return reply.code(403).send({ error: 'Worker requests only' });
+    if (request.url.startsWith('/api/worker/') && (request.headers.origin || request.headers['sec-fetch-site'] || request.headers['sec-fetch-dest'] || request.headers['sec-fetch-user'])) return reply.code(403).send({ error: 'Worker requests only' });
     if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method) && request.url !== '/api/runner/reports' && !request.url.startsWith('/api/worker/') && request.headers.origin !== `http://${host}`) return reply.code(403).send({ error: 'Same-origin request required' });
   });
   app.setErrorHandler((error, _request, reply) => {

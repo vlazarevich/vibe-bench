@@ -11,10 +11,10 @@ export function createWorkerApp({ pool }: { pool: pg.Pool }) {
   const app = Fastify({ logger: false, bodyLimit: 32_000 });
   app.addHook('onRequest', async (request, reply) => {
     reply.header('Cache-Control', 'no-store');
-    if (request.headers.origin || Object.keys(request.headers).some((header) => header.startsWith('sec-fetch-'))) return reply.code(403).send({ error: 'Worker requests only' });
+    if (request.headers.origin || request.headers['sec-fetch-site'] || request.headers['sec-fetch-dest'] || request.headers['sec-fetch-user']) return reply.code(403).send({ error: 'Worker requests only' });
   });
   app.setErrorHandler((error, _request, reply) => {
-    if (error instanceof z.ZodError) return reply.code(400).send({ error: 'Invalid registration' });
+    if (error instanceof z.ZodError) return reply.code(400).send({ error: 'Invalid request' });
     if (error instanceof NotFound) return reply.code(404).send({ error: 'Not found' });
     if (error instanceof Conflict) return reply.code(409).send({ error: error.message });
     if (error instanceof Error && 'statusCode' in error) {
