@@ -88,7 +88,8 @@ export async function collectResults({ task, io, workspace, directory, materials
     }
     case 'browser-scenario': {
       if (!io.browser) throw new Error('Browser scenario requires a starting context');
-      const plan = BrowserPlan.parse(JSON.parse(text));
+      const planText = text.trim().replace(/^```(?:json)?\s*\n([\s\S]*?)\n```$/, '$1');
+      const plan = BrowserPlan.parse(JSON.parse(planText));
       const recording = await runBrowserScenario({workspace,directory:join(directory,'browser'),browser:io.browser,plan,timeoutMs});
       const video = artifact('browser/recording.webm','recording','video/webm',await readFile(recording.video)); artifacts.push(video,artifact('browser/trace.zip','diagnostic','application/zip',await readFile(recording.trace)));
       const screenshots = [];

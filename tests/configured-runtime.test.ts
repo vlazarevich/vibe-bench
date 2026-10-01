@@ -95,3 +95,14 @@ test('HTML bundle includes referenced local assets and refuses broken references
   const result=await collectResults(options); expect(result.artifacts.map((item) => item.name).sort()).toEqual(['app.js','index.html','style.css']);
   await rm(join(directory,'app.js')); await expect(collectResults(options)).rejects.toThrow();
 });
+
+test('browser collection accepts a JSON code fence from the harness and still executes the validated plan', async () => {
+  const directory = await root(); const workspace = await repository(directory);
+  const task = TaskDefinition.parse({id:randomUUID(),title:'Browser',kind:'browser-scenario',prompt:'Click Go',criterionIds:[]});
+  const io = TaskIO.parse({inputs:[],outputs:[],browser:{kind:'local',entry:'index.html',instructions:'Click Go'}});
+  const text = '```json\n{"steps":[{"kind":"click","selector":"button"},{"kind":"expect-text","selector":"#count","text":"1"}]}\n```';
+  const collected = await collectResults({task,io,workspace,directory,materials:{kind:'none'},text,timeoutMs:10000});
+  expect(collected.result.kind).toBe('browser');
+  expect(collected.artifacts.some(artifact=>artifact.mediaType==='video/webm')).toBe(true);
+  await expect(collectResults({task,io,workspace,directory,materials:{kind:'none'},text:'```json\n{"steps":[{"kind":"execute","code":"arbitrary"}]}\n```',timeoutMs:10000})).rejects.toThrow();
+});
