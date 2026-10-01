@@ -3,16 +3,19 @@ import type pg from 'pg';
 import { z } from 'zod';
 import { RuntimeRegistration } from '../../../packages/contracts/src/runtime.ts';
 import { registerRuntime } from './features/runtimes.ts';
-import { Conflict } from './errors.ts';
+import { AttemptReport, ClaimRequest, PreparationReport, WORK_BODY_LIMIT } from '../../../packages/contracts/src/work.ts';
+import { claimRun, acceptPreparation, acceptAttemptReport } from './features/configured-runs.ts';
+import { Conflict, NotFound } from './errors.ts';
 
 export function createWorkerApp({ pool }: { pool: pg.Pool }) {
   const app = Fastify({ logger: false, bodyLimit: 32_000 });
   app.addHook('onRequest', async (request, reply) => {
     reply.header('Cache-Control', 'no-store');
-    if (request.headers.origin || request.headers['sec-fetch-site']) return reply.code(403).send({ error: 'Worker requests only' });
+    if (request.headers.origin || Object.keys(request.headers).some((header) => header.startsWith('sec-fetch-'))) return reply.code(403).send({ error: 'Worker requests only' });
   });
   app.setErrorHandler((error, _request, reply) => {
     if (error instanceof z.ZodError) return reply.code(400).send({ error: 'Invalid registration' });
+    if (error instanceof NotFound) return reply.code(404).send({ error: 'Not found' });
     if (error instanceof Conflict) return reply.code(409).send({ error: error.message });
     if (error instanceof Error && 'statusCode' in error) {
       if (error.statusCode === 400) return reply.code(400).send({ error: 'Invalid request' });
@@ -22,5 +25,8 @@ export function createWorkerApp({ pool }: { pool: pg.Pool }) {
     return reply.code(500).send({ error: 'Request failed' });
   });
   app.post('/api/worker/registrations', async (request) => registerRuntime(pool, RuntimeRegistration.parse(request.body)));
+  app.post('/api/worker/claims', async (request) => claimRun(pool, ClaimRequest.parse(request.body)));
+  app.post('/api/worker/preparations', { bodyLimit: WORK_BODY_LIMIT }, async (request) => acceptPreparation(pool, PreparationReport.parse(request.body)));
+  app.post('/api/worker/attempts', { bodyLimit: WORK_BODY_LIMIT }, async (request) => acceptAttemptReport(pool, AttemptReport.parse(request.body)));
   return app;
 }
