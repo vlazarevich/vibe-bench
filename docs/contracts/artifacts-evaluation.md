@@ -32,6 +32,8 @@ Use opaque session-scoped result handles and neutral download names. Apply the s
 
 Artifact content itself can identify its author. Preserve the submitted result; do not rewrite it to manufacture anonymity.
 
+Source-tree paths in code results are submitted content, also present in the preserved patch. The code viewer retains those paths. Neutral download labels hide artifact metadata names, not names written into source code or patches.
+
 ## Sessions and judgments
 
 Persist each session's presentation mapping and order. Resolve card-to-attempt identity on the server. Reloading a session must not reshuffle its cards or silently add newly produced results.
