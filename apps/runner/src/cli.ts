@@ -2,6 +2,7 @@ import { access } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { z } from 'zod';
+import { Interrupted } from './processes/run.ts';
 import { configureRuntime, readConfiguration, runtimeRoot, reconnectDelay } from './configuration.ts';
 import { onboard } from './onboarding.ts';
 import { runWorkerOnce } from './execution.ts';
@@ -30,7 +31,7 @@ export async function main(args: string[]) {
       if (once) return;
       failures = 0;
     } catch (error) {
-      if (once) throw error;
+      if (once || error instanceof Interrupted) throw error;
       failures++;
       process.stderr.write(`${error instanceof Error ? error.message : 'Runtime connection failed'}. Retrying in ${reconnectDelay(failures) / 1000}s.\n`);
     }
