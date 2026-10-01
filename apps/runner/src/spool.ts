@@ -23,7 +23,7 @@ async function syncDirectory(path: string) {
 
 export async function durableDirectory(path: string) {
   const absolute = resolve(path);
-  const first = await mkdir(absolute, { recursive: true });
+  const first = await mkdir(absolute, { recursive: true, mode: 0o700 });
   if (!first) return;
   const parent = dirname(first);
   for (let directory = absolute; ; directory = dirname(directory)) {

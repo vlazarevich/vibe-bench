@@ -1,70 +1,82 @@
 import { randomUUID } from 'node:crypto';
-import { readFile, readdir, access } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { readFile, access, rm } from 'node:fs/promises';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { z } from 'zod';
+import { isSea } from 'node:sea';
 import { chromium } from '@playwright/test';
 import { ClaimRequest, ClaimReceipt, RunAssignment, PreparationReport, AttemptReport, WorkReceipt, TaskIO } from '../../../packages/contracts/src/work.ts';
-import { RuntimeId } from '../../../packages/contracts/src/runtime.ts';
 import { contentDigest } from '../../../packages/contracts/src/canonical.ts';
 import { acquireLocalLock } from '../../../scripts/local-lock.ts';
 import { durableDirectory, durableWrite } from './spool.ts';
 import { prepareMaterials, createWorkspace, safeFile } from './materials.ts';
 import { executeAdapter, checkExecutable, Unavailable, type Executables } from './adapters.ts';
 import { collectResults, diagnostics, metadata, declaredArtifacts, imageType } from './artifacts.ts';
-import { onboardingUrl } from './onboarding.ts';
+import { runtimeRoot, workerPost } from './configuration.ts';
+import { RuntimeConfiguration } from '../../../packages/contracts/src/access.ts';
 import { Interrupted } from './processes/run.ts';
 
-const Delivery = z.discriminatedUnion('kind', [z.object({kind:z.literal('preparation'),body:PreparationReport}),z.object({kind:z.literal('attempt'),body:AttemptReport})]);
-type WorkerOptions = { apiUrl: string; stateRoot: string; runtimeId: z.infer<typeof RuntimeId>; executables: Executables };
-async function post(apiUrl: string, path: string, body: unknown) {
-  const response = await fetch(new URL(path,onboardingUrl(apiUrl)),{redirect:'error',method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(15_000)});
-  if (!response.ok) throw new Error(`Worker delivery failed with HTTP ${response.status}`);
-  const chunks: Uint8Array[] = []; let bytes = 0;
-  if (!response.body) throw new Error('Worker response has no body');
-  for await (const chunk of response.body) { bytes += chunk.length; if (bytes > 16_000_000) throw new Error('Worker response exceeds limit'); chunks.push(chunk); }
-  return JSON.parse(Buffer.concat(chunks).toString('utf8'));
-}
+type WorkerOptions = { configuration: RuntimeConfiguration; stateRoot: string; executables: Executables };
 async function exists(path: string) { try { await access(path); return true; } catch { return false; } }
-async function deliver(options: WorkerOptions, directory: string, delivery: z.infer<typeof Delivery>) {
-  const path = join(directory,`${delivery.body.reportId}.json`);
-  await durableWrite(path,delivery,'create');
-  const receiptPath = join(directory,`${delivery.body.reportId}.receipt.json`);
-  if (await exists(receiptPath)) return;
-  const receipt = WorkReceipt.parse(await post(options.apiUrl,delivery.kind === 'preparation' ? '/api/worker/preparations' : '/api/worker/attempts',delivery.body));
-  if (receipt.reportId !== delivery.body.reportId || receipt.runId !== delivery.body.runId) throw new Error('Worker receipt identity mismatch');
-  await durableWrite(receiptPath,receipt,'create');
-}
-async function retryDeliveries(options: WorkerOptions, directory: string) {
-  await durableDirectory(directory);
-  const pending: z.infer<typeof Delivery>[] = [];
-  for (const name of await readdir(directory)) if (name.endsWith('.json') && !name.endsWith('.receipt.json')) pending.push(Delivery.parse(JSON.parse(await readFile(join(directory,name),'utf8'))));
-  pending.sort((a,b) => (a.kind === 'preparation' ? 0 : a.body.kind === 'started' ? 1 : 2) - (b.kind === 'preparation' ? 0 : b.body.kind === 'started' ? 1 : 2));
-  for (const delivery of pending) await deliver(options,directory,delivery);
+async function readAssignment(path: string) { return RunAssignment.parse(JSON.parse(await readFile(path, 'utf8'))); }
+async function uploadAssignment(options: WorkerOptions, assignment: RunAssignment, root: string) {
+  const directory = join(root, assignment.runId);
+  const reports: { kind: 'preparation' | 'attempt'; path: string; terminalPath?: string }[] = [{kind:'preparation',path:join(directory,'preparation.json')}];
+  for (const slot of assignment.attempts) reports.push({kind:'attempt',path:join(directory,slot.attemptId,'started.json'),terminalPath:join(directory,slot.attemptId,'terminal.json')},{kind:'attempt',path:join(directory,slot.attemptId,'terminal.json')});
+  for (const report of reports) {
+    if (!await exists(report.path)) {
+      if (report.terminalPath && await exists(report.terminalPath)) continue;
+      return;
+    }
+    const body = report.kind === 'preparation' ? PreparationReport.parse(JSON.parse(await readFile(report.path,'utf8'))) : AttemptReport.parse(JSON.parse(await readFile(report.path,'utf8')));
+    if (body.runtimeId !== options.configuration.runtimeId || body.assignmentId !== assignment.assignmentId || body.runId !== assignment.runId) throw new Error('Saved report identity mismatch');
+    const receiptPath = join(directory, 'receipts', `${body.reportId}.json`);
+    if (await exists(receiptPath)) {
+      const saved = WorkReceipt.parse(JSON.parse(await readFile(receiptPath,'utf8')));
+      if (saved.reportId !== body.reportId || saved.runId !== body.runId) throw new Error('Saved receipt identity mismatch');
+      continue;
+    }
+    const receipt = WorkReceipt.parse(await workerPost(options.configuration,report.kind === 'preparation' ? '/api/worker/preparations' : '/api/worker/attempts',body));
+    if (receipt.reportId !== body.reportId || receipt.runId !== body.runId) throw new Error('Worker receipt identity mismatch');
+    await durableWrite(receiptPath,receipt,'create');
+  }
 }
 export async function runWorkerOnce(options: WorkerOptions) {
-  const root = resolve(options.stateRoot,'work'); await durableDirectory(root);
+  const root = join(runtimeRoot(options.stateRoot, options.configuration), 'work'); await durableDirectory(root);
   const release = await acquireLocalLock(root);
   try {
-    const outbound = join(root,'outbound'); await retryDeliveries(options,outbound);
+    const currentPath = join(root, 'assignment.json');
     const claimPath = join(root,'claim.json');
-    const claim = await exists(claimPath) ? ClaimRequest.parse(JSON.parse(await readFile(claimPath,'utf8'))) : ClaimRequest.parse({protocol:1,requestId:randomUUID(),runtimeId:options.runtimeId});
-    if (claim.runtimeId !== options.runtimeId) throw new Error('Worker state belongs to another runtime');
-    await durableWrite(claimPath,claim);
-    const receipt = ClaimReceipt.parse(await post(options.apiUrl,'/api/worker/claims',claim));
-    if (receipt.requestId !== claim.requestId) throw new Error('Claim receipt identity mismatch');
-    await durableWrite(join(root,'claims',`${claim.requestId}.json`),receipt,'create');
-    if (receipt.kind === 'idle') { await durableWrite(claimPath,{...claim,requestId:randomUUID()}); return {kind:'idle'} as const; }
-    await executeAssignment(options,receipt,root,outbound);
-    await durableWrite(claimPath,{...claim,requestId:randomUUID()});
-    return {kind:'finished',runId:receipt.runId} as const;
+    let assignment: RunAssignment;
+    if (await exists(currentPath)) assignment = await readAssignment(currentPath);
+    else {
+      const claim = await exists(claimPath) ? ClaimRequest.parse(JSON.parse(await readFile(claimPath,'utf8'))) : ClaimRequest.parse({protocol:1,requestId:randomUUID(),runtimeId:options.configuration.runtimeId});
+      if (claim.runtimeId !== options.configuration.runtimeId) throw new Error('Worker state belongs to another runtime');
+      await durableWrite(claimPath,claim);
+      const receipt = ClaimReceipt.parse(await workerPost(options.configuration,'/api/worker/claims',claim));
+      if (receipt.requestId !== claim.requestId) throw new Error('Claim receipt identity mismatch');
+      await durableWrite(join(root,'claims',`${claim.requestId}.json`),receipt,'create');
+      if (receipt.kind === 'idle') { await durableWrite(claimPath,{...claim,requestId:randomUUID()}); return {kind:'idle'} as const; }
+      assignment = receipt;
+      await durableWrite(currentPath, assignment);
+      await durableWrite(join(root,assignment.runId,'assignment.json'),assignment,'create');
+    }
+    let uploading: Promise<void> | null = null;
+    const upload = () => { if (!uploading) uploading = uploadAssignment(options, assignment, root).catch(() => {}).finally(() => { uploading = null; }); };
+    const timer = setInterval(upload, 250);
+    upload();
+    try { await executeAssignment(options, assignment, root); }
+    finally { clearInterval(timer); await uploading; }
+    await uploadAssignment(options, assignment, root);
+    await durableWrite(claimPath,{protocol:1,requestId:randomUUID(),runtimeId:options.configuration.runtimeId});
+    await rm(currentPath);
+    return {kind:'finished',runId:assignment.runId} as const;
   } finally { await release(); }
 }
-async function executeAssignment(options: WorkerOptions, assignment: RunAssignment, root: string, outbound: string) {
+async function executeAssignment(options: WorkerOptions, assignment: RunAssignment, root: string) {
   const {digest,...snapshot} = assignment.snapshot;
-  if (digest !== contentDigest(snapshot) || snapshot.content.digest !== contentDigest({schemaVersion:snapshot.content.schemaVersion,definition:snapshot.content.definition}) || snapshot.runtimeId !== options.runtimeId) throw new Error('Assignment snapshot integrity failed');
+  if (digest !== contentDigest(snapshot) || snapshot.content.digest !== contentDigest({schemaVersion:snapshot.content.schemaVersion,definition:snapshot.content.definition}) || snapshot.runtimeId !== options.configuration.runtimeId) throw new Error('Assignment snapshot integrity failed');
   const directory = join(root,assignment.runId); await durableDirectory(directory);
-  const identity = {protocol:1,runtimeId:options.runtimeId,assignmentId:assignment.assignmentId,runId:assignment.runId} as const;
+  const identity = {protocol:1,runtimeId:options.configuration.runtimeId,assignmentId:assignment.assignmentId,runId:assignment.runId} as const;
   let materials;
   const preparationPath = join(directory,'preparation.json');
   let preparation: PreparationReport;
@@ -74,12 +86,11 @@ async function executeAssignment(options: WorkerOptions, assignment: RunAssignme
     catch (error) { if (error instanceof Interrupted) throw error; preparation = PreparationReport.parse({...identity,reportId:randomUUID(),preparation:{kind:'failed',reason:'Repository preparation failed. See local Git diagnostics.'}}); }
     await durableWrite(preparationPath,preparation,'create');
   }
-  await deliver(options,outbound,{kind:'preparation',body:preparation});
   if (preparation.preparation.kind !== 'failed' && !materials) materials = await prepareMaterials(snapshot.content.definition.materials,join(directory,'materials'));
   for (const slot of assignment.attempts) {
     const attemptDirectory = join(directory,slot.attemptId); await durableDirectory(attemptDirectory);
     const terminalPath = join(attemptDirectory,'terminal.json');
-    if (await exists(terminalPath)) { await deliver(options,outbound,{kind:'attempt',body:AttemptReport.parse(JSON.parse(await readFile(terminalPath,'utf8')))}); continue; }
+    if (await exists(terminalPath)) { AttemptReport.parse(JSON.parse(await readFile(terminalPath,'utf8'))); continue; }
     const task = snapshot.content.definition.categories.flatMap((category) => category.tasks).find((task) => task.id === slot.taskId);
     const entrant = snapshot.entrants.find((entrant) => entrant.id === slot.entrantId);
     if (!task || !entrant || !snapshot.selectedTaskIds.includes(task.id)) throw new Error('Assignment attempt association failed');
@@ -102,9 +113,9 @@ async function executeAssignment(options: WorkerOptions, assignment: RunAssignme
       context = {io,workspace};
       for (const input of io.inputs) {const bytes = await safeFile(workspace,input); if (['image-editing','image-understanding'].includes(task.kind)) await imageType(bytes);}
       const started = AttemptReport.parse({...identity,reportId:randomUUID(),kind:'started',attemptId:slot.attemptId,startedAt:new Date().toISOString()});
-      await durableWrite(startedPath,started,'create'); await deliver(options,outbound,{kind:'attempt',body:started});
+      await durableWrite(startedPath,started,'create');
       const prompt = `${task.prompt}\n\nTask kind: ${task.kind}\nTask IO: ${JSON.stringify(io)}\n${task.kind === 'browser-scenario' ? 'Return only a JSON object with steps. Each step has kind click and selector, fill and selector/value, expect-text and selector/text, or screenshot and path. The runner opens the starting page before your steps. Do not create recordings yourself.' : 'Create the declared output files in this workspace. Return your final answer separately from tool logs.'}`;
-      const adapter = await executeAdapter({entrant,executable,workspace,directory:attemptDirectory,prompt,images:['image-editing','image-understanding'].includes(task.kind) ? io.inputs.map((path) => join(workspace,path)) : [],writable:!['text-generation','text-editing','image-understanding','browser-scenario'].includes(task.kind),...(snapshot.source === 'fixture' ? {prefix:[fileURLToPath(new URL('../../../tests/fixtures/configured-harness.mjs',import.meta.url)),entrant.harness]} : {})});
+      const adapter = await executeAdapter({entrant,executable,workspace,directory:attemptDirectory,prompt,images:['image-editing','image-understanding'].includes(task.kind) ? io.inputs.map((path) => join(workspace,path)) : [],writable:!['text-generation','text-editing','image-understanding','browser-scenario'].includes(task.kind),...(snapshot.source === 'fixture' ? {prefix:isSea() ? ['--internal-configured-fixture',entrant.harness] : [fileURLToPath(new URL('../../../tests/fixtures/configured-harness.mjs',import.meta.url)),entrant.harness]} : {})});
       observed = adapter.observed;
       const collected = await collectResults({task,io,workspace,directory:attemptDirectory,materials,text:adapter.text,timeoutMs:entrant.settings.timeoutMs});
       artifacts = [...collected.artifacts,...await diagnostics(attemptDirectory)];
@@ -116,6 +127,6 @@ async function executeAssignment(options: WorkerOptions, assignment: RunAssignme
       outcome = {kind:error instanceof Unavailable ? 'skipped' : 'failed',reason:(error instanceof Error ? error.message : 'Execution failed').slice(0,4000),artifacts:metadata(artifacts)};
     }
     const terminal = AttemptReport.parse({...identity,reportId:randomUUID(),kind:'terminal',attemptId:slot.attemptId,outcome,artifacts,observed});
-    await durableWrite(terminalPath,terminal,'create'); await deliver(options,outbound,{kind:'attempt',body:terminal});
+    await durableWrite(terminalPath,terminal,'create');
   }
 }
