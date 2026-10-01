@@ -123,6 +123,7 @@ export function Suites() {
             const updateTask = (next: z.infer<typeof TaskDefinition>) => updateCategory(i, { ...category, tasks: category.tasks.map((value, k) => k === j ? next : value) });
             return <fieldset key={task.id}><legend>Task {j + 1}</legend>
               <label>Task title<input maxLength={120} value={task.title} onChange={(event) => updateTask({ ...task, title: event.target.value })}/></label>
+              {draft.materials.kind === 'repository' && <p className="field-help">Repository task key <code>{task.id}</code></p>}
               <label>Task type<select value={task.kind} onChange={(event) => updateTask({ ...task, kind: TaskKind.parse(event.target.value) })}>{TaskKind.options.map((kind) => <option key={kind} value={kind}>{labels[kind]}</option>)}</select></label>
               <label>Prompt<textarea maxLength={20_000} value={task.prompt} onChange={(event) => updateTask({ ...task, prompt: event.target.value })}/></label>
               <fieldset><legend>Assigned criteria</legend>{draft.evaluation.criteria.map((criterion) => <label className="inline" key={criterion.id}><input type="checkbox" checked={task.criterionIds.includes(criterion.id)} onChange={(event) => updateTask({ ...task, criterionIds: event.target.checked ? [...task.criterionIds, criterion.id] : task.criterionIds.filter((id) => id !== criterion.id) })}/>{criterion.title || 'Untitled criterion'}</label>)}</fieldset>
