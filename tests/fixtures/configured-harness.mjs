@@ -10,7 +10,7 @@ const asserted = prompt.match(/ASSERT_ARGS: (.*)/);
 if (asserted) for (const expected of JSON.parse(asserted[1])) { if (!args.includes(expected)) { process.stderr.write(`Missing exact argument ${expected}`); process.exit(2); } }
 const match = prompt.match(/Task IO: (.*)/);
 const io = match ? JSON.parse(match[1]) : {outputs:[]};
-for (const input of io.inputs ?? []) { if (readFileSync(input).length === 0) throw new Error('Empty material input'); if (harness === 'codex' && !args.some((arg) => arg.endsWith(input))) throw new Error('Image was not attached'); if (harness === 'opencode' && !args.some((arg) => arg.endsWith(input))) throw new Error('Image was not attached'); }
+for (const input of io.inputs ?? []) { if (readFileSync(input).length === 0) throw new Error('Empty material input'); if (prompt.includes('Task kind: image-') && harness === 'codex' && !args.some((arg) => arg.endsWith(input))) throw new Error('Image was not attached'); if (prompt.includes('Task kind: image-') && harness === 'opencode' && !args.some((arg) => arg.endsWith(input))) throw new Error('Image was not attached'); }
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6dWQAAAAASUVORK5CYII=','base64');
 for (const output of io.outputs) { mkdirSync(dirname(output.path),{recursive:true}); writeFileSync(output.path, output.kind === 'image' ? png : output.kind === 'html' ? '<!doctype html><h1>Fixture page</h1>' : output.kind === 'code' ? 'export const answer = 42;\n' : 'Fixture output'); }
 const text = prompt.includes('Task kind: browser-scenario') ? JSON.stringify({steps:[{kind:'click',selector:'button'},{kind:'expect-text',selector:'#count',text:'1'}]}) : 'Fixture final answer';
