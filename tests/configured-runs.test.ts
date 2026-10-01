@@ -1,3 +1,4 @@
+import { enrollRuntime, runtimeAuthorization } from './runtime-auth.ts';
 import { afterAll, beforeAll, expect, test } from 'vitest';
 import { mkdir, mkdtemp } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
@@ -22,6 +23,7 @@ let app: Awaited<ReturnType<typeof createApp>>;
 let worker: ReturnType<typeof createWorkerApp>;
 let url: string;
 let workerUrl: string;
+const credentials = new Map<string, string>();
 beforeAll(async () => {
   await mkdir('.artifacts', { recursive: true }); root = await mkdtemp(resolve('.artifacts/configured-runs-'));
   database = await startDatabase(join(root, 'postgres')); pool = await connectDatabase(database.url);
@@ -30,11 +32,12 @@ beforeAll(async () => {
 });
 afterAll(async () => { await worker?.close(); await app?.close(); await pool?.end(); await database?.stop(); });
 function post(path: string, body: unknown, endpoint = url, headers: Record<string, string> = {}) {
-  return fetch(endpoint + path, { method: 'POST', headers: { 'content-type': 'application/json', ...(path.startsWith('/api/worker/') ? {} : { origin: endpoint }), ...headers }, body: JSON.stringify(body) });
+  return fetch(endpoint + path, { method: 'POST', headers: { 'content-type': 'application/json', ...(path.startsWith('/api/worker/') ? { authorization: credentials.get(typeof body === 'object' && body !== null && 'runtimeId' in body ? String(body.runtimeId) : '') ?? '' } : { origin: endpoint }), ...headers }, body: JSON.stringify(body) });
 }
 async function setup(value = definition(), entrants = 2) {
   const runtime = RuntimeRegistration.parse({ protocol: 1, runtimeId: randomUUID(), observation: 1, observedAt: new Date().toISOString(), capacity: { slots: 10 }, machine: { platform: 'linux', architecture: 'x64', logicalCpus: 4, memoryBytes: 1_000_000 }, tools: ToolName.options.map((name) => ({ name, availability: { kind: 'unavailable', reason: 'missing' } })), harnesses: { codex: { kind: 'not-ready' }, claude: { kind: 'not-ready' }, opencodeGo: { kind: 'not-ready' } }, modelPolicy: 'provider-discovered-at-execution' });
   await registerRuntime(pool, runtime);
+  credentials.set(runtime.runtimeId, runtimeAuthorization(await enrollRuntime(url, runtime.runtimeId)));
   const suite = await createSuite(pool, { definition: value });
   const input = CreateConfiguredRun.parse({ requestId: randomUUID(), contentId: suite.content.contentId, runtimeId: runtime.runtimeId, selection: { kind: 'all' }, source: 'fixture', entrants: Array.from({ length: entrants }, (_, i) => ({ id: randomUUID(), harness: 'codex', model: `requested-${i}`, settings: { timeoutMs: 3000 } })) });
   return { suite, input };
@@ -89,7 +92,7 @@ test('claim receipts survive duplicate races, idle replay, mismatched runtime, a
   const receipts = await Promise.all(claims.map(async (reply) => ClaimReceipt.parse(await reply.json())));
   expect(receipts.every((value) => JSON.stringify(value) === JSON.stringify(receipts[0]))).toBe(true);
   expect(RunAssignment.parse(receipts[0]).runId).toBe(first.runId);
-  expect((await post('/api/worker/claims', { ...request, runtimeId: randomUUID() }, workerUrl)).status).toBe(409);
+  expect((await post('/api/worker/claims', { ...request, runtimeId: randomUUID() }, workerUrl)).status).toBe(401);
   const competing = await Promise.all(Array.from({ length: 8 }, () => post('/api/worker/claims', { ...request, requestId: randomUUID() }, workerUrl)));
   for (const reply of competing) expect(ClaimReceipt.parse(await reply.json()).kind).toBe('idle');
 });
@@ -107,7 +110,7 @@ test('preparation and per-attempt reports enforce associations, sequencing, immu
   expect((await post('/api/worker/attempts', { ...started, reportId: randomUUID() }, workerUrl)).status).toBe(409);
   expect((await post('/api/worker/attempts', { ...started, reportId: randomUUID(), attemptId: assignment.attempts[1]?.attemptId }, workerUrl)).status).toBe(409);
   expect((await post('/api/worker/attempts', { ...done, outcome: { kind: 'skipped', reason: 'Too late', artifacts: [] } }, workerUrl)).status).toBe(409);
-  expect((await post('/api/worker/attempts', { ...done, runtimeId: randomUUID() }, workerUrl)).status).toBe(409);
+  expect((await post('/api/worker/attempts', { ...done, runtimeId: randomUUID() }, workerUrl)).status).toBe(401);
   expect((await post('/api/worker/attempts', { ...done, attemptId: randomUUID() }, workerUrl)).status).toBe(409);
   const responses = await Promise.all(Array.from({ length: 6 }, () => post('/api/worker/attempts', done, workerUrl)));
   expect(responses.map((reply) => reply.status)).toEqual(Array(6).fill(200));
@@ -160,7 +163,7 @@ test('both listeners reject browser worker calls and enforce schemas and report 
       expect((await post(path, {}, endpoint, { origin: endpoint })).status).toBe(403);
       expect((await post(path, {}, endpoint, { 'sec-fetch-site': 'same-origin' })).status).toBe(403);
       expect((await post(path, {}, endpoint, { 'sec-fetch-dest': 'document' })).status).toBe(403);
-      expect((await post(path, {}, endpoint)).status).toBe(400);
+      expect((await post(path, {}, endpoint)).status).toBe(401);
     }
     expect((await post('/api/worker/attempts', { padding: 'x'.repeat(WORK_BODY_LIMIT) }, endpoint)).status).toBe(413);
   }

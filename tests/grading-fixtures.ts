@@ -1,3 +1,4 @@
+import { enrollRuntime, runtimeAuthorization } from './runtime-auth.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import { Definition, SuiteView } from '../packages/contracts/src/suites.ts';
 import { ConfiguredRunView, CreateConfiguredRun } from '../packages/contracts/src/configured-runs.ts';
@@ -7,13 +8,14 @@ import { RunAssignment } from '../packages/contracts/src/work.ts';
 export const canary = 'private-model-harness-marker';
 export const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6dWQAAAAASUVORK5CYII=', 'base64');
 export const webm = Buffer.from('GkXfo59ChoEBQveBAULygQRC84EIQoKEd2VibUKHgQJChYECGFOAZwEAAAAAAAJdEU2bdLpNu4tTq4QVSalmU6yBoU27i1OrhBZUrmtTrIHWTbuMU6uEElTDZ1OsggEjTbuMU6uEHFO7a1OsggJH7AEAAAAAAABZAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAVSalmsCrXsYMPQkBNgIxMYXZmNjEuNy4xMDBXQYxMYXZmNjEuNy4xMDBEiYhAj0AAAAAAABZUrmvIrgEAAAAAAAA/14EBc8WIKWqtf8ufcvucgQAitZyDdW5kiIEAhoVWX1ZQOIOBASPjg4QL68IA4JCwgSC6gSCagQJVsIRVuYEBElTDZ/tzc59jwIBnyJlFo4dFTkNPREVSRIeMTGF2ZjYxLjcuMTAwc3PWY8CLY8WIKWqtf8ufcvtnyKFFo4dFTkNPREVSRIeUTGF2YzYxLjE5LjEwMSBsaWJ2cHhnyKFFo4hEVVJBVElPTkSHkzAwOjAwOjAxLjAwMDAwMDAwMAAfQ7Z1QJ7ngQCjvYEAAIDQAgCdASogACAAAEcIhYWIhYSIAgICdaoD+AIIIQg9AP7/TRL//FhX8WFfxYV/8WFf/PzO7cX85gCjlYEAyACxAQAFEKwAGAAYWC/0AAhwAKOVgQGQALEBAAUQrAAYABhYL/QACHAAo5WBAlgAsQEABRCsABgAGFgv9AAIcACjlYEDIACxAQAFEKwAGAAYWC/0AAhwABxTu2uRu4+zgQC3iveBAfGCAaPwgQM=', 'base64');
-export async function gradingFixture(url: string) {
+export async function gradingFixture(url: string, cookie = '') {
+  const configuration = await enrollRuntime(url, undefined, cookie);
   async function post(path: string, body: unknown) {
-    const response = await fetch(url + path, { method: 'POST', headers: { 'content-type': 'application/json', ...(path.startsWith('/api/worker/') ? {} : { origin: url }) }, body: JSON.stringify(body) });
+    const response = await fetch(url + path, { method: 'POST', headers: { 'content-type': 'application/json', ...(path.startsWith('/api/worker/') ? { authorization: runtimeAuthorization(configuration) } : { origin: url, cookie }) }, body: JSON.stringify(body) });
     if (!response.ok) throw new Error(`${path}: ${response.status} ${await response.text()}`);
     return response.json();
   }
-  const runtimeId = randomUUID();
+  const runtimeId = configuration.runtimeId;
   await post('/api/worker/registrations', { protocol: 1, runtimeId, observation: 1, observedAt: new Date().toISOString(), capacity: { slots: 3 }, machine: { platform: 'linux', architecture: 'x64', logicalCpus: 2, memoryBytes: 1_000_000 }, tools: ToolName.options.map((name) => ({ name, availability: { kind: 'unavailable', reason: 'missing' } })), harnesses: { codex: { kind: 'not-ready' }, claude: { kind: 'not-ready' }, opencodeGo: { kind: 'not-ready' } }, modelPolicy: 'provider-discovered-at-execution' });
   const criteria = ['stars-5', 'slider-10', 'thumbs'].map((control) => ({ id: randomUUID(), title: control, instructions: `Original ${control} guidance`, control }));
   const value = Definition.parse({ title: `Grading ${randomUUID().slice(0, 8)}`, description: 'Fixture grading', categories: [

@@ -63,17 +63,16 @@ Open **Runs** in the dashboard. Select a suite, its saved content version, a reg
 
 A run preserves its suite content, evaluation criteria, selected tasks, and entrants. Open the saved run and expand **View result** to inspect text, images, changed code files and patches, HTML previews, and browser recordings. Downloads preserve the original bytes. Later suite edits do not change it. These management results are separate from the original blind comparisons.
 
-On the runtime machine, register once with `pnpm runtime:onboard`. Then set `VIBE_API_URL`, keep the same `VIBE_RUNTIME_STATE`, and set the absolute executable paths for the harnesses you use:
+Open **Runtimes**, select **Add new**, and copy the enrollment command to the runtime machine. For a source checkout, replace `vibe-runtime` with `pnpm runtime`. Keep the same `VIBE_RUNTIME_STATE` for configuration, onboarding, and work. Set absolute executable paths for the harnesses you use:
 
 ```dotenv
-VIBE_API_URL=https://your-worker-api.example
 VIBE_RUNTIME_STATE=/path/to/runtime-state
 VIBE_CODEX_BIN=/path/to/codex
 VIBE_CLAUDE_BIN=/path/to/claude
 VIBE_OPENCODE_BIN=/path/to/opencode
 ```
 
-Run `pnpm runtime:work` to poll for work, or `pnpm runtime:work --once` to process at most one run. The runtime makes outbound connections and needs no inbound port. Use a loopback HTTP URL for a local API. Remote origins require HTTPS. Harness login credentials stay on the runtime machine.
+Run `vibe-runtime onboard` to report tool readiness. Run `vibe-runtime work` to poll for work, or `vibe-runtime work --once` to process at most one run. Source checkouts also support `pnpm runtime:onboard` and `pnpm runtime:work --once`. The runtime makes outbound connections and needs no inbound port. Use a loopback HTTP URL for a local API. Remote origins require HTTPS. Harness login credentials stay on the runtime machine.
 
 Use **Live** for actual harness execution. **Fixture** uses deterministic subprocesses and remains labeled as fixture evidence. Missing executables or known unsupported capabilities produce skips. Errors and missing required outputs discovered during execution produce failures with diagnostics. Other attempts continue.
 
@@ -120,6 +119,7 @@ Fixture checks do not prove live model access. Run `pnpm run:live` separately wi
 - [Verification and evidence requirements](docs/verification.md)
 - [Implemented text protocol](docs/contracts/text-comparison.md)
 - [Suite authoring and pinned execution](docs/contracts/suites.md)
+- [Dashboard and runtime access](docs/contracts/access.md)
 - [Configured runs and outbound execution](docs/contracts/configured-runs.md)
 - [Configured-run blind grading](docs/contracts/blind-grading.md)
 - [Broader domain design](docs/contracts/domain.md)
@@ -128,15 +128,27 @@ Fixture checks do not prove live model access. Run `pnpm run:live` separately wi
 - [Development workflow](docs/agent-workflow.md)
 - [Architecture decision](docs/decisions/0001-architecture.md)
 
+## Configure dashboard access
+
+Set `VIBE_APP_PASSWORD` to require a shared password, or leave it empty for intentional passwordless operation. Anyone with dashboard access can manage every runtime and schedule work. Passwordless deployments still require individual runtime credentials.
+
+Login creates an opaque 12-hour browser session. Logout invalidates it immediately. Restarting with a changed password or switching passwordless mode invalidates earlier sessions. API data, grading, artifact bytes, and preview actions require dashboard access. Blind grading cookies still restrict each saved evaluation session.
+
+Remote deployments require `VIBE_PUBLIC_URL=https://your-host.example`. The server checks that origin and host, uses Secure cookies, and rejects cross-origin browser writes. `VIBE_TRUSTED_PROXY` is a comma-separated list of proxy IP addresses or CIDRs. Only those proxies can supply client IPs for the login throttle. The proxy must preserve the public Host and terminate HTTPS. Login permits ten attempts per source and 100 installation-wide per 15-minute window. Keep the app password and runtime state private.
+
+Authentication does not establish deployment readiness. PostgreSQL, durable artifact storage, backups, Chromium isolation, HTTPS, and the upload body limit still need infrastructure verification.
+
 ## Runtime onboarding
 
-A Linux runtime registers its machine capabilities through an outbound request. Run `VIBE_API_URL=http://127.0.0.1:<app-port> pnpm runtime:onboard` against the local app. A remote origin must use HTTPS. Configure `VIBE_RUNTIME_SLOTS` from 1 to 256 to declare capacity and `VIBE_RUNTIME_STATE` to choose the durable identity directory. The command does not need a local app, database, or `instance.json` on the worker machine.
+Install the runtime using the [release and installation guide](docs/releases.md). In **Runtimes**, select **Add new**, copy the single-use command, and run it on the runtime machine. The key expires in ten minutes. Then run `vibe-runtime onboard`. Installation does not enroll the runtime or install external harnesses. Configure `VIBE_RUNTIME_SLOTS` from 1 to 256 and `VIBE_RUNTIME_STATE` for its private state directory. The runtime needs no local app, database, or `instance.json`.
 
 The command probes Codex, Claude Code, OpenCode Go, Git, GitHub CLI, Node, .NET, Python, npm, pnpm, make, CMake, GCC, and Docker. Installation and authentication readiness are separate. Authentication probes use each harness's status command. OpenCode Go requires its own provider credential. A credential for another OpenCode provider does not establish Go readiness. Readiness is not proof of model entitlement or successful execution. Model selection remains provider-discovered at execution, with no onboarding model allowlist.
 
-Each state directory owns one stable runtime UUID and monotonic observation sequence. One command owns it at a time. Failed delivery leaves a saved observation. Re-running retries that exact observation before discovering new facts. Accepted observations have stable receipts. Older deliveries cannot replace the latest sequence. The local browser API exposes the latest observations at `GET /api/runtimes`.
+Each state directory owns one server-issued runtime registration and a monotonic observation sequence. One command owns it at a time. Failed delivery leaves a saved observation. Re-running retries that exact observation before discovering new facts. Accepted observations have stable receipts. Older deliveries cannot replace the latest sequence. The local browser API exposes the latest observations at `GET /api/runtimes`.
 
-For remote workers, configure `VIBE_WORKER_HOST` and `VIBE_WORKER_PORT` before `pnpm local`. This opt-in listener shares the app's database and exposes worker registration, claims, preparation, and attempt reports. Put it behind a trusted HTTPS reverse proxy for remote use. Browser requests are rejected. The browser listener retains its loopback Host restriction. Worker authentication belongs to KV-49 and is not implemented here. Restrict listener network access accordingly. Onboarding only registers the runtime. `pnpm runtime:work` executes configured work.
+Both app and optional worker-only listeners require runtime credentials. Set `VIBE_WORKER_HOST` and `VIBE_WORKER_PORT` to enable the separate listener. The enrollment command uses the dashboard's public origin. Your reverse proxy must route `/api/worker/` at that origin to either listener. The worker-only listener exposes no dashboard routes and rejects browser requests. Set `VIBE_PUBLIC_URL` to the canonical HTTPS origin. Trust only the actual proxy addresses through `VIBE_TRUSTED_PROXY`.
+
+Select **Revoke** to immediately block a runtime credential. Select **Replace credential** to recover that same runtime's saved assignments. **Add new** creates a separate identity. Reconfiguration preserves old results, but a different installation or runtime never receives their pending uploads. Revocation and disconnection do not stop assigned collection. The runtime saves reports before upload and retries with progressive backoff. Restart resumes saved delivery without rerunning uncertain attempts.
 
 Only numeric versions and explicit readiness states enter registrations. Probe output is bounded, held in private temporary directories, and removed after each probe. Raw authentication output is never persisted in onboarding state or HTTP payloads. Fixture tests prove discovery mechanics. They do not prove account entitlement or model execution.
 

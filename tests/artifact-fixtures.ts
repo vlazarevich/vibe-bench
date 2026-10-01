@@ -1,3 +1,4 @@
+import { enrollRuntime, runtimeAuthorization } from './runtime-auth.ts';
 import { randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
@@ -13,9 +14,10 @@ import { definition } from './suite-fixtures.ts';
 export const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6dWQAAAAASUVORK5CYII=', 'base64');
 export const interactiveHtml = '<!doctype html><link rel="stylesheet" href="assets/style.css?v=1"><button id="counter">Count 0</button><input aria-label="name"><p id="echo"></p><img src="assets/picture.png"><script src="assets/app.js"></script>';
 export const interactiveJs = 'let n=0;document.querySelector("button").onclick=()=>document.querySelector("button").textContent="Count "+(++n);document.querySelector("input").oninput=e=>document.querySelector("#echo").textContent=e.target.value;';
-export async function seedArtifactRun(url: string) {
+export async function seedArtifactRun(url: string, cookie = '') {
+  const configuration = await enrollRuntime(url, undefined, cookie);
   async function post(path: string, body: unknown) {
-    const response = await fetch(url + path, { method: 'POST', headers: { 'content-type': 'application/json', ...(path.startsWith('/api/worker/') ? {} : { origin: url }) }, body: JSON.stringify(body) });
+    const response = await fetch(url + path, { method: 'POST', headers: { 'content-type': 'application/json', ...(path.startsWith('/api/worker/') ? { authorization: runtimeAuthorization(configuration) } : { origin: url, cookie }) }, body: JSON.stringify(body) });
     if (!response.ok) throw new Error(`${path}: ${response.status} ${await response.text()}`);
     return response.json();
   }
@@ -30,7 +32,7 @@ export async function seedArtifactRun(url: string) {
     const video = page.video(); if (!video) throw new Error('No recording');
     await context.close(); recording = await readFile(await video.path());
   } finally { await browser.close(); }
-  const runtimeId = randomUUID();
+  const runtimeId = configuration.runtimeId;
   await post('/api/worker/registrations', { protocol: 1, runtimeId, observation: 1, observedAt: new Date().toISOString(), capacity: { slots: 2 }, machine: { platform: 'linux', architecture: 'x64', logicalCpus: 2, memoryBytes: 4_000_000_000 }, tools: ToolName.options.map((name) => ({ name, availability: { kind: 'unavailable', reason: 'missing' } })), harnesses: { codex: { kind: 'not-ready' }, claude: { kind: 'not-ready' }, opencodeGo: { kind: 'not-ready' } }, modelPolicy: 'provider-discovered-at-execution' });
   const value = definition();
   const kinds = ['text-generation', 'image-generation', 'coding-feature', 'html-interactive', 'browser-scenario'].map((kind) => TaskKind.parse(kind));

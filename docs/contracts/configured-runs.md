@@ -12,7 +12,7 @@ Creation accepts a stable request ID. An identical replay returns the original c
 
 ## Outbound worker protocol
 
-The runtime initiates every request. The worker API exposes registration, claims, preparation reports, and attempt reports. The separate worker listener rejects browser requests. Runtime and assignment IDs establish record membership, not authentication. Runner authentication remains separate work.
+The runtime initiates every request. The worker API exposes registration, claims, preparation reports, and attempt reports. The separate worker listener rejects browser requests. Runtime and assignment IDs establish record membership. Individually revocable runtime credentials authorize every worker request on both listeners. The [access contract](access.md) defines enrollment and dashboard authority.
 
 A runtime claims one whole run and executes its attempts in order. One unfinished assignment prevents that runtime from claiming another run. Claims have durable request IDs. Replaying a claim returns the same assignment or idle receipt, even if new work arrived afterward.
 

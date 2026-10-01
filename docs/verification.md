@@ -52,7 +52,7 @@ Fixture success proves runner mechanics, not account access, live model behavior
 
 ## Limits
 
-Tests cover empty-database migration, upgrading a persisted protocol-1 database, concurrent migration startup, and reopening suite and report state. The local app does not implement hosted authorization, scheduler leases, cancellation APIs, or arbitrary untrusted code execution. Those broader contracts need their own tests as code arrives.
+Tests cover empty-database migration, upgrading a persisted protocol-1 database, concurrent migration startup, and reopening suite and report state. The app does not implement scheduler leases, cancellation APIs, or arbitrary untrusted code execution. Shared-password access is distinct from infrastructure deployment verification. Those broader contracts need their own tests as code arrives.
 
 `tests/onboarding.test.ts` executes fixture tools as real subprocesses and verifies missing installations, malformed auth output, another provider's OpenCode credential, timeouts, output limits, nonzero exits, and exclusion of credential strings. Real HTTP and PostgreSQL checks cover concurrent duplicate receipts, conflicts, out-of-order observations, stable receipts after restart, remote Host worker registration, browser rejection, and preserved local browser policies. A real CLI subprocess registers without `instance.json`, preserves its identity and sequence, retries saved observations, and rejects concurrent state ownership. These fixtures prove onboarding mechanics, not live model access.
 
@@ -63,3 +63,7 @@ Result checks require Bubblewrap at `/usr/bin/bwrap`, enabled unprivileged user/
 `tests/html-preview.test.ts` launches real Chromium with production namespace mounts. It verifies loopback denial without interception, inaccessible host home/workspace files, local CSS/JS/images, typed interaction, two-session capacity, hostile self-navigation and network attempts, busy-script deadlines, shutdown during launch, and idle expiry. `tests/browser/artifact-viewer.spec.ts` drives the built UI, decodes image/video bytes, selects changed files and patches, interacts with HTML, downloads outputs, reloads results, and closes a preview during a delayed input response. These tests prove fixture viewing and isolation behavior, not model quality or live account access.
 
 `tests/grading-viewer.test.ts` verifies rich result projection and every published file with real HTTP/PostgreSQL, neutral transport, foreign-cookie rejection, unchanged grade persistence, and HTML input/close authority. `tests/browser/grading-viewer.spec.ts` views and grades all five result formats in Chromium, checks complete text, decoded image/video, code paths/diffs, interactive HTML, declared downloads, reload, and another browser's denial. Grading sends only session-scoped API requests.
+
+## Access and recovery
+
+`tests/access.test.ts` uses PostgreSQL and both real HTTP listeners to verify dashboard gating, session expiry, rotation, passwordless transitions, CSRF, bounded guessing, secure cookies, enrollment concurrency and expiry, runtime identity isolation, and immediate revocation. `tests/browser/access.spec.ts` drives protected login, runtime enrollment and revocation, grading navigation, logout, and passwordless enrollment in Chromium. Existing rich-viewer fixtures now enroll authenticated runtimes.

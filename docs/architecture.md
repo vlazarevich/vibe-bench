@@ -55,15 +55,15 @@ Credentials remain outside workspaces. The runner uses an environment allowlist 
 
 ## Scope and design guidance
 
-The local app has a loopback and same-origin boundary. It has no hosted user authentication. Runner bearer authority and browser session authority are separate. Management run and attempt IDs are absent from blind evaluation responses; public review IDs and session-scoped card handles are distinct random identifiers.
+The local app has a loopback and same-origin boundary. An optional shared app password protects dashboard data and actions. Runner bearer authority and browser session authority are separate. Management run and attempt IDs are absent from blind evaluation responses; public review IDs and session-scoped card handles are distinct random identifiers.
 
 The [text comparison contract](contracts/text-comparison.md) describes the executable subset. [ADR 0001](decisions/0001-architecture.md) and the broader design contracts remain guidance for later work. Remote scheduling, leases, artifact bundles, S3 storage, richer reporting, React Router, TanStack Query, and Drizzle are not required by this text loop and are not installed. Schema-derived types and explicit SQL implement the current invariants.
 
 ## Runtime registration
 
-`packages/contracts/src/runtime.ts` owns protocol-1 runtime observations and receipts. `apps/runner/src/onboarding.ts` owns bounded tool discovery, separate harness readiness, a durable runtime identity and observation sequence, and outbound delivery. `apps/server/src/features/runtimes.ts` owns immutable observations and stable duplicate receipts. Latest runtime inspection selects the greatest observation sequence rather than trusting machine clocks or arrival order.
+`packages/contracts/src/runtime.ts` owns protocol-1 runtime observations and receipts. `apps/runner/src/onboarding.ts` owns bounded tool discovery, separate harness readiness, a server-issued runtime identity and durable observation sequence, and outbound delivery. `apps/server/src/features/runtimes.ts` owns immutable observations and stable duplicate receipts. Latest runtime inspection selects the greatest observation sequence rather than trusting machine clocks or arrival order.
 
-The existing text runner remains separate. Runtime onboarding initiates all network traffic and opens no worker-side listener. An optional worker-only Fastify listener in `apps/server/src/worker-app.ts` shares the local database lifecycle. It accepts registration, claims, preparation, and attempt reports, with browser requests rejected. HTTPS termination belongs to a trusted remote proxy. Worker authentication is deferred to KV-49. A capability corpus is deferred to KV-48. Registration itself does not execute jobs.
+The existing text runner remains separate. Runtime onboarding initiates all network traffic and opens no worker-side listener. An optional worker-only Fastify listener in `apps/server/src/worker-app.ts` shares the local database lifecycle. It accepts registration, claims, preparation, and attempt reports, with browser requests rejected. HTTPS termination belongs to a trusted remote proxy. Both listeners require individually revocable runtime credentials. A capability corpus is deferred to KV-48. Registration itself does not execute jobs.
 
 ## Configured execution
 
@@ -83,3 +83,7 @@ The grading feature reads immutable configured-run inputs and outcomes. It store
 The [blind-grading contract](contracts/blind-grading.md) defines task-sized reads, pinned criterion snapshots, stable card order, exact retries, and anonymous artifact access. Execution failures and skips remain visible with neutral status. This feature does not reveal identities or calculate aggregate scores.
 
 `grading-viewer-routes.ts` authorizes an existing session/card mapping before calling the shared result projection. Public file URLs use immutable outcome ordinals and neutral labels. The adapter changes no mapping or judgment storage. Both management and grading use the same bounded HTML preview service.
+
+## Installation access
+
+`packages/contracts/src/access.ts` owns enrollment and saved runtime configuration. `features/access.ts` owns dashboard sessions, password generations, login throttling, runtime enrollment, and revocation. `worker-routes.ts` applies the same runtime authority on both listeners. `apps/web/src/access.tsx` gates the dashboard, and `runtimes.tsx` owns enrollment and credential management. See the [access contract](contracts/access.md).

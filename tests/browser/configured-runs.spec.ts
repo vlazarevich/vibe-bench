@@ -1,3 +1,4 @@
+import { enrollRuntime, runtimeAuthorization } from '../runtime-auth.ts';
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import { createHash, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
@@ -6,9 +7,13 @@ import { ConfiguredRunView } from '../../packages/contracts/src/configured-runs.
 import { ToolName } from '../../packages/contracts/src/runtime.ts';
 import { ClaimReceipt } from '../../packages/contracts/src/work.ts';
 
+const runtimeCredentials = new Map<string, string>();
 async function seed(request: APIRequestContext, baseURL: string) {
-  const runtimeId = randomUUID(), criterionId = randomUUID();
-  const registration = await request.post('/api/worker/registrations', { data: {
+  const configuration = await enrollRuntime(baseURL);
+  const runtimeId = configuration.runtimeId, criterionId = randomUUID();
+  const authorization = runtimeAuthorization(configuration);
+  runtimeCredentials.set(runtimeId, authorization);
+  const registration = await request.post('/api/worker/registrations', { headers: { authorization }, data: {
     protocol: 1, runtimeId, observation: 1, observedAt: new Date().toISOString(), capacity: { slots: 2 },
     machine: { platform: 'linux', architecture: 'x64', logicalCpus: 2, memoryBytes: 4_000_000_000 },
     tools: ToolName.options.map((name) => ({ name, availability: { kind: 'available', version: '1.2.3' } })),
@@ -153,18 +158,18 @@ test('run management shows terminal reasons and downloads files without executin
   await page.getByRole('button', { name: 'Preview run', exact: true }).click();
   await page.getByRole('button', { name: 'Start run', exact: true }).click();
   await expect(page.getByRole('region', { name: 'Saved run' })).toBeVisible();
-  const claim = ClaimReceipt.parse(await (await request.post('/api/worker/claims', { data: { protocol: 1, runtimeId, requestId: randomUUID() } })).json());
+  const claim = ClaimReceipt.parse(await (await request.post('/api/worker/claims', { headers: { authorization: runtimeCredentials.get(runtimeId) ?? '' }, data: { protocol: 1, runtimeId, requestId: randomUUID() } })).json());
   if (claim.kind !== 'assigned') throw new Error('Expected fixture assignment');
   const identity = { protocol: 1, runtimeId, assignmentId: claim.assignmentId, runId: claim.runId };
-  expect((await request.post('/api/worker/preparations', { data: { ...identity, reportId: randomUUID(), preparation: { kind: 'none' } } })).ok()).toBeTruthy();
+  expect((await request.post('/api/worker/preparations', { headers: { authorization: runtimeCredentials.get(runtimeId) ?? '' }, data: { ...identity, reportId: randomUUID(), preparation: { kind: 'none' } } })).ok()).toBeTruthy();
   const artifactBytes = Buffer.from('<script>document.title="unsafe"</script><p>Download only</p>');
   const artifact = { id: randomUUID(), name: 'answer.html', kind: 'html', mediaType: 'text/html', bytes: artifactBytes.length, sha256: createHash('sha256').update(artifactBytes).digest('hex') };
   for (const [index, attempt] of claim.attempts.entries()) {
-    if (index === 0) expect((await request.post('/api/worker/attempts', { data: { ...identity, reportId: randomUUID(), kind: 'started', attemptId: attempt.attemptId, startedAt: new Date().toISOString() } })).ok()).toBeTruthy();
+    if (index === 0) expect((await request.post('/api/worker/attempts', { headers: { authorization: runtimeCredentials.get(runtimeId) ?? '' }, data: { ...identity, reportId: randomUUID(), kind: 'started', attemptId: attempt.attemptId, startedAt: new Date().toISOString() } })).ok()).toBeTruthy();
     const outcome = index === 0 ? { kind: 'completed', result: { kind: 'text' }, summary: '<script>Unsafe markup stays text</script>', artifacts: [artifact] }
       : index === 1 ? { kind: 'skipped', reason: 'Model unavailable. Select a model accessible to this runtime.', artifacts: [] }
         : { kind: 'failed', reason: 'Time limit exceeded. Increase the time limit and create a new run.', artifacts: [] };
-    const response = await request.post('/api/worker/attempts', { data: { ...identity, reportId: randomUUID(), kind: 'terminal', attemptId: attempt.attemptId, outcome, artifacts: index === 0 ? [{ ...artifact, base64: artifactBytes.toString('base64') }] : [], observed: { executableVersion: null, model: null } } });
+    const response = await request.post('/api/worker/attempts', { headers: { authorization: runtimeCredentials.get(runtimeId) ?? '' }, data: { ...identity, reportId: randomUUID(), kind: 'terminal', attemptId: attempt.attemptId, outcome, artifacts: index === 0 ? [{ ...artifact, base64: artifactBytes.toString('base64') }] : [], observed: { executableVersion: null, model: null } } });
     expect(response.ok()).toBeTruthy();
   }
   await page.getByRole('button', { name: 'Refresh results', exact: true }).click();
