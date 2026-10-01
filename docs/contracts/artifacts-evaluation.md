@@ -1,6 +1,6 @@
 # Artifacts and evaluation boundaries
 
-Status: design guidance. Result schemas and behavior tests become authoritative when implemented.
+Status: design guidance for broader artifact isolation. The [blind-grading contract](blind-grading.md) defines implemented configured-run judgments and anonymous result access. Result schemas and behavior tests are authoritative for implemented behavior.
 
 ## Collection and publication
 
