@@ -4,6 +4,9 @@ import cookie from '@fastify/cookie';
 import staticFiles from '@fastify/static';
 import type pg from 'pg';
 import { z } from 'zod';
+import { ConfigureRun, CreateConfiguredRun, ConfiguredRunId } from '../../../packages/contracts/src/configured-runs.ts';
+import { AttemptReport, ClaimRequest, PreparationReport, WORK_BODY_LIMIT } from '../../../packages/contracts/src/work.ts';
+import { previewRun, createConfiguredRun, listConfiguredRuns, readConfiguredRun, claimRun, acceptPreparation, acceptAttemptReport, readArtifact } from './features/configured-runs.ts';
 import { RuntimeRegistration } from '../../../packages/contracts/src/runtime.ts';
 import { registerRuntime, listRuntimes } from './features/runtimes.ts';
 import { Conflict, NotFound } from './errors.ts';
@@ -22,7 +25,8 @@ export async function createApp({ pool, token, webRoot, ready = () => true }: { 
     reply.header('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
     const host = request.headers.host;
     if (!host || !/^(127\.0\.0\.1|localhost):\d+$/.test(host)) return reply.code(403).send({ error: 'Local access only' });
-    if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method) && request.url !== '/api/runner/reports' && request.url !== '/api/worker/registrations' && request.headers.origin !== `http://${host}`) return reply.code(403).send({ error: 'Same-origin request required' });
+    if (request.url.startsWith('/api/worker/') && (request.headers.origin || request.headers['sec-fetch-site'] || request.headers['sec-fetch-dest'] || request.headers['sec-fetch-user'])) return reply.code(403).send({ error: 'Worker requests only' });
+    if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method) && request.url !== '/api/runner/reports' && !request.url.startsWith('/api/worker/') && request.headers.origin !== `http://${host}`) return reply.code(403).send({ error: 'Same-origin request required' });
   });
   app.setErrorHandler((error, _request, reply) => {
     if (error instanceof z.ZodError) return reply.code(400).send({ error: 'Invalid request', issues: error.issues.map((issue) => ({ path: issue.path, message: issue.message })) });
@@ -43,6 +47,18 @@ export async function createApp({ pool, token, webRoot, ready = () => true }: { 
     return acceptReport(pool, Report.parse(request.body));
   });
   app.post('/api/worker/registrations', async (request) => registerRuntime(pool, RuntimeRegistration.parse(request.body)));
+  app.post('/api/worker/claims', async (request) => claimRun(pool, ClaimRequest.parse(request.body)));
+  app.post('/api/worker/preparations', { bodyLimit: WORK_BODY_LIMIT }, async (request) => acceptPreparation(pool, PreparationReport.parse(request.body)));
+  app.post('/api/worker/attempts', { bodyLimit: WORK_BODY_LIMIT }, async (request) => acceptAttemptReport(pool, AttemptReport.parse(request.body)));
+  app.post('/api/configured-runs/preview', async (request) => previewRun(pool, ConfigureRun.parse(request.body)));
+  app.post('/api/configured-runs', async (request) => createConfiguredRun(pool, CreateConfiguredRun.parse(request.body)));
+  app.get('/api/configured-runs', async () => listConfiguredRuns(pool));
+  app.get('/api/configured-runs/:id', async (request) => readConfiguredRun(pool, z.object({ id: ConfiguredRunId }).parse(request.params).id));
+  app.get('/api/configured-runs/:id/artifacts/:artifactId', async (request, reply) => {
+    const params = z.object({ id: ConfiguredRunId, artifactId: z.uuid() }).parse(request.params);
+    const bytes = await readArtifact(pool, params.id, params.artifactId);
+    return reply.header('Content-Type', 'application/octet-stream').header('Content-Disposition', 'attachment; filename="artifact.bin"').header('X-Content-Type-Options', 'nosniff').send(bytes);
+  });
   app.get('/api/runtimes', async () => listRuntimes(pool));
   app.get('/api/runs', async () => Runs.parse(await listRuns(pool)));
   app.get('/api/suites', async () => listSuites(pool));

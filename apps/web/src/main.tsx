@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { Evaluation, Runs } from '../../../packages/contracts/src/evaluation.ts';
 import './style.css';
 import { Suites } from './suites.tsx';
+import { ConfiguredRuns } from './configured-runs.tsx';
 
 async function request<T>(path: string, schema: z.ZodType<T>, body?: unknown) {
   const response = await fetch(path, body === undefined ? {} : { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
@@ -41,8 +42,8 @@ function App() {
   }
   return <main>
     <header><div className="wordmark">vibe<span>bench</span></div><span className="local">LOCAL COMPARISON</span></header>
-    <nav aria-label="Main navigation"><a href="/">Comparisons</a><a href="/?view=suites">Suites</a></nav>
-    {new URLSearchParams(location.search).get('view') === 'suites' ? <Suites/> : evaluation ? <>
+    <nav aria-label="Main navigation"><a href="/">Comparisons</a><a href="/?view=suites">Suites</a><a href="/?view=runs">Runs</a></nav>
+    {new URLSearchParams(location.search).get('view') === 'runs' ? <ConfiguredRuns/> : new URLSearchParams(location.search).get('view') === 'suites' ? <Suites/> : evaluation ? <>
       <button className="back" disabled={busy} onClick={() => { setEvaluation(null); history.replaceState(null, '', '/'); void refresh().catch((error: unknown) => setError(error instanceof Error ? error.message : 'Could not load runs')); }}>← All runs</button>
       <div className="eyebrow">{evaluation.source === 'fixture' ? 'DETERMINISTIC DEMO · NO MODEL CALLS' : 'LIVE CODEX RESULTS'}</div>
       <h1>{evaluation.kind === 'blind' ? 'Which answer is better?' : 'Your choice is saved.'}</h1>

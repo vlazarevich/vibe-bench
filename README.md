@@ -55,7 +55,31 @@ VIBE_SUITE_FILE=/path/to/suite-task.json
 
 Remove `VIBE_TASK_FILE` if it is set. With the same local server running, run `pnpm run:fixture` or `pnpm run:live`. Refresh **Comparisons** to review the result. The run uses the exported content even if the suite has since changed. Remove `VIBE_SUITE_FILE` to return to the default task or `VIBE_TASK_FILE`.
 
-All ten task kinds can be authored. The current runner executes only text generation without repository materials. Repository checkout, rubric judgment collection, and aggregate ranking are outside this feature. Ranking rules are saved written guidance.
+All ten task kinds can be authored. The exported single-task command supports text generation without repository materials. Use configured runs for the broader execution flow below. Rubric judgment collection and aggregate ranking remain separate work. Ranking rules are saved written guidance.
+
+## Configure full or partial runs
+
+Open **Runs** in the dashboard. Select a suite, its saved content version, a registered runtime, and the tasks to execute. The latest suite content is selected initially. A partial run includes the union of selected categories and individual tasks. Add entrants with their harness, exact model, timeout, and supported settings, then preview the task and entrant matrix before starting.
+
+A run preserves its suite content, evaluation criteria, selected tasks, and entrants. Open the saved run to inspect each attempt and download its artifacts. Later suite edits do not change it. These management results are separate from the original blind comparisons.
+
+On the runtime machine, register once with `pnpm runtime:onboard`. Then set `VIBE_API_URL`, keep the same `VIBE_RUNTIME_STATE`, and set the absolute executable paths for the harnesses you use:
+
+```dotenv
+VIBE_API_URL=https://your-worker-api.example
+VIBE_RUNTIME_STATE=/path/to/runtime-state
+VIBE_CODEX_BIN=/path/to/codex
+VIBE_CLAUDE_BIN=/path/to/claude
+VIBE_OPENCODE_BIN=/path/to/opencode
+```
+
+Run `pnpm runtime:work` to poll for work, or `pnpm runtime:work --once` to process at most one run. The runtime makes outbound connections and needs no inbound port. Use a loopback HTTP URL for a local API. Remote origins require HTTPS. Harness login credentials stay on the runtime machine.
+
+Use **Live** for actual harness execution. **Fixture** uses deterministic subprocesses and remains labeled as fixture evidence. Missing executables or known unsupported capabilities produce skips. Errors and missing required outputs discovered during execution produce failures with diagnostics. Other attempts continue.
+
+For repository materials, the runtime resolves one exact commit per run and gives each attempt an independent checkout. Keep task input and output declarations in that repository's `vibe-bench.json`. The [configured-run contract](docs/contracts/configured-runs.md) describes result types and the supported browser action format. Repository content is maintained separately from Vibe bench.
+
+Configured runs collect text, raster images, HTML bundles, code patches and changed files, or browser recordings. Browser scenarios use a fresh Chromium context and WebM recording. Install Chromium with `pnpm exec playwright install chromium` on the runtime. HTML and other files download as attachments. Rich viewers and scoring are not part of this flow.
 
 ## Inspect failures and retry delivery
 
@@ -90,6 +114,7 @@ Fixture checks do not prove live model access. Run `pnpm run:live` separately wi
 - [Verification and evidence requirements](docs/verification.md)
 - [Implemented text protocol](docs/contracts/text-comparison.md)
 - [Suite authoring and pinned execution](docs/contracts/suites.md)
+- [Configured runs and outbound execution](docs/contracts/configured-runs.md)
 - [Broader domain design](docs/contracts/domain.md)
 - [Runner lifecycle guidance](docs/contracts/runner-protocol.md)
 - [Evaluation boundary guidance](docs/contracts/artifacts-evaluation.md)
@@ -104,6 +129,6 @@ The command probes Codex, Claude Code, OpenCode Go, Git, GitHub CLI, Node, .NET,
 
 Each state directory owns one stable runtime UUID and monotonic observation sequence. One command owns it at a time. Failed delivery leaves a saved observation. Re-running retries that exact observation before discovering new facts. Accepted observations have stable receipts. Older deliveries cannot replace the latest sequence. The local browser API exposes the latest observations at `GET /api/runtimes`.
 
-For remote workers, configure `VIBE_WORKER_HOST` and `VIBE_WORKER_PORT` before `pnpm local`. This opt-in listener shares the app's database and exposes only `POST /api/worker/registrations`. Put it behind a trusted HTTPS reverse proxy for remote use. Requests carrying browser Origin or Fetch Metadata headers are rejected. The browser listener retains its loopback Host restriction. Registration authentication belongs to KV-49 and is not implemented here. Restrict listener network access accordingly. Onboarding does not claim jobs, schedule execution, or acquire corpus materials.
+For remote workers, configure `VIBE_WORKER_HOST` and `VIBE_WORKER_PORT` before `pnpm local`. This opt-in listener shares the app's database and exposes worker registration, claims, preparation, and attempt reports. Put it behind a trusted HTTPS reverse proxy for remote use. Browser requests are rejected. The browser listener retains its loopback Host restriction. Worker authentication belongs to KV-49 and is not implemented here. Restrict listener network access accordingly. Onboarding only registers the runtime. `pnpm runtime:work` executes configured work.
 
 Only numeric versions and explicit readiness states enter registrations. Probe output is bounded, held in private temporary directories, and removed after each probe. Raw authentication output is never persisted in onboarding state or HTTP payloads. Fixture tests prove discovery mechanics. They do not prove account entitlement or model execution.
