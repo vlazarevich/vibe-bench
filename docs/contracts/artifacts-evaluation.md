@@ -1,6 +1,6 @@
 # Artifacts and evaluation boundaries
 
-Status: configured result viewing is implemented by `artifact-viewer.ts` and its HTTP and browser tests. Session judgment sections remain design guidance.
+Status: configured result viewing is implemented by `artifact-viewer.ts` and its HTTP and browser tests. The [blind-grading contract](blind-grading.md) defines implemented configured-run judgments and anonymous result access.
 
 ## Collection and publication
 

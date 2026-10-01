@@ -1,0 +1,14 @@
+.grading-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 1rem; align-items: start; }
+.grading-control { margin: 1rem 0; padding: 1rem; border: 1px solid #bbb; }
+.grading-control legend { font-weight: bold; }
+.grading-control label { display: inline-flex; align-items: center; gap: .3rem; margin: .4rem; }
+.grading-control input[type="radio"] { width: auto; }
+.grading-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .75rem; }
+.grading-result img, .grading-result video { max-width: 100%; max-height: 500px; }
+.grading-result figure { margin: 1rem 0; }
+.grading-prompt { white-space: pre-wrap; }
+nav[aria-label="Grading tasks"] { display: block; margin: 24px 0 40px; }
+nav[aria-label="Grading tasks"] a { display: block; padding: .4rem; }
+nav[aria-label="Grading tasks"] a[aria-current="page"] { font-weight: bold; background: #eee; }
+
+.grading-cards .grading-actions button { width: auto; padding: 10px 14px; }

@@ -23,6 +23,9 @@ flowchart LR
 | `packages/contracts/src/evaluation.ts` | Explicit blind and revealed browser schemas |
 | `apps/server/src/features/runs.ts` | Idempotent report acceptance and public run summaries |
 | `apps/server/src/features/evaluation.ts` | Session authority, persisted card mapping, atomic final choice and reveal |
+| `packages/contracts/src/blind-grading.ts` | Neutral run navigation, anonymous task results, original rating selections, and versioned judgments |
+| `apps/server/src/features/blind-grading.ts` | Immutable grading mappings, per-criterion writes, authority, and result-only artifact projection |
+| `apps/web/src/blind-grading.tsx`, `grading-controls.tsx` | Task navigation and independent rating editors without management fetches |
 | `apps/server/src/db.ts` | Pool and transactionally ordered migrations |
 | `apps/server/src/app.ts` | HTTP validation, runner authorization, cookies, same-origin checks, static files |
 | `apps/runner/src/runner.ts` | Codex adapter, immutable run construction, outcome collection and report delivery |
@@ -32,7 +35,7 @@ flowchart LR
 | `scripts/local.ts`, `scripts/local-lock.ts` | Per-worktree app lifecycle and kernel-owned state-directory lock |
 | `scripts/local-database.ts`, `scripts/database-worker.ts` | Database owner lifetime and graceful shutdown |
 
-Feature queries stay with their owner. The server stores one report aggregate and one session row per evaluation. PostgreSQL uniqueness serializes duplicate reports. A transaction locks a session while saving its final choice. SQL rows never reach the browser. The browser imports only evaluation and suite authoring schemas. `pnpm boundaries` enforces application import restrictions.
+Feature queries stay with their owner. The server stores one report aggregate and one session row per evaluation. PostgreSQL uniqueness serializes duplicate reports. A transaction locks a session while saving its final choice. SQL rows never reach the browser. The browser imports explicit evaluation, grading, suite, runtime, and configured-run management schemas. `pnpm boundaries` enforces application import restrictions.
 
 ## Local execution
 
@@ -52,7 +55,7 @@ Credentials remain outside workspaces. The runner uses an environment allowlist 
 
 ## Scope and design guidance
 
-The local app has a loopback and same-origin boundary. It has no hosted user authentication. Runner bearer authority and browser session authority are separate. Management run and attempt IDs are absent from browser responses; public review IDs and session-scoped card handles are distinct random identifiers.
+The local app has a loopback and same-origin boundary. It has no hosted user authentication. Runner bearer authority and browser session authority are separate. Management run and attempt IDs are absent from blind evaluation responses; public review IDs and session-scoped card handles are distinct random identifiers.
 
 The [text comparison contract](contracts/text-comparison.md) describes the executable subset. [ADR 0001](decisions/0001-architecture.md) and the broader design contracts remain guidance for later work. Remote scheduling, leases, artifact bundles, S3 storage, richer reporting, React Router, TanStack Query, and Drizzle are not required by this text loop and are not installed. Schema-derived types and explicit SQL implement the current invariants.
 
@@ -73,3 +76,8 @@ The existing text runner remains separate. Runtime onboarding initiates all netw
 `packages/contracts/src/artifact-viewer.ts` owns strict supplied-URL result presentations and bounded preview inputs. `apps/server/src/features/artifact-viewer.ts` projects primary and declared result files, validates text bytes, and serializes isolated media decoding. Storage reads remain in `configured-runs.ts`. `artifact-viewer-routes.ts` owns management route validation.
 
 `html-preview.ts` owns two bounded interactive sessions and exact manifest asset serving. `isolated-chromium.ts` owns Bubblewrap runtime mounts, network isolation, process deadlines, and teardown. `apps/web/src/result-viewer.tsx` renders the same presentation for any authorized caller. Run management loads a result only when its viewer is expanded. Grading and blind session authority belong to their existing owners.
+## Configured-run grading
+
+The grading feature reads immutable configured-run inputs and outcomes. It stores one immutable session mapping and one mutable row per completed card and assigned criterion. Each cell has its own version and transaction lock. Session authority uses a separate cookie from the pairwise demo. The browser selects **Grading** without mounting management views or requesting their records.
+
+The [blind-grading contract](contracts/blind-grading.md) defines task-sized reads, pinned criterion snapshots, stable card order, exact retries, and anonymous artifact access. Execution failures and skips remain visible with neutral status. This feature does not reveal identities or calculate aggregate scores.

@@ -23,11 +23,11 @@ export async function checkBoundaries(root: string): Promise<Violation[]> {
         const application = destination.startsWith('apps/');
         const contracts = destination.startsWith('packages/contracts/');
         const forbidden = target === null || (owner.startsWith('apps/web/')
-          ? application && !destination.startsWith('apps/web/') || contracts && !['packages/contracts/src/evaluation.ts', 'packages/contracts/src/suites.ts', 'packages/contracts/src/runtime.ts', 'packages/contracts/src/configured-runs.ts', 'packages/contracts/src/artifact-viewer.ts'].includes(destination)
+          ? application && !destination.startsWith('apps/web/') || contracts && !['packages/contracts/src/evaluation.ts', 'packages/contracts/src/blind-grading.ts', 'packages/contracts/src/suites.ts', 'packages/contracts/src/runtime.ts', 'packages/contracts/src/configured-runs.ts', 'packages/contracts/src/artifact-viewer.ts'].includes(destination)
           : owner.startsWith('apps/server/')
             ? application && !destination.startsWith('apps/server/')
             : owner.startsWith('apps/runner/')
-              ? application && !destination.startsWith('apps/runner/') || destination === 'packages/contracts/src/evaluation.ts' || target === 'pg' || target.startsWith('pg/') || resolved?.packageId?.name === '@types/pg'
+              ? application && !destination.startsWith('apps/runner/') || ['packages/contracts/src/evaluation.ts', 'packages/contracts/src/blind-grading.ts'].includes(destination) || target === 'pg' || target.startsWith('pg/') || resolved?.packageId?.name === '@types/pg'
               : application);
         if (forbidden) violations.push({ owner, target: target ?? '<nonliteral module>', line: source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1 });
       }
