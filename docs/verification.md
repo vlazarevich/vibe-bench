@@ -40,6 +40,10 @@ For live configured execution, create a run in **Runs**, register the runtime, a
 
 `tests/browser/suites.spec.ts` drives all task kinds, criteria, rating controls, ranking rules, materials, explicit save choices, incomplete drafts, validation errors, downloads, reloads, deletion, historical content and two-editor conflicts. Screenshots remain under `.artifacts/`. The original blind comparison test runs alongside it.
 
+`tests/blind-grading.test.ts` verifies selected tasks, every terminal attempt, suite changes before session creation, every rating value, saved criterion and attempt associations, zero versus absent grades, equal grades, exact save replay, stale competing writes, independent cells, and stable mapping after database restart. SQL tests reject mapping edits and judgment reassignment. Neutral JSON, errors, headers, and artifact transport exclude metadata canaries and management identifiers. Only declared result files are accessible.
+
+`tests/browser/blind-grading.spec.ts` drives stars, the range slider, exact numeric selection, and thumbs in Chromium. It checks explicit skip and clear, URL navigation, saved progress, reload, separate-browser denial, lost-response replay, and two-tab conflicts. Raster images decode and a one-second fixture WebM plays. HTML downloads without executing. Network assertions prove grading requests only blind endpoints. A screenshot is saved at `.artifacts/blind-grading-cards.png`. The tiny blue recording is generated fixture content, not evidence of live browser-agent execution.
+
 ## Live evidence
 
 Run `pnpm local`, configure `.env` using the README, and execute `pnpm run:live`. Both exact models, `gpt-6-luna` and `gpt-6-sol`, must complete through Codex CLI 0.159.2. Inspect the saved report, then compare the live answers in the browser and reload after choosing. Record the OS, CLI version, requested model IDs, outcomes, and reviewed commit in the PR.

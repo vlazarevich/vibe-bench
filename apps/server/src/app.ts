@@ -9,6 +9,8 @@ import { AttemptReport, ClaimRequest, PreparationReport, WORK_BODY_LIMIT } from 
 import { previewRun, createConfiguredRun, listConfiguredRuns, readConfiguredRun, claimRun, acceptPreparation, acceptAttemptReport, readArtifact } from './features/configured-runs.ts';
 import { RuntimeRegistration } from '../../../packages/contracts/src/runtime.ts';
 import { registerRuntime, listRuntimes } from './features/runtimes.ts';
+import { BlindGradingSession, GradingReviewId, GradingSessionId, GradingTaskHandle, GradingAssetHandle, SaveJudgment } from '../../../packages/contracts/src/blind-grading.ts';
+import { listGradingRuns, createGrading, readGrading, readGradingTask, saveGradingJudgment, readGradingAsset } from './features/blind-grading.ts';
 import { Conflict, NotFound } from './errors.ts';
 import { Report } from '../../../packages/contracts/src/runner.ts';
 import { Choice, SessionId, Runs } from '../../../packages/contracts/src/evaluation.ts';
@@ -58,6 +60,26 @@ export async function createApp({ pool, token, webRoot, ready = () => true }: { 
     const params = z.object({ id: ConfiguredRunId, artifactId: z.uuid() }).parse(request.params);
     const bytes = await readArtifact(pool, params.id, params.artifactId);
     return reply.header('Content-Type', 'application/octet-stream').header('Content-Disposition', 'attachment; filename="artifact.bin"').header('X-Content-Type-Options', 'nosniff').send(bytes);
+  });
+  app.get('/api/blind-grading/runs', async () => listGradingRuns(pool));
+  app.post('/api/blind-grading', async (request, reply) => {
+    const { reviewId } = z.object({ reviewId: GradingReviewId }).strict().parse(request.body);
+    const existing = z.string().regex(/^[a-f0-9]{64}$/).safeParse(request.cookies.vibe_grading_authority);
+    const authority = existing.success ? existing.data : randomBytes(32).toString('hex');
+    const id = await createGrading(pool, reviewId, authority);
+    reply.setCookie('vibe_grading_authority', authority, { httpOnly: true, sameSite: 'strict', path: '/', maxAge: 60 * 60 * 24 * 30 });
+    return BlindGradingSession.parse(await readGrading(pool, id, authority));
+  });
+  app.get('/api/blind-grading/:id', async (request) => readGrading(pool, z.object({ id: GradingSessionId }).parse(request.params).id, request.cookies.vibe_grading_authority ?? ''));
+  app.get('/api/blind-grading/:id/tasks/:task', async (request) => {
+    const { id, task } = z.object({ id: GradingSessionId, task: GradingTaskHandle }).parse(request.params);
+    return readGradingTask(pool, id, request.cookies.vibe_grading_authority ?? '', task);
+  });
+  app.post('/api/blind-grading/:id/judgments', async (request) => saveGradingJudgment(pool, z.object({ id: GradingSessionId }).parse(request.params).id, request.cookies.vibe_grading_authority ?? '', SaveJudgment.parse(request.body)));
+  app.get('/api/blind-grading/:id/assets/:asset', async (request, reply) => {
+    const { id, asset } = z.object({ id: GradingSessionId, asset: GradingAssetHandle }).parse(request.params);
+    const result = await readGradingAsset(pool, id, request.cookies.vibe_grading_authority ?? '', asset);
+    return reply.header('Content-Type', result.mediaType).header('Content-Disposition', `${result.previewable ? 'inline' : 'attachment'}; filename="result.bin"`).header('Content-Security-Policy', "sandbox; default-src 'none'").send(result.bytes);
   });
   app.get('/api/runtimes', async () => listRuntimes(pool));
   app.get('/api/runs', async () => Runs.parse(await listRuns(pool)));

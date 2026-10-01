@@ -81,6 +81,12 @@ For repository materials, the runtime resolves one exact commit per run and give
 
 Configured runs collect text, raster images, HTML bundles, code patches and changed files, or browser recordings. Browser scenarios use a fresh Chromium context and WebM recording. Install Chromium with `pnpm exec playwright install chromium` on the runtime. HTML and other files download as attachments. Rich viewers and scoring are not part of this flow.
 
+## Grade configured results
+
+Open **Grading**, select a finished configured run, then navigate its categories and tasks. Grade each anonymous completed result against its pinned criteria. Stars, the 0–10 slider, and thumbs retain the original selection and convert it to a 0–100 grade. Equal grades are allowed. **Skip** and **Clear** remain distinct from a zero grade. Failed or execution-skipped attempts stay visible with no grading controls.
+
+Saved judgments and anonymous result order survive reloads and application restarts. Keep the grading cookie to resume the same session. Another browser cannot resume from the URL alone. Conflicting edits require reloading the saved judgment. Fixture results remain labeled. The [blind-grading contract](docs/contracts/blind-grading.md) documents persistence, authority, and anonymous downloads. The **Comparisons** tab remains the separate pairwise demonstration with a final choice and identity reveal.
+
 ## Inspect failures and retry delivery
 
 `pnpm run:fixture` creates another deterministic run through the real runner and HTTP API. Fixture runs are labeled in the UI and persisted separately from live evidence.
@@ -115,6 +121,7 @@ Fixture checks do not prove live model access. Run `pnpm run:live` separately wi
 - [Implemented text protocol](docs/contracts/text-comparison.md)
 - [Suite authoring and pinned execution](docs/contracts/suites.md)
 - [Configured runs and outbound execution](docs/contracts/configured-runs.md)
+- [Configured-run blind grading](docs/contracts/blind-grading.md)
 - [Broader domain design](docs/contracts/domain.md)
 - [Runner lifecycle guidance](docs/contracts/runner-protocol.md)
 - [Evaluation boundary guidance](docs/contracts/artifacts-evaluation.md)
