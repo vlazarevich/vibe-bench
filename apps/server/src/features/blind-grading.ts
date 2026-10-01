@@ -138,3 +138,13 @@ export async function readGradingAsset(pool: pg.Pool, id: z.infer<typeof Grading
   const previewable = ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'video/webm'].includes(asset.mediaType);
   return { bytes: row.bytes, mediaType: previewable ? asset.mediaType : 'application/octet-stream', previewable };
 }
+
+export async function readGradingCard(pool: pg.Pool, id: z.infer<typeof GradingSessionId>, authority: string, handle: z.infer<typeof GradingCardHandle>) {
+  const session = await authorized(pool, id, authority);
+  const card = session.mapping.categories.flatMap((category) => category.tasks).flatMap((task) => task.cards).find((card) => card.handle === handle && card.kind === 'completed');
+  if (!card) throw new NotFound();
+  const rows = await pool.query('SELECT run_id AS "runId" FROM configured_attempts WHERE id=$1', [card.attemptId]);
+  const row = z.array(z.object({ runId: ConfiguredRunId })).parse(rows.rows)[0];
+  if (!row) throw new NotFound();
+  return { runId: row.runId, attemptId: card.attemptId };
+}

@@ -71,8 +71,15 @@ The existing text runner remains separate. Runtime onboarding initiates all netw
 
 `apps/runner/src/execution.ts` owns the durable worker loop. Materials, adapters, artifact collection, and browser recording stay in runner-owned modules. One runtime claims a whole run and executes attempts in order. Every attempt has an independent checkout. The server derives run progress from immutable per-attempt records. The [configured-run contract](contracts/configured-runs.md) defines the supported lifecycle and artifact shapes.
 
+## Result viewing
+
+`packages/contracts/src/artifact-viewer.ts` owns strict supplied-URL result presentations and bounded preview inputs. `apps/server/src/features/artifact-viewer.ts` projects primary and declared result files, validates text bytes, and serializes isolated media decoding. Storage reads remain in `configured-runs.ts`. `artifact-viewer-routes.ts` owns management route validation.
+
+`html-preview.ts` owns two bounded interactive sessions and exact manifest asset serving. `isolated-chromium.ts` owns Bubblewrap runtime mounts, network isolation, process deadlines, and teardown. `apps/web/src/result-viewer.tsx` renders the same presentation for any authorized caller. Run management loads a result only when its viewer is expanded. Grading and blind session authority belong to their existing owners.
 ## Configured-run grading
 
 The grading feature reads immutable configured-run inputs and outcomes. It stores one immutable session mapping and one mutable row per completed card and assigned criterion. Each cell has its own version and transaction lock. Session authority uses a separate cookie from the pairwise demo. The browser selects **Grading** without mounting management views or requesting their records.
 
 The [blind-grading contract](contracts/blind-grading.md) defines task-sized reads, pinned criterion snapshots, stable card order, exact retries, and anonymous artifact access. Execution failures and skips remain visible with neutral status. This feature does not reveal identities or calculate aggregate scores.
+
+`grading-viewer-routes.ts` authorizes an existing session/card mapping before calling the shared result projection. Public file URLs use immutable outcome ordinals and neutral labels. The adapter changes no mapping or judgment storage. Both management and grading use the same bounded HTML preview service.

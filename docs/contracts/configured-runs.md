@@ -59,7 +59,7 @@ The result descriptor records the task's output shape.
 
 Final answers are separate from diagnostic artifacts. Available raw harness metadata remains diagnostic evidence, without invented usage or cost values. An unavailable capability known before execution produces a skip with a reason. A denial, process error, or missing required output discovered during execution produces a failure. Other attempts continue.
 
-Each artifact records its name, kind, media type, byte count, and SHA-256 digest. Terminal reports carry bounded bytes. The server verifies size, digest, and result associations before storing bytes and accepting the outcome atomically. Total artifact bytes per attempt are limited to 8,000,000. Downloads are inert attachments. HTML bundles do not start application servers or execute in the dashboard.
+Each artifact records its name, kind, media type, byte count, and SHA-256 digest. Terminal reports carry bounded bytes. The server verifies size, digest, and result associations before storing bytes and accepting the outcome atomically. Total artifact bytes per attempt are limited to 8,000,000. Downloads are inert attachments. Management result previews use the strict `ResultPresentation` schema and supplied local URLs. HTML bundles do not start application servers or execute in the dashboard. A disposable Chromium process inside Bubblewrap namespaces renders saved assets and returns PNG frames. See the [artifact viewing boundary](artifacts-evaluation.md).
 
 ## Evidence
 

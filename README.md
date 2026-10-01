@@ -61,7 +61,7 @@ All ten task kinds can be authored. The exported single-task command supports te
 
 Open **Runs** in the dashboard. Select a suite, its saved content version, a registered runtime, and the tasks to execute. The latest suite content is selected initially. A partial run includes the union of selected categories and individual tasks. Add entrants with their harness, exact model, timeout, and supported settings, then preview the task and entrant matrix before starting.
 
-A run preserves its suite content, evaluation criteria, selected tasks, and entrants. Open the saved run to inspect each attempt and download its artifacts. Later suite edits do not change it. These management results are separate from the original blind comparisons.
+A run preserves its suite content, evaluation criteria, selected tasks, and entrants. Open the saved run and expand **View result** to inspect text, images, changed code files and patches, HTML previews, and browser recordings. Downloads preserve the original bytes. Later suite edits do not change it. These management results are separate from the original blind comparisons.
 
 On the runtime machine, register once with `pnpm runtime:onboard`. Then set `VIBE_API_URL`, keep the same `VIBE_RUNTIME_STATE`, and set the absolute executable paths for the harnesses you use:
 
@@ -79,11 +79,11 @@ Use **Live** for actual harness execution. **Fixture** uses deterministic subpro
 
 For repository materials, the runtime resolves one exact commit per run and gives each attempt an independent checkout. Keep task input and output declarations in that repository's `vibe-bench.json`. The [configured-run contract](docs/contracts/configured-runs.md) describes result types and the supported browser action format. Repository content is maintained separately from Vibe bench.
 
-Configured runs collect text, raster images, HTML bundles, code patches and changed files, or browser recordings. Browser scenarios use a fresh Chromium context and WebM recording. Install Chromium with `pnpm exec playwright install chromium` on the runtime. HTML and other files download as attachments. Rich viewers and scoring are not part of this flow.
+Configured runs collect text, raster images, HTML bundles, code patches and changed files, or browser recordings. Browser scenarios use a fresh Chromium context and WebM recording. Install Chromium with `pnpm exec playwright install chromium` on the runtime. Original files download as attachments. Inspect rich results in **Runs** or **Grading**.
 
 ## Grade configured results
 
-Open **Grading**, select a finished configured run, then navigate its categories and tasks. Grade each anonymous completed result against its pinned criteria. Stars, the 0–10 slider, and thumbs retain the original selection and convert it to a 0–100 grade. Equal grades are allowed. **Skip** and **Clear** remain distinct from a zero grade. Failed or execution-skipped attempts stay visible with no grading controls.
+Open **Grading**, select a finished configured run, then navigate its categories and tasks. Expand **View result** to inspect each anonymous completed result, then grade it against its pinned criteria. Stars, the 0–10 slider, and thumbs retain the original selection and convert it to a 0–100 grade. Equal grades are allowed. **Skip** and **Clear** remain distinct from a zero grade. Failed or execution-skipped attempts stay visible with no grading controls.
 
 Saved judgments and anonymous result order survive reloads and application restarts. Keep the grading cookie to resume the same session. Another browser cannot resume from the URL alone. Conflicting edits require reloading the saved judgment. Fixture results remain labeled. The [blind-grading contract](docs/contracts/blind-grading.md) documents persistence, authority, and anonymous downloads. The **Comparisons** tab remains the separate pairwise demonstration with a final choice and identity reveal.
 
@@ -139,3 +139,9 @@ Each state directory owns one stable runtime UUID and monotonic observation sequ
 For remote workers, configure `VIBE_WORKER_HOST` and `VIBE_WORKER_PORT` before `pnpm local`. This opt-in listener shares the app's database and exposes worker registration, claims, preparation, and attempt reports. Put it behind a trusted HTTPS reverse proxy for remote use. Browser requests are rejected. The browser listener retains its loopback Host restriction. Worker authentication belongs to KV-49 and is not implemented here. Restrict listener network access accordingly. Onboarding only registers the runtime. `pnpm runtime:work` executes configured work.
 
 Only numeric versions and explicit readiness states enter registrations. Probe output is bounded, held in private temporary directories, and removed after each probe. Raw authentication output is never persisted in onboarding state or HTTP payloads. Fixture tests prove discovery mechanics. They do not prove account entitlement or model execution.
+
+### Result preview prerequisites
+
+Install Bubblewrap at `/usr/bin/bwrap`, permit unprivileged Linux user and network namespaces, and run `pnpm exec playwright install chromium` on the server host. The isolated browser needs the system runtime libraries and fonts. Missing isolation or browser dependencies produce an unavailable preview with the original download still available. Media validation also uses this isolated browser.
+
+HTML previews show a 960 by 640 image of an isolated browser. Open a preview, click the image, send keyboard input or text, and use **Refresh preview** for delayed changes. Only saved local assets can load. At most two interactive previews can run at once. They expire after 30 seconds without input and stop after two minutes even with input. The preview does not provide streaming video or a screen-reader representation of submitted HTML.

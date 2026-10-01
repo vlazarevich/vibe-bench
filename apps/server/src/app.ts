@@ -1,3 +1,5 @@
+import { registerGradingViewer } from './features/grading-viewer-routes.ts';
+import { registerArtifactViewer } from './features/artifact-viewer-routes.ts';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import Fastify from 'fastify';
 import cookie from '@fastify/cookie';
@@ -24,7 +26,7 @@ export async function createApp({ pool, token, webRoot, ready = () => true }: { 
   await app.register(cookie);
   app.addHook('onRequest', async (request, reply) => {
     reply.header('Cache-Control', 'no-store').header('X-Content-Type-Options', 'nosniff').header('Referrer-Policy', 'no-referrer');
-    reply.header('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
+    reply.header('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; media-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
     const host = request.headers.host;
     if (!host || !/^(127\.0\.0\.1|localhost):\d+$/.test(host)) return reply.code(403).send({ error: 'Local access only' });
     if (request.url.startsWith('/api/worker/') && (request.headers.origin || request.headers['sec-fetch-site'] || request.headers['sec-fetch-dest'] || request.headers['sec-fetch-user'])) return reply.code(403).send({ error: 'Worker requests only' });
@@ -61,6 +63,8 @@ export async function createApp({ pool, token, webRoot, ready = () => true }: { 
     const bytes = await readArtifact(pool, params.id, params.artifactId);
     return reply.header('Content-Type', 'application/octet-stream').header('Content-Disposition', 'attachment; filename="artifact.bin"').header('X-Content-Type-Options', 'nosniff').send(bytes);
   });
+  const previews = registerArtifactViewer(app, pool);
+  registerGradingViewer(app, pool, previews);
   app.get('/api/blind-grading/runs', async () => listGradingRuns(pool));
   app.post('/api/blind-grading', async (request, reply) => {
     const { reviewId } = z.object({ reviewId: GradingReviewId }).strict().parse(request.body);

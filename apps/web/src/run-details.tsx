@@ -1,3 +1,4 @@
+import { AttemptResultViewer } from './result-viewer.tsx';
 import { ConfiguredRunView, RunPreview } from '../../../packages/contracts/src/configured-runs.ts';
 
 export function RunMatrix({ preview }: { preview: RunPreview }) {
@@ -27,6 +28,7 @@ export function RunDetails({ run }: { run: ConfiguredRunView }) {
         <h3>{task?.title} <span className="attempt-status">{outcome?.kind ?? attempt.state.kind}</span></h3>
         <p>{entrant?.model} · {entrant?.harness}</p>
         {outcome && <p className={outcome.kind === 'completed' ? '' : 'failure'}>{outcome.kind === 'completed' ? outcome.summary : outcome.reason}</p>}
+        {outcome?.kind === 'completed' && <AttemptResultViewer resultUrl={`/api/configured-runs/${run.runId}/attempts/${attempt.attemptId}/result`}/>}
         {outcome && <section aria-label={`Downloads for ${task?.title} with ${entrant?.model}`}>
           <h4>Downloads</h4>{outcome.artifacts.length === 0 ? <p>No files were produced.</p> : <ul>{outcome.artifacts.map((artifact) => <li key={artifact.id}><a download href={`/api/configured-runs/${run.runId}/artifacts/${artifact.id}`}>{artifact.name}</a> <span className="field-help">{artifact.kind} · {artifact.mediaType} · {artifact.bytes.toLocaleString()} bytes</span></li>)}</ul>}
         </section>}
