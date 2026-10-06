@@ -5,6 +5,7 @@ import { assessDefinition, SuiteContent, TaskId } from '../../../../packages/con
 import { contentDigest } from '../../../../packages/contracts/src/canonical.ts';
 import { ArtifactMetadata, AttemptSlot, AttemptView, ConfigureRun, ConfiguredRunId, ConfiguredRunList, ConfiguredRunView, CreateConfiguredRun, ExecutionSnapshot, Preparation, RunPreview } from '../../../../packages/contracts/src/configured-runs.ts';
 import { AttemptReport, ClaimReceipt, ClaimRequest, MAX_ARTIFACT_BYTES, PreparationReport, WorkReceipt } from '../../../../packages/contracts/src/work.ts';
+import { authorizeRuntime, lockRuntime } from './access.ts';
 import { Conflict, NotFound } from '../errors.ts';
 
 type Database = pg.Pool | pg.PoolClient;
@@ -34,15 +35,15 @@ async function runView(database: Database, runId: string, initial = false): Prom
     FROM configured_attempts a LEFT JOIN attempt_starts s ON s.attempt_id = a.id LEFT JOIN attempt_outcomes o ON o.attempt_id = a.id LEFT JOIN work_claims c ON c.run_id = a.run_id WHERE a.run_id = $1 ORDER BY a.ordinal`, [runId]);
   const attempts = rows.rows.map((row) => AttemptView.parse({ ...AttemptSlot.parse({ attemptId: row.attemptId, taskId: row.taskId, entrantId: row.entrantId, ordinal: row.ordinal }), state: initial ? { kind: 'queued' } : row.outcome ? { kind: 'terminal', outcome: row.outcome } : row.started_at ? { kind: 'started', startedAt: row.started_at.toISOString() } : row.assignment_id ? { kind: 'assigned' } : { kind: 'queued' } }));
   const preparation = initial ? null : (await database.query('SELECT preparation FROM run_preparations WHERE run_id = $1', [runId])).rows[0]?.preparation ?? null;
-  return ConfiguredRunView.parse({ runId, createdAt: run.created_at.toISOString(), snapshot: run.snapshot, preparation, attempts, status: attempts.every((attempt) => attempt.state.kind === 'terminal') ? 'finished' : attempts.some((attempt) => attempt.state.kind !== 'queued') ? 'running' : 'queued' });
+  return ConfiguredRunView.parse({ runId, createdAt: run.created_at.toISOString(), snapshot: run.snapshot, preparation, attempts, status: !initial && (await database.query('SELECT 1 FROM run_abandonments WHERE run_id=$1', [runId])).rowCount ? 'abandoned' : attempts.every((attempt) => attempt.state.kind === 'terminal') ? 'finished' : attempts.some((attempt) => attempt.state.kind !== 'queued') ? 'running' : 'queued' });
 }
 export async function readConfiguredRun(pool: pg.Pool, runId: string) { return runView(pool, runId); }
 export async function listConfiguredRuns(pool: pg.Pool) {
-  const rows = await pool.query(`SELECT r.id AS "runId", r.snapshot->'content'->'definition'->>'title' AS title, r.created_at, r.snapshot->>'source' AS source,
+  const rows = await pool.query(`SELECT r.id AS "runId", r.snapshot->'content'->'definition'->>'title' AS title, r.created_at, r.snapshot->>'source' AS source, EXISTS(SELECT 1 FROM run_abandonments b WHERE b.run_id=r.id) AS abandoned,
     count(a.id)::integer AS attempts, count(o.attempt_id)::integer AS terminal, bool_or(c.assignment_id IS NOT NULL) AS assigned
     FROM configured_runs r JOIN configured_attempts a ON a.run_id = r.id LEFT JOIN attempt_outcomes o ON o.attempt_id = a.id LEFT JOIN work_claims c ON c.run_id = r.id
     GROUP BY r.id ORDER BY r.created_at DESC, r.id`);
-  return ConfiguredRunList.parse(rows.rows.map((row) => ({ runId: row.runId, title: row.title, createdAt: row.created_at.toISOString(), source: row.source, attempts: row.attempts, terminal: row.terminal, status: row.attempts === row.terminal ? 'finished' : row.assigned ? 'running' : 'queued' })));
+  return ConfiguredRunList.parse(rows.rows.map((row) => ({ runId: row.runId, title: row.title, createdAt: row.created_at.toISOString(), source: row.source, attempts: row.attempts, terminal: row.terminal, status: row.abandoned ? 'abandoned' : row.attempts === row.terminal ? 'finished' : row.assigned ? 'running' : 'queued' })));
 }
 export async function createConfiguredRun(pool: pg.Pool, input: CreateConfiguredRun) {
   const client = await pool.connect();
@@ -62,19 +63,23 @@ export async function createConfiguredRun(pool: pg.Pool, input: CreateConfigured
   } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); }
 }
 
-export async function claimRun(pool: pg.Pool, input: ClaimRequest): Promise<ClaimReceipt> {
+export async function claimRun(pool: pg.Pool, input: ClaimRequest, authorization?: string): Promise<ClaimReceipt> {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    await lockRuntime(client, input.runtimeId);
+    if (authorization !== undefined) await authorizeRuntime(client, input.runtimeId, authorization);
     await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 2))', [input.requestId]);
     const existing = await client.query('SELECT receipt, request = $2::jsonb AS identical FROM work_claims WHERE request_id = $1', [input.requestId, input]);
     if (existing.rowCount) {
       if (!existing.rows[0].identical) throw new Conflict('Claim ID was already used for different inputs');
-      await client.query('COMMIT'); return ClaimReceipt.parse(existing.rows[0].receipt);
+      const receipt = ClaimReceipt.parse(existing.rows[0].receipt);
+      if (receipt.kind === 'assigned' && (await client.query('SELECT 1 FROM run_abandonments WHERE run_id=$1', [receipt.runId])).rowCount) throw new Conflict('Run was abandoned');
+      await client.query('COMMIT'); return receipt;
     }
     await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 3))', [input.runtimeId]);
     if (!(await client.query('SELECT 1 FROM runtime_observations WHERE runtime_id = $1 LIMIT 1', [input.runtimeId])).rowCount) throw new Conflict('Runtime must register before claiming work');
-    const active = await client.query(`SELECT 1 FROM work_claims c JOIN configured_attempts a ON a.run_id = c.run_id LEFT JOIN attempt_outcomes o ON o.attempt_id = a.id WHERE c.runtime_id = $1 AND o.attempt_id IS NULL LIMIT 1`, [input.runtimeId]);
+    const active = await client.query(`SELECT 1 FROM work_claims c JOIN configured_attempts a ON a.run_id = c.run_id LEFT JOIN attempt_outcomes o ON o.attempt_id = a.id WHERE c.runtime_id = $1 AND o.attempt_id IS NULL AND NOT EXISTS(SELECT 1 FROM run_abandonments b WHERE b.run_id=c.run_id) LIMIT 1`, [input.runtimeId]);
     const pending = active.rowCount ? null : (await client.query('SELECT r.id FROM configured_runs r LEFT JOIN work_claims c ON c.run_id = r.id WHERE r.runtime_id = $1 AND c.run_id IS NULL ORDER BY r.created_at, r.id LIMIT 1', [input.runtimeId])).rows[0];
     let receipt: ClaimReceipt = { kind: 'idle', requestId: input.requestId };
     if (pending) {
@@ -86,10 +91,13 @@ export async function claimRun(pool: pg.Pool, input: ClaimRequest): Promise<Clai
   } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); }
 }
 
-async function acceptWorkReport(pool: pg.Pool, report: PreparationReport | AttemptReport, apply: (client: pg.PoolClient, snapshot: ExecutionSnapshot) => Promise<void>): Promise<WorkReceipt> {
+async function acceptWorkReport(pool: pg.Pool, report: PreparationReport | AttemptReport, apply: (client: pg.PoolClient, snapshot: ExecutionSnapshot) => Promise<void>, authorization?: string): Promise<WorkReceipt> {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    await lockRuntime(client, report.runtimeId);
+    if (authorization !== undefined) await authorizeRuntime(client, report.runtimeId, authorization);
+    if ((await client.query('SELECT 1 FROM run_abandonments WHERE run_id=$1', [report.runId])).rowCount) throw new Conflict('Run was abandoned');
     await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 4))', [report.reportId]);
     const digest = contentDigest(report);
     const previous = await client.query('SELECT * FROM work_reports WHERE report_id = $1', [report.reportId]);
@@ -106,7 +114,7 @@ async function acceptWorkReport(pool: pg.Pool, report: PreparationReport | Attem
     await client.query('COMMIT'); return receipt;
   } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); }
 }
-export async function acceptPreparation(pool: pg.Pool, report: PreparationReport) {
+export async function acceptPreparation(pool: pg.Pool, report: PreparationReport, authorization?: string) {
   return acceptWorkReport(pool, report, async (client, snapshot) => {
     const prior = await client.query('SELECT preparation FROM run_preparations WHERE run_id = $1', [report.runId]);
     if (prior.rowCount) throw new Conflict('Preparation has already been recorded');
@@ -117,9 +125,9 @@ export async function acceptPreparation(pool: pg.Pool, report: PreparationReport
       if (Object.keys(report.preparation.manifest.tasks).some((id) => !taskIds.has(id))) throw new Conflict('Manifest refers to a task outside the pinned suite');
     }
     await client.query('INSERT INTO run_preparations(run_id, preparation) VALUES($1,$2)', [report.runId, report.preparation]);
-  });
+  }, authorization);
 }
-export async function acceptAttemptReport(pool: pg.Pool, report: AttemptReport) {
+export async function acceptAttemptReport(pool: pg.Pool, report: AttemptReport, authorization?: string) {
   return acceptWorkReport(pool, report, async (client, snapshot) => {
     const slot = await client.query('SELECT task_id FROM configured_attempts WHERE id = $1 AND run_id = $2', [report.attemptId, report.runId]);
     if (!slot.rowCount) throw new Conflict('Attempt does not belong to this run');
@@ -145,7 +153,7 @@ export async function acceptAttemptReport(pool: pg.Pool, report: AttemptReport) 
       if (!inserted.rowCount) throw new Conflict('Artifact ID was already used');
     }
     await client.query('INSERT INTO attempt_outcomes(attempt_id, outcome, observed) VALUES($1,$2,$3)', [report.attemptId, report.outcome, report.observed]);
-  });
+  }, authorization);
 }
 
 function artifactMetadata(artifact: z.infer<typeof ArtifactMetadata> & { base64: string }) { const { base64: _base64, ...metadata } = artifact; return ArtifactMetadata.parse(metadata); }

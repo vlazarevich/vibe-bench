@@ -14,7 +14,7 @@ async function seed(request: APIRequestContext, baseURL: string) {
   const authorization = runtimeAuthorization(configuration);
   runtimeCredentials.set(runtimeId, authorization);
   const registration = await request.post('/api/worker/registrations', { headers: { authorization }, data: {
-    protocol: 1, runtimeId, observation: 1, observedAt: new Date().toISOString(), capacity: { slots: 2 },
+    protocol: 1, runtimeId, observation: 1, observedAt: new Date().toISOString(),
     machine: { platform: 'linux', architecture: 'x64', logicalCpus: 2, memoryBytes: 4_000_000_000 },
     tools: ToolName.options.map((name) => ({ name, availability: { kind: 'available', version: '1.2.3' } })),
     harnesses: { codex: { kind: 'ready' }, claude: { kind: 'ready' }, opencodeGo: { kind: 'ready' } }, modelPolicy: 'provider-discovered-at-execution',

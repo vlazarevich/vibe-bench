@@ -16,7 +16,6 @@ export const RuntimeRegistration = z.object({
   runtimeId: RuntimeId,
   observation: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
   observedAt: z.iso.datetime(),
-  capacity: z.object({ slots: z.number().int().min(1).max(256) }).strict(),
   machine: z.object({ platform: z.literal('linux'), architecture: z.enum(['x64', 'arm64']), logicalCpus: z.number().int().positive(), memoryBytes: z.number().int().positive() }).strict(),
   tools: z.array(z.object({ name: ToolName, availability: ToolAvailability }).strict()).length(ToolName.options.length).refine((tools) => new Set(tools.map((tool) => tool.name)).size === ToolName.options.length, 'Tools must appear exactly once'),
   harnesses: z.object({ codex: HarnessReadiness, claude: HarnessReadiness, opencodeGo: HarnessReadiness }).strict(),

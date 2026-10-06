@@ -53,6 +53,6 @@ export const Preparation = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('failed'), reason: Text.min(1).max(4000) }).strict(),
 ]);
 export type Preparation = z.infer<typeof Preparation>;
-export const ConfiguredRunView = z.object({ runId: ConfiguredRunId, createdAt: z.iso.datetime(), snapshot: ExecutionSnapshot, preparation: Preparation.nullable(), attempts: z.array(AttemptView), status: z.enum(['queued', 'running', 'finished']) }).strict();
+export const ConfiguredRunView = z.object({ runId: ConfiguredRunId, createdAt: z.iso.datetime(), snapshot: ExecutionSnapshot, preparation: Preparation.nullable(), attempts: z.array(AttemptView), status: z.enum(['queued', 'running', 'finished', 'abandoned']) }).strict();
 export type ConfiguredRunView = z.infer<typeof ConfiguredRunView>;
-export const ConfiguredRunList = z.array(z.object({ runId: ConfiguredRunId, title: Text, createdAt: z.iso.datetime(), source: z.enum(['fixture', 'live']), status: z.enum(['queued', 'running', 'finished']), attempts: z.number().int(), terminal: z.number().int() }).strict());
+export const ConfiguredRunList = z.array(z.object({ runId: ConfiguredRunId, title: Text, createdAt: z.iso.datetime(), source: z.enum(['fixture', 'live']), status: z.enum(['queued', 'running', 'finished', 'abandoned']), attempts: z.number().int(), terminal: z.number().int() }).strict());

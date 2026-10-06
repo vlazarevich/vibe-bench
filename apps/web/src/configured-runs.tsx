@@ -73,7 +73,7 @@ export function ConfiguredRuns() {
       <form onSubmit={(event) => { event.preventDefault(); void preview(); }}>
         <RunSuite disabled={busy || !loaded} content={content} onChange={changeContent}/>
         <fieldset disabled={busy || !loaded} className="run-inputs"><legend>2. Choose a runtime</legend>
-          <label>Runtime<select value={runtimeId} onChange={(event) => { changed(); setRuntimeId(event.target.value); }}><option value="">Choose a runtime</option>{runtimes.map(({ registration }) => <option key={registration.runtimeId} value={registration.runtimeId}>{registration.machine.platform} {registration.machine.architecture} · {registration.capacity.slots} slots · {registration.runtimeId.slice(0, 8)}</option>)}</select></label>
+          <label>Runtime<select value={runtimeId} onChange={(event) => { changed(); setRuntimeId(event.target.value); }}><option value="">Choose a runtime</option>{runtimes.map(({ registration }) => <option key={registration.runtimeId} value={registration.runtimeId}>{registration.machine.platform} {registration.machine.architecture} · {registration.runtimeId.slice(0, 8)}</option>)}</select></label>
           {selectedRuntime && <p className="field-help">Last seen {new Date(selectedRuntime.receivedAt).toLocaleString()}. Codex {selectedRuntime.registration.harnesses.codex.kind}, Claude Code {selectedRuntime.registration.harnesses.claude.kind}, OpenCode {selectedRuntime.registration.harnesses.opencodeGo.kind}.</p>}
           {loaded && runtimes.length === 0 && <p>No runtimes are registered. Register a runtime to make it available here.</p>}
         </fieldset>

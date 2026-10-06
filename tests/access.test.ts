@@ -17,48 +17,50 @@ async function login(password = 'correct horse') { const response = await post('
 beforeAll(async () => {
   await mkdir('.artifacts', { recursive: true }); const root = await mkdtemp(resolve('.artifacts/access-'));
   database = await startDatabase(join(root, 'postgres')); pool = await connectDatabase(database.url);
-  app = await createApp({ pool, token: 'legacy-secret', password: 'correct horse' }); url = await app.listen({ host: '127.0.0.1', port: 0 });
+  app = await createApp({ pool, password: 'correct horse' }); url = await app.listen({ host: '127.0.0.1', port: 0 });
   worker = createWorkerApp({ pool }); workerUrl = await worker.listen({ host: '127.0.0.1', port: 0 });
 });
 afterAll(async () => { await worker?.close(); await app?.close(); await pool?.end(); await database?.stop(); });
 
 test('dashboard gate covers all management, blind artifacts, preview and worker listener paths', async () => {
-  for (const path of ['/api/runs', '/api/suites', '/api/configured-runs', '/api/runtimes', '/api/runtime-access', '/api/blind-grading/runs', `/api/configured-runs/${randomUUID()}/artifacts/${randomUUID()}`, `/api/blind-grading/${randomUUID()}/assets/${randomUUID()}`, '/api/previews/anything']) expect((await fetch(url + path)).status, path).toBe(401);
+  for (const path of ['/api/configured-runs', '/api/suites', '/api/configured-runs', '/api/runtimes', '/api/runtime-access', '/api/blind-grading/runs', `/api/configured-runs/${randomUUID()}/artifacts/${randomUUID()}`, `/api/blind-grading/${randomUUID()}/assets/${randomUUID()}`, '/api/previews/anything']) expect((await fetch(url + path)).status, path).toBe(401);
   for (const path of ['/api/runtime-enrollments', '/api/suites', '/api/configured-runs', '/api/blind-grading']) expect((await post(path, {})).status).toBe(401);
   expect((await post('/api/access/login', { password: 'bad' })).status).toBe(401);
   expect((await post('/api/access/login', { password: 'correct horse' }, '', url, { origin: 'https://other.example' })).status).toBe(403);
   const cookie = await login();
-  expect((await fetch(url + '/api/runs', { headers: { cookie } })).status).toBe(200);
-  expect((await fetch(workerUrl + '/api/runs', { headers: { cookie } })).status).toBe(404);
+  expect((await fetch(url + '/api/configured-runs', { headers: { cookie } })).status).toBe(200);
+  expect((await fetch(workerUrl + '/api/configured-runs', { headers: { cookie } })).status).toBe(404);
   await post('/api/access/logout', {}, cookie);
-  expect((await fetch(url + '/api/runs', { headers: { cookie } })).status).toBe(401);
+  expect((await fetch(url + '/api/configured-runs', { headers: { cookie } })).status).toBe(401);
 });
 
 test('session expiry, password rotation and passwordless transitions invalidate durable authority', async () => {
   const cookie = await login();
   await pool.query("UPDATE dashboard_sessions SET expires_at=now()-interval '1 second'");
-  expect((await fetch(url + '/api/runs', { headers: { cookie } })).status).toBe(401);
+  expect((await fetch(url + '/api/configured-runs', { headers: { cookie } })).status).toBe(401);
   const fresh = await login();
-  await app.close(); app = await createApp({ pool, token: 'legacy-secret', password: 'rotated' }); url = await app.listen({ host: '127.0.0.1', port: 0 });
-  expect((await fetch(url + '/api/runs', { headers: { cookie: fresh } })).status).toBe(401);
+  await app.close(); app = await createApp({ pool, password: 'rotated' }); url = await app.listen({ host: '127.0.0.1', port: 0 });
+  expect((await fetch(url + '/api/configured-runs', { headers: { cookie: fresh } })).status).toBe(401);
   const rotated = await login('rotated');
-  await app.close(); app = await createApp({ pool, token: 'legacy-secret', password: '' }); url = await app.listen({ host: '127.0.0.1', port: 0 });
-  expect((await fetch(url + '/api/runs')).status).toBe(200);
-  await app.close(); app = await createApp({ pool, token: 'legacy-secret', password: 'rotated' }); url = await app.listen({ host: '127.0.0.1', port: 0 });
-  expect((await fetch(url + '/api/runs', { headers: { cookie: rotated } })).status).toBe(401);
+  await app.close(); app = await createApp({ pool, password: '' }); url = await app.listen({ host: '127.0.0.1', port: 0 });
+  expect((await fetch(url + '/api/configured-runs')).status).toBe(200);
+  await app.close(); app = await createApp({ pool, password: 'rotated' }); url = await app.listen({ host: '127.0.0.1', port: 0 });
+  expect((await fetch(url + '/api/configured-runs', { headers: { cookie: rotated } })).status).toBe(401);
 });
 
-test('single-use enrollment serializes competitors, supports exact lost acknowledgement replay, and rejects expiry', async () => {
+test('reusable enrollment serializes credential replacement, supports exact lost acknowledgement replay, and rejects expiry', async () => {
   const cookie = await login('rotated');
   const created = await (await post('/api/runtime-enrollments', { target: { kind: 'new' } }, cookie)).json();
   const command = EnrollmentCommand.parse(JSON.parse(Buffer.from(created.command.split(' ')[2], 'base64url').toString()));
   const exchange = { requestId: randomUUID(), key: command.key, credentialId: randomUUID(), secret: randomBytes(32).toString('hex') };
-  const exchanges = Array.from({ length: 8 }, (_, index) => index === 0 ? exchange : { ...exchange, credentialId: randomUUID() });
+  const exchanges = Array.from({ length: 8 }, (_, index) => index === 0 ? exchange : { ...exchange, requestId: randomUUID(), credentialId: randomUUID() });
   const responses = await Promise.all(exchanges.map((input) => post('/api/worker/enrollments', input, '', workerUrl)));
-  expect(responses.filter((response) => response.status === 200)).toHaveLength(1);
+  expect(responses.filter((response) => response.status === 200)).toHaveLength(8);
+  const allReceipts = await Promise.all(responses.map(response => response.clone().json()));
+  expect(new Set(allReceipts.map(receipt => receipt.runtimeId)).size).toBe(1);
   const winner = responses.find((response) => response.status === 200); if (!winner) throw new Error();
   const receipt = EnrollmentReceipt.parse(await winner.json());
-  expect((await pool.query('SELECT count(*)::int AS n FROM runtime_credentials WHERE runtime_id=$1', [receipt.runtimeId])).rows[0].n).toBe(1);
+  expect((await pool.query('SELECT count(*)::int AS n FROM runtime_credentials WHERE runtime_id=$1 AND revoked_at IS NULL', [receipt.runtimeId])).rows[0].n).toBe(1);
   const accepted = exchanges.find((input) => input.credentialId === receipt.credentialId);
   const retries = await Promise.all(Array.from({ length: 4 }, () => post('/api/worker/enrollments', accepted, '', workerUrl)));
   for (const retry of retries) expect(await retry.json()).toEqual(receipt);
@@ -72,13 +74,13 @@ test('runtime credentials isolate identities, cannot grant dashboard access, and
   const cookie = await login('rotated');
   const a = await enrollRuntime(url, undefined, cookie), b = await enrollRuntime(url, undefined, cookie);
   const authorization = runtimeAuthorization(a);
-  expect((await post('/api/worker/registrations', { protocol: 1, runtimeId: a.runtimeId, observation: 1, observedAt: new Date().toISOString(), capacity: { slots: 1 }, machine: { platform: 'linux', architecture: 'x64', logicalCpus: 1, memoryBytes: 1024 }, tools: ToolName.options.map((name) => ({ name, availability: { kind: 'unavailable', reason: 'missing' } })), harnesses: { codex: { kind: 'not-ready' }, claude: { kind: 'not-ready' }, opencodeGo: { kind: 'not-ready' } }, modelPolicy: 'provider-discovered-at-execution' }, '', workerUrl, { authorization })).status).toBe(200);
+  expect((await post('/api/worker/registrations', { protocol: 1, runtimeId: a.runtimeId, observation: 1, observedAt: new Date().toISOString(), machine: { platform: 'linux', architecture: 'x64', logicalCpus: 1, memoryBytes: 1024 }, tools: ToolName.options.map((name) => ({ name, availability: { kind: 'unavailable', reason: 'missing' } })), harnesses: { codex: { kind: 'not-ready' }, claude: { kind: 'not-ready' }, opencodeGo: { kind: 'not-ready' } }, modelPolicy: 'provider-discovered-at-execution' }, '', workerUrl, { authorization })).status).toBe(200);
   for (const endpoint of [url, workerUrl]) {
     expect((await post('/api/worker/claims', { protocol: 1, requestId: randomUUID(), runtimeId: b.runtimeId }, '', endpoint, { authorization })).status).toBe(401);
     expect((await post('/api/worker/claims', { protocol: 1, requestId: randomUUID(), runtimeId: a.runtimeId }, '', endpoint, { authorization })).status).toBe(200);
     expect((await post('/api/worker/claims', { protocol: 1, requestId: randomUUID(), runtimeId: a.runtimeId }, '', endpoint)).status).toBe(401);
   }
-  expect((await fetch(url + '/api/runs', { headers: { authorization } })).status).toBe(401);
+  expect((await fetch(url + '/api/configured-runs', { headers: { authorization } })).status).toBe(401);
   await post(`/api/runtimes/${a.runtimeId}/revoke`, {}, cookie);
   for (const endpoint of [url, workerUrl]) expect((await post('/api/worker/claims', { protocol: 1, requestId: randomUUID(), runtimeId: a.runtimeId }, '', endpoint, { authorization })).status).toBe(401);
   const replacement = await enrollRuntime(url, a.runtimeId, cookie);
@@ -97,7 +99,7 @@ test('protected real artifact fixture requires dashboard session and keeps runti
 }, 30_000);
 
 test('canonical HTTPS origin controls host, CSRF and secure cookies and bounded guessing throttle', async () => {
-  const secure = await createApp({ pool, token: 'legacy-secret', password: 'rotated', publicUrl: 'https://bench.example', trustedProxy: ['127.0.0.1'] });
+  const secure = await createApp({ pool, password: 'rotated', publicUrl: 'https://bench.example', trustedProxy: ['127.0.0.1'] });
   try {
     expect((await secure.inject({ method: 'GET', url: '/api/health', headers: { host: 'evil.example' } })).statusCode).toBe(403);
     const response = await secure.inject({ method: 'POST', url: '/api/access/login', headers: { host: 'bench.example', origin: 'https://bench.example', 'x-forwarded-for': '192.0.2.1' }, payload: { password: 'rotated' } });

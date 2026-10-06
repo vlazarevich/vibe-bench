@@ -1,11 +1,14 @@
 import type pg from 'pg';
 import { RuntimeRegistration, RuntimeReceipt, RegisteredRuntimes } from '../../../../packages/contracts/src/runtime.ts';
+import { authorizeRuntime, lockRuntime } from './access.ts';
 import { Conflict } from '../errors.ts';
 
-export async function registerRuntime(pool: pg.Pool, registration: RuntimeRegistration) {
+export async function registerRuntime(pool: pg.Pool, registration: RuntimeRegistration, authorization?: string) {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    await lockRuntime(client, registration.runtimeId);
+    if (authorization !== undefined) await authorizeRuntime(client, registration.runtimeId, authorization);
     await client.query(`INSERT INTO runtime_observations(runtime_id, observation, registration) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`, [registration.runtimeId, registration.observation, registration]);
     const result = await client.query('SELECT received_at, registration = $3::jsonb AS identical FROM runtime_observations WHERE runtime_id = $1 AND observation = $2', [registration.runtimeId, registration.observation, registration]);
     if (!result.rows[0]?.identical) throw new Conflict('Runtime observation conflicts with the stored observation');

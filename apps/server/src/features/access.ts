@@ -52,7 +52,7 @@ export async function createEnrollment(pool: pg.Pool, input: z.infer<typeof Crea
   if (target && !(await pool.query('SELECT 1 FROM runtime_credentials WHERE runtime_id=$1 UNION ALL SELECT 1 FROM runtime_observations WHERE runtime_id=$1 LIMIT 1', [target])).rowCount) throw new NotFound();
   const command = EnrollmentCommand.parse({ apiUrl, key, expiresAt });
   await pool.query('INSERT INTO runtime_enrollments(key_hash,expires_at,target_runtime_id) VALUES($1,$2,$3)', [hash(key), expiresAt, target]);
-  return { command: `vibe-runtime config ${Buffer.from(JSON.stringify(command)).toString('base64url')}`, expiresAt };
+  return { command: `vibe-runner pair ${Buffer.from(JSON.stringify(command)).toString('base64url')}`, expiresAt };
 }
 
 export async function redeemEnrollment(pool: pg.Pool, input: EnrollmentExchange) {
@@ -63,35 +63,58 @@ export async function redeemEnrollment(pool: pg.Pool, input: EnrollmentExchange)
     const result = await client.query('SELECT *, expires_at>now() AS valid FROM runtime_enrollments WHERE key_hash=$1 FOR UPDATE', [hash(input.key)]);
     const row = result.rows[0];
     if (!row) throw new Unauthorized();
-    if (row.receipt) {
-      if (row.exchange_hash !== digest) throw new Unauthorized();
-      await client.query('COMMIT');
-      return EnrollmentReceipt.parse(row.receipt);
-    }
     if (!row.valid) throw new Unauthorized();
+    const prior = await client.query('SELECT * FROM enrollment_exchanges WHERE request_id=$1 AND key_hash=$2', [input.requestId, hash(input.key)]);
+    if (prior.rowCount) {
+      if (prior.rows[0].exchange_hash !== digest || prior.rows[0].key_hash !== hash(input.key)) throw new Unauthorized();
+      await client.query('COMMIT');
+      return EnrollmentReceipt.parse(prior.rows[0].receipt);
+    }
     const runtimeId = RuntimeId.parse(row.target_runtime_id ?? randomUUID());
-    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [runtimeId]);
-    await client.query('UPDATE runtime_credentials SET revoked_at=now() WHERE runtime_id=$1 AND revoked_at IS NULL', [runtimeId]);
+    await lockRuntime(client, runtimeId);
+    await revokeRuntimeInTransaction(client, runtimeId);
     const inserted = await client.query('INSERT INTO runtime_credentials(credential_id,runtime_id,secret_hash) VALUES($1,$2,$3) ON CONFLICT DO NOTHING', [input.credentialId, runtimeId, hash(input.secret)]);
     if (!inserted.rowCount) throw new Conflict('Credential identity already exists');
     const installation = await client.query('SELECT installation_id FROM installation_access');
     const receipt = EnrollmentReceipt.parse({ installationId: installation.rows[0].installation_id, runtimeId, credentialId: input.credentialId, requestId: input.requestId });
-    await client.query('UPDATE runtime_enrollments SET exchange_hash=$2,receipt=$3 WHERE key_hash=$1', [hash(input.key), digest, receipt]);
+    await client.query('UPDATE runtime_enrollments SET target_runtime_id=$2 WHERE key_hash=$1', [hash(input.key), runtimeId]);
+    await client.query('INSERT INTO enrollment_exchanges(request_id,key_hash,exchange_hash,receipt) VALUES($1,$2,$3,$4)', [input.requestId, hash(input.key), digest, receipt]);
     await client.query('COMMIT');
     return receipt;
   } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); }
 }
 
-export async function authenticateRuntime(pool: pg.Pool, authorization: string | undefined) {
+export async function authenticateRuntime(pool: pg.Pool | pg.PoolClient, authorization: string | undefined) {
   const match = /^Bearer ([a-f0-9-]{36})\.([a-f0-9]{64})$/.exec(authorization ?? '');
   if (!match || !CredentialId.safeParse(match[1]).success) throw new Unauthorized();
   const result = await pool.query('SELECT runtime_id FROM runtime_credentials WHERE credential_id=$1 AND secret_hash=$2 AND revoked_at IS NULL', [match[1], hash(match[2] ?? '')]);
   if (!result.rowCount) throw new Unauthorized();
   return RuntimeId.parse(result.rows[0].runtime_id);
 }
-export async function revokeRuntime(pool: pg.Pool, runtimeId: z.infer<typeof RuntimeId>) {
-  await pool.query('UPDATE runtime_credentials SET revoked_at=now() WHERE runtime_id=$1 AND revoked_at IS NULL', [runtimeId]);
-  return { ok: true };
+export async function lockRuntime(client: pg.PoolClient, runtimeId: z.infer<typeof RuntimeId>) {
+  await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 3))', [runtimeId]);
+}
+export async function authorizeRuntime(client: pg.PoolClient, runtimeId: z.infer<typeof RuntimeId>, authorization: string | undefined) {
+  await lockRuntime(client, runtimeId);
+  if (await authenticateRuntime(client, authorization) !== runtimeId) throw new Unauthorized();
+}
+async function revokeRuntimeInTransaction(client: pg.PoolClient, runtimeId: z.infer<typeof RuntimeId>) {
+  await client.query('UPDATE runtime_credentials SET revoked_at=now() WHERE runtime_id=$1 AND revoked_at IS NULL', [runtimeId]);
+  await client.query(`INSERT INTO run_abandonments(run_id)
+    SELECT c.run_id FROM work_claims c WHERE c.runtime_id=$1 AND c.run_id IS NOT NULL
+    AND EXISTS(SELECT 1 FROM configured_attempts a LEFT JOIN attempt_outcomes o ON o.attempt_id=a.id WHERE a.run_id=c.run_id AND o.attempt_id IS NULL)
+    ON CONFLICT DO NOTHING`, [runtimeId]);
+}
+export async function revokeRuntime(pool: pg.Pool, runtimeId: z.infer<typeof RuntimeId>, authorization?: string) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await lockRuntime(client, runtimeId);
+    if (authorization !== undefined) await authorizeRuntime(client, runtimeId, authorization);
+    await revokeRuntimeInTransaction(client, runtimeId);
+    await client.query('COMMIT');
+    return { ok: true };
+  } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); }
 }
 export async function runtimeAccess(pool: pg.Pool) {
   const result = await pool.query(`SELECT identities.runtime_id, coalesce(bool_or(c.revoked_at IS NULL) FILTER (WHERE c.credential_id IS NOT NULL), false) AS active FROM (SELECT runtime_id FROM runtime_credentials UNION SELECT runtime_id FROM runtime_observations) identities LEFT JOIN runtime_credentials c USING(runtime_id) GROUP BY identities.runtime_id`);

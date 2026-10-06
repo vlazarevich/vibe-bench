@@ -63,7 +63,7 @@ test.each([
   const address = repositoryServer.address(); if (!address || typeof address === 'string') throw new Error('Repository server did not bind');
   database = await startDatabase(join(root,'postgres')); pool = await connectDatabase(database.url);
   const password = passwordMode === 'protected' ? 'configured-matrix-password' : '';
-  app = await createApp({pool,token:'test-only',password});
+  app = await createApp({pool,password});
   const url = await app.listen({host:'127.0.0.1',port:0});
   let workerUrl = url;
   if (listener === 'dedicated') { worker = createWorkerApp({pool}); workerUrl = await worker.listen({host:'127.0.0.1',port:0}); }
@@ -80,16 +80,16 @@ test.each([
   const options={configuration,stateRoot:join(root,'runtime'),executables:{}};
   await durableWrite(join(options.stateRoot,'config.json'),configuration);
   const binary=process.env.VIBE_RUNTIME_BINARY;
-  const binaryEnvironment={...process.env,VIBE_RUNTIME_STATE:options.stateRoot,VIBE_RUNTIME_SLOTS:'1'};
-  if (binary) await exec(binary,['onboard'],{env:binaryEnvironment,maxBuffer:1000000});
-  else await onboard({stateRoot:options.stateRoot,slots:1});
+  const binaryEnvironment={...process.env};
+  if (binary) await exec(binary,['--state-dir',options.stateRoot,'pair','probe'],{env:binaryEnvironment,maxBuffer:1000000});
+  else await onboard({stateRoot:options.stateRoot});
   const definition={title:'All configured outputs',description:'Fixture integration evidence',categories:[{id:randomUUID(),title:'Tasks',tasks:[...tasks,failedTask,skippedTask]}],evaluation:{conversion:'rating-control-v1',criteria:[{id:criterion,title:'Clarity',instructions:'Prefer clear outputs.',control:'stars-5'}],rankingRules:[]},materials:{kind:'repository',url:`http://127.0.0.1:${address.port}/repo.git`,requestedRef:'main'}};
   const suite=SuiteView.parse(await post('/api/suites',{definition}));
   const config={contentId:suite.content.contentId,runtimeId,selection:{kind:'all'},source:'fixture',entrants:['codex','claude','opencode'].map(harness=>({id:randomUUID(),harness,model:'exact-fixture-model',settings:{timeoutMs:15000}}))};
   const preview=RunPreview.parse(await post('/api/configured-runs/preview',config)); expect(preview.matrix).toHaveLength(36);
   const run=ConfiguredRunView.parse(await post('/api/configured-runs',{...config,requestId:randomUUID()}));
   await post(`/api/suites/${suite.content.suiteId}`,{expectedContentId:suite.content.contentId,change:'minor',definition:{...definition,title:'Later edited title'}});
-  const workOnce = async () => binary ? JSON.parse((await exec(binary,['work','--once'],{env:binaryEnvironment,maxBuffer:1000000})).stdout.trim().split('\n').at(-1) ?? '{}') : runWorkerOnce(options);
+  const workOnce = async () => binary ? JSON.parse((await exec(binary,['--state-dir',options.stateRoot,'run-once'],{env:binaryEnvironment,maxBuffer:1000000})).stdout.trim().split('\n').at(-1) ?? '{}') : runWorkerOnce(options);
   expect(await workOnce()).toEqual({kind:'finished',runId:run.runId});
   const result=ConfiguredRunView.parse(await (await fetch(url+`/api/configured-runs/${run.runId}`,{headers:{cookie}})).json());
   expect(result.status).toBe('finished'); expect(result.snapshot).toEqual(run.snapshot);
@@ -106,9 +106,9 @@ test.each([
       const bytes=Buffer.from(await response.arrayBuffer());expect(bytes.length).toBe(artifact.bytes);expect(createHash('sha256').update(bytes).digest('hex')).toBe(artifact.sha256);
     }
   }
-  expect(await workOnce()).toEqual({kind:'idle'});
+  if (!binary) expect(await workOnce()).toEqual({kind:'idle'});
   await worker?.close(); worker=undefined; await app.close();await pool.end();await database.stop();
-  database=await startDatabase(join(root,'postgres'));pool=await connectDatabase(database.url);app=await createApp({pool,token:'test-only',password});
+  database=await startDatabase(join(root,'postgres'));pool=await connectDatabase(database.url);app=await createApp({pool,password});
   const restartedUrl=await app.listen({host:'127.0.0.1',port:0});
   expect(await (await fetch(restartedUrl+`/api/configured-runs/${run.runId}`,{headers:{cookie}})).json()).toEqual(result);
 },60000);

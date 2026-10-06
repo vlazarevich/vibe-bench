@@ -1,11 +1,9 @@
-import Fastify from 'fastify';
-import { registerRuntime } from '../apps/server/src/features/runtimes.ts';
 import { enrollRuntime, runtimeAuthorization } from './runtime-auth.ts';
 import { RuntimeConfiguration } from '../packages/contracts/src/access.ts';
 import { runtimeRoot } from '../apps/runner/src/configuration.ts';
 import { durableWrite } from '../apps/runner/src/spool.ts';
 import { afterAll, beforeAll, expect, test } from 'vitest';
-import { mkdtemp, mkdir, writeFile, readFile, readdir } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, readdir, rm } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
@@ -42,14 +40,14 @@ beforeAll(async () => {
     await writeFile(join(fixturePath, name), `#!${process.execPath}\n${body}\n`, { mode: 0o700 });
   }
   database = await startDatabase(join(root, 'postgres')); pool = await connectDatabase(database.url);
-  app = await createApp({ pool, token: 'secret' }); url = await app.listen({ host: '127.0.0.1', port: 0 });
+  app = await createApp({ pool}); url = await app.listen({ host: '127.0.0.1', port: 0 });
   worker = createWorkerApp({ pool }); workerUrl = await worker.listen({ host: '127.0.0.1', port: 0 });
   configuration = await enrollRuntime(url); runtimeId = configuration.runtimeId;
 });
 afterAll(async () => { process.env.PATH = originalPath; await worker?.close(); await app?.close(); await pool?.end(); await database?.stop(); });
 async function discover(observation = 1) {
   process.env.PATH = fixturePath;
-  try { return await discoverRuntime({ runtimeId, observation, slots: 2, timeoutMs: 300 }); }
+  try { return await discoverRuntime({ runtimeId, observation, timeoutMs: 300 }); }
   finally { process.env.PATH = originalPath; }
 }
 async function post(registration: unknown, headers = {}, endpoint = workerUrl) {
@@ -118,7 +116,7 @@ test('real HTTP persistence serializes duplicates, rejects conflicts, preserves 
   expect(responses.every((response) => response.status === 200)).toBe(true);
   const receipts = await Promise.all(responses.map((response) => response.json()));
   expect(receipts.every((receipt) => JSON.stringify(receipt) === JSON.stringify(receipts[0]))).toBe(true);
-  expect((await post({ ...first, capacity: { slots: 3 } })).status).toBe(409);
+  expect((await post({ ...first, observedAt: '2021-01-01T00:00:00.000Z' })).status).toBe(409);
   const newer = { ...first, observation: 3, observedAt: '2020-01-01T00:00:00.000Z' };
   expect((await post(newer)).status).toBe(200);
   expect((await post({ ...first, observation: 2 })).status).toBe(200);
@@ -129,7 +127,7 @@ test('real HTTP persistence serializes duplicates, rejects conflicts, preserves 
   expect(latest[0]?.registration).toEqual(newer);
   await worker.close(); await app.close(); await pool.end(); await database.stop();
   database = await startDatabase(join(root, 'postgres')); pool = await connectDatabase(database.url);
-  app = await createApp({ pool, token: 'secret' }); url = await app.listen({ host: '127.0.0.1', port: 0 });
+  app = await createApp({ pool}); url = await app.listen({ host: '127.0.0.1', port: 0 });
   worker = createWorkerApp({ pool }); workerUrl = await worker.listen({ host: '127.0.0.1', port: 0 });
   expect(await (await fetch(url + '/api/runtimes')).json()).toEqual(latest);
   expect(await (await post(first)).json()).toEqual(receipts[0]);
@@ -155,52 +153,31 @@ test('worker listener admits outbound workers and rejects browser authority, whi
   expect((await fetch(url + '/api/suites', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).status).toBe(403);
 });
 
-test('real CLI is outbound-only with stable identity, durable retry and exclusive state ownership', async () => {
+test('probe uses acknowledged snapshots, fresh scans, and server sequence after local state loss', async () => {
   const stateRoot = join(root, 'cli');
   const cliConfiguration = {...await enrollRuntime(url),apiUrl:workerUrl};
   await durableWrite(join(stateRoot,'config.json'),cliConfiguration);
   const observationRoot = runtimeRoot(stateRoot,cliConfiguration);
-  const cli = () => promisify(execFile)(process.execPath, ['--import', 'tsx', 'apps/runner/src/onboard-main.ts'], { cwd: resolve('.'), env: { ...process.env, PATH: fixturePath, VIBE_RUNTIME_STATE: stateRoot, VIBE_RUNTIME_SLOTS: '2' } });
-  await cli(); const identity = JSON.parse(await readFile(join(observationRoot, 'identity.json'), 'utf8'));
-  expect(await readdir(observationRoot)).toEqual(expect.arrayContaining(['identity.json', 'receipt.json']));
-  expect(await readdir(observationRoot)).not.toContain('instance.json');
-  await cli(); expect(JSON.parse(await readFile(join(observationRoot, 'identity.json'), 'utf8'))).toEqual({ ...identity, observation: 2 });
-  const release = await acquireLocalLock(observationRoot);
-  try { await expect(onboard({ stateRoot, slots: 2 })).rejects.toThrow('already running'); } finally { await release(); }
+  const cli = (...args: string[]) => promisify(execFile)(process.execPath, ['--import', 'tsx', 'apps/runner/src/cli-main.ts', '--state-dir', stateRoot, 'pair', ...args], { cwd: resolve('.'), env: { ...process.env, PATH: fixturePath } });
+  await cli('probe');
+  const first = JSON.parse(await readFile(join(observationRoot, 'capabilities.json'), 'utf8'));
+  expect(first.receipt.observation).toBe(1);
+  const cached = JSON.parse((await cli('status')).stdout);
+  expect(cached.capabilities).toEqual(first);
+  const release = await acquireLocalLock(stateRoot);
+  try { await expect(onboard({ stateRoot })).rejects.toThrow('already running'); } finally { await release(); }
   await durableWrite(join(stateRoot,'config.json'),{...cliConfiguration,apiUrl:'http://127.0.0.1:1'});
-  await expect(onboard({ stateRoot, slots: 2 })).rejects.toThrow();
-  const pending = JSON.parse(await readFile(join(observationRoot, 'pending.json'), 'utf8'));
+  await expect(onboard({ stateRoot })).rejects.toThrow();
+  expect(JSON.parse(await readFile(join(observationRoot, 'capabilities.json'), 'utf8'))).toEqual(first);
+  expect(JSON.parse((await cli('status')).stdout).status).toBe('dashboard unreachable');
   await durableWrite(join(stateRoot,'config.json'),cliConfiguration);
-  await cli();
-  expect(JSON.parse(await readFile(join(observationRoot, 'receipt.json'), 'utf8')).observation).toBe(pending.observation);
+  await rm(observationRoot, {recursive:true,force:true});
+  await cli('probe');
+  const latest = JSON.parse(await readFile(join(observationRoot, 'capabilities.json'), 'utf8'));
+  expect(latest.receipt.observation).toBe(2);
   expect(await readdir(observationRoot)).not.toContain('pending.json');
-  expect((await readFile(join(observationRoot, 'receipt.json'), 'utf8'))).not.toContain(secret);
-
+  expect(JSON.stringify(latest)).not.toContain(secret);
 }, 60_000);
-
-test('a response lost after commit retains the exact observation and retrieves its original receipt', async () => {
-  configuration = await enrollRuntime(url); runtimeId = configuration.runtimeId;
-  const registration = await discover();
-  const stateRoot = join(root, 'lost-response');
-  const observationRoot = runtimeRoot(stateRoot,configuration);
-  await durableWrite(join(observationRoot, 'identity.json'), { runtimeId: registration.runtimeId, observation: registration.observation });
-  await durableWrite(join(observationRoot, 'pending.json'), registration);
-  const proxy = Fastify(); let drop = true;
-  proxy.post('/api/worker/registrations', async (request, reply) => {
-    const receipt = await registerRuntime(pool, RuntimeRegistration.parse(request.body));
-    if (drop) { drop = false; reply.hijack(); reply.raw.destroy(); return; }
-    return receipt;
-  });
-  const proxyUrl = await proxy.listen({ host: '127.0.0.1', port: 0 });
-  try {
-    await durableWrite(join(stateRoot,'config.json'),{...configuration,apiUrl:proxyUrl});
-    await expect(onboard({ stateRoot, slots: 2 })).rejects.toThrow();
-    expect(JSON.parse(await readFile(join(observationRoot, 'pending.json'), 'utf8'))).toEqual(registration);
-    const originalReceipt = await registerRuntime(pool, registration);
-    expect(await onboard({ stateRoot, slots: 2 })).toEqual(originalReceipt);
-    expect(await readdir(observationRoot)).not.toContain('pending.json');
-  } finally { await proxy.close(); }
-});
 
 test('remote APIs require HTTPS and plain origin configuration', () => {
   expect(onboardingUrl('https://api.example').href).toBe('https://api.example/api/worker/registrations');

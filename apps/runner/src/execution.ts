@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { randomUUID } from 'node:crypto';
 import { readFile, access, rm } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -48,6 +49,14 @@ export async function runWorkerOnce(options: WorkerOptions) {
     const currentPath = join(root, 'assignment.json');
     const claimPath = join(root,'claim.json');
     let assignment: RunAssignment;
+    const executablesPath = join(root, 'executables.json');
+    if (await exists(currentPath) && await exists(executablesPath)) options = { ...options, executables: z.object({codex:z.string().optional(),claude:z.string().optional(),opencode:z.string().optional()}).strict().parse(JSON.parse(await readFile(executablesPath,'utf8'))) };
+    else {
+      const selected: Executables = {};
+      for (const harness of ['codex','claude','opencode'] as const) { try { selected[harness] = await checkExecutable(options.executables[harness] ?? harness); } catch {} }
+      options = { ...options, executables: selected };
+      await durableWrite(executablesPath, selected);
+    }
     if (await exists(currentPath)) assignment = await readAssignment(currentPath);
     else {
       const claim = await exists(claimPath) ? ClaimRequest.parse(JSON.parse(await readFile(claimPath,'utf8'))) : ClaimRequest.parse({protocol:1,requestId:randomUUID(),runtimeId:options.configuration.runtimeId});
@@ -116,7 +125,7 @@ async function executeAssignment(options: WorkerOptions, assignment: RunAssignme
     try {
       if (await exists(startedPath)) throw new Error('Attempt was started before interruption. Execution is uncertain and was not relaunched.');
       if (!materials) throw new Error('Repository preparation failed');
-      const executable = snapshot.source === 'fixture' ? process.execPath : await checkExecutable(options.executables[entrant.harness] ?? entrant.harness);
+      const executable = snapshot.source === 'fixture' ? process.execPath : await checkExecutable(options.executables[entrant.harness]);
       const defaults = TaskIO.parse({inputs:[],outputs:task.kind === 'image-generation' ? [{path:'result.png',kind:'image'}] : ['html-static','html-interactive'].includes(task.kind) ? [{path:'index.html',kind:'html'}] : [],browser:null});
       const io = materials.kind === 'repository' ? materials.manifest.tasks[task.id] ?? defaults : defaults;
       if (entrant.harness === 'opencode' && snapshot.source === 'live' && !entrant.model.startsWith('opencode-go/')) throw new Unavailable('OpenCode Go requires an opencode-go provider model');
