@@ -23,7 +23,7 @@ export async function buildRuntime({ version, entry = join(root, 'apps/runner/sr
   await mkdir(staging, { recursive: true });
   const bundled = await build({
     entryPoints: [entry], bundle: true, platform: 'node', format: 'cjs', target: 'node24', write: false,
-    define: { 'import.meta.url': '__importMetaUrl', 'process.env.VIBE_RUNTIME_VERSION': JSON.stringify(version) },
+    define: { 'import.meta.url': '__importMetaUrl', __VIBE_RUNNER_VERSION__: JSON.stringify(version) },
     banner: { js: 'const __importMetaUrl = require("node:url").pathToFileURL(__filename).href;' },
     plugins: [{ name: 'runtime-browser', setup(builder) {
       builder.onResolve({ filter: /^@playwright\/test$/ }, () => ({ path: 'playwright-core', external: true }));
@@ -48,12 +48,12 @@ export async function buildRuntime({ version, entry = join(root, 'apps/runner/sr
   await writeFile(config, JSON.stringify({ main: join(root, 'scripts/runtime-bootstrap.cjs'), output: blob,
     disableExperimentalSEAWarning: true, useCodeCache: false, useSnapshot: false, execArgvExtension: 'none', assets: { runtime: payload } }));
   execFileSync(process.execPath, ['--experimental-sea-config', config], { stdio: 'inherit' });
-  const executable = join(output, 'vibe-runtime');
+  const executable = join(output, 'vibe-runner');
   await copyFile(process.execPath, executable);
   await inject(executable, 'NODE_SEA_BLOB', await readFile(blob), { sentinelFuse: 'NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2' });
   await chmod(executable, 0o755);
-  const archive = `vibe-bench-runtime-${version}-linux-x64.tar.gz`;
-  execFileSync('tar', ['-czf', join(output, archive), '-C', output, 'vibe-runtime']);
+  const archive = `vibe-runner-${version}-linux-x64.tar.gz`;
+  execFileSync('tar', ['-czf', join(output, archive), '-C', output, 'vibe-runner']);
   await copyFile(join(root, 'scripts/install-runtime.sh'), join(output, 'install-runtime.sh'));
   const sums = [];
   for (const name of [archive, 'install-runtime.sh']) sums.push(`${createHash('sha256').update(await readFile(join(output, name))).digest('hex')}  ${name}`);

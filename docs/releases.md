@@ -26,7 +26,7 @@ Use this procedure to produce a Linux x64 glibc runtime and publish it on GitHub
 
 The verification job runs the full application checks, compiles the runtime, and tests the executable. Only that job's verified assets reach the draft job. The draft job has release-write permission. Verification has read-only permission. Publishing the draft is a separate operator action.
 
-A release contains the archive `vibe-bench-runtime-v0.1.0-linux-x64.tar.gz`, the installer `install-runtime.sh`, and `SHA256SUMS`. The executable reports the tag through `--version`. The workflow does not change `package.json` to stamp a release.
+A release contains the archive `vibe-runner-v0.1.0-linux-x64.tar.gz`, the installer `install-runtime.sh`, and `SHA256SUMS`. The executable reports the tag through `--version`. The workflow does not change `package.json` to stamp a release.
 
 ## Retry a failed release
 
@@ -65,9 +65,9 @@ curl --proto '=https' --tlsv1.2 -fsSL https://github.com/vlazarevich/vibe-bench/
   VIBE_RUNTIME_VERSION=v0.1.0 VIBE_RUNTIME_INSTALL_DIR="$HOME/.local/bin" sh
 ```
 
-The installer verifies the archive against that release's SHA-256 checksum, runs the executable's version command, then replaces the installed executable. A failed download, checksum mismatch, or invalid archive leaves the previous executable intact. The default destination is `~/.local/bin/vibe-runtime`. Add `~/.local/bin` to `PATH` if necessary.
+The installer verifies the archive against that release's SHA-256 checksum, runs the executable's version command, then replaces the installed executable. A failed download, checksum mismatch, or invalid archive leaves the previous executable intact. The default destination is `~/.local/bin/vibe-runner`. Add `~/.local/bin` to `PATH` if necessary.
 
-Configuration is a separate step. Copy the command from **Runtimes → Add new**, then run `vibe-runtime onboard` and `vibe-runtime work`. The installer does not enroll the runtime, install Codex, Claude Code, or OpenCode, or perform their login flows. Install and authenticate those tools separately before asking the runtime to report their readiness.
+Pair after installation. Copy the command from **Runtimes → Add new**, then run `vibe-runner run` or `vibe-runner run-once`. The installer does not enroll the runtime, install Codex, Claude Code, or OpenCode, or perform their login flows. Install and authenticate those tools separately before pairing or probing readiness.
 
 Linux x64 with glibc 2.28 or newer is the only published target. Git is needed for repository tasks. Browser and image tasks require the Chromium and FFmpeg revisions used by Playwright 1.56.1, plus their system libraries. On a machine with Node available for provisioning, `npx playwright@1.56.1 install --with-deps chromium` installs those prerequisites. Provisioning browsers is separate from runtime installation. A provisioned machine does not need Node afterward. Preserve the Playwright browser cache, or set `PLAYWRIGHT_BROWSERS_PATH` to its provisioned location.
 

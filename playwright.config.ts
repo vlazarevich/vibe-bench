@@ -9,5 +9,5 @@ export default defineConfig({
   testDir: './tests/browser', fullyParallel: false, workers: 1, timeout: 60_000,
   outputDir: '.artifacts/browser-results', reporter: [['list']],
   use: { baseURL: `http://127.0.0.1:${port}`, headless: true, trace: 'retain-on-failure' },
-  webServer: { command: 'node --import tsx scripts/local.ts --fixture', url: `http://127.0.0.1:${port}/api/health`, timeout: 90_000, reuseExistingServer: false, env: { VIBE_PORT: String(port), VIBE_LOCAL_ROOT: process.env.VIBE_BROWSER_ROOT } },
+  webServer: { command: 'node --import tsx scripts/local.ts', url: `http://127.0.0.1:${port}/api/health`, timeout: 90_000, reuseExistingServer: false, env: { VIBE_PORT: String(port), VIBE_LOCAL_ROOT: process.env.VIBE_BROWSER_ROOT } },
 });

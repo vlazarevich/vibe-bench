@@ -2,7 +2,6 @@ import { expect, test } from 'vitest';
 import { mkdir, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { readBounded, runProcess } from '../apps/runner/src/processes/run.ts';
-import { childEnvironment } from '../apps/runner/src/runner.ts';
 import { spawn } from 'node:child_process';
 
 async function alive(pid: number) {
@@ -29,7 +28,7 @@ for (const mode of ['timeout', 'exit']) {
     await mkdir('.artifacts', { recursive: true });
     const directory = await mkdtemp(resolve('.artifacts/process-'));
     const pidFile = join(directory, 'child.pid');
-    const result = await runProcess({ executable: process.execPath, args: [resolve('tests/fixtures/process-tree.mjs'), pidFile, mode], cwd: directory, directory, input: '', timeoutMs: 1500, env: childEnvironment() });
+    const result = await runProcess({ executable: process.execPath, args: [resolve('tests/fixtures/process-tree.mjs'), pidFile, mode], cwd: directory, directory, input: '', timeoutMs: 1500, env: process.env });
     expect(result).toEqual(mode === 'timeout' ? { kind: 'timeout' } : { kind: 'exited', code: 0 });
     const pid = Number(await readFile(pidFile, 'utf8'));
     expect(Number.isInteger(pid) && pid > 0).toBe(true);
@@ -42,14 +41,14 @@ test('closes files when process setup fails', async () => {
   await mkdir(join(directory, 'stderr.log'));
   const before = (await readdir('/proc/self/fd')).length;
   for (let i = 0; i < 5; i++) {
-    await expect(runProcess({ executable: process.execPath, args: [], cwd: directory, directory, input: '', timeoutMs: 1000, env: childEnvironment() })).rejects.toThrow();
+    await expect(runProcess({ executable: process.execPath, args: [], cwd: directory, directory, input: '', timeoutMs: 1000, env: process.env })).rejects.toThrow();
   }
   expect((await readdir('/proc/self/fd')).length).toBe(before);
 });
 
 test('rejects oversized logs even when a process exits before the first poll', async () => {
   const directory = await mkdtemp(resolve('.artifacts/process-output-limit-'));
-  const result = await runProcess({ executable: process.execPath, args: ['-e', "require('node:fs').writeSync(1, Buffer.alloc(2100000))"], cwd: directory, directory, input: '', timeoutMs: 1000, env: childEnvironment() });
+  const result = await runProcess({ executable: process.execPath, args: ['-e', "require('node:fs').writeSync(1, Buffer.alloc(2100000))"], cwd: directory, directory, input: '', timeoutMs: 1000, env: process.env });
   expect(result).toEqual({ kind: 'output-limit' });
 });
 

@@ -27,7 +27,7 @@ const credentials = new Map<string, string>();
 beforeAll(async () => {
   await mkdir('.artifacts', { recursive: true }); root = await mkdtemp(resolve('.artifacts/configured-runs-'));
   database = await startDatabase(join(root, 'postgres')); pool = await connectDatabase(database.url);
-  app = await createApp({ pool, token: 'test-secret' }); url = await app.listen({ port: 0, host: '127.0.0.1' });
+  app = await createApp({ pool }); url = await app.listen({ port: 0, host: '127.0.0.1' });
   worker = createWorkerApp({ pool }); workerUrl = await worker.listen({ port: 0, host: '127.0.0.1' });
 });
 afterAll(async () => { await worker?.close(); await app?.close(); await pool?.end(); await database?.stop(); });
@@ -35,7 +35,7 @@ function post(path: string, body: unknown, endpoint = url, headers: Record<strin
   return fetch(endpoint + path, { method: 'POST', headers: { 'content-type': 'application/json', ...(path.startsWith('/api/worker/') ? { authorization: credentials.get(typeof body === 'object' && body !== null && 'runtimeId' in body ? String(body.runtimeId) : '') ?? '' } : { origin: endpoint }), ...headers }, body: JSON.stringify(body) });
 }
 async function setup(value = definition(), entrants = 2) {
-  const runtime = RuntimeRegistration.parse({ protocol: 1, runtimeId: randomUUID(), observation: 1, observedAt: new Date().toISOString(), capacity: { slots: 10 }, machine: { platform: 'linux', architecture: 'x64', logicalCpus: 4, memoryBytes: 1_000_000 }, tools: ToolName.options.map((name) => ({ name, availability: { kind: 'unavailable', reason: 'missing' } })), harnesses: { codex: { kind: 'not-ready' }, claude: { kind: 'not-ready' }, opencodeGo: { kind: 'not-ready' } }, modelPolicy: 'provider-discovered-at-execution' });
+  const runtime = RuntimeRegistration.parse({ protocol: 1, runtimeId: randomUUID(), observation: 1, observedAt: new Date().toISOString(), machine: { platform: 'linux', architecture: 'x64', logicalCpus: 4, memoryBytes: 1_000_000 }, tools: ToolName.options.map((name) => ({ name, availability: { kind: 'unavailable', reason: 'missing' } })), harnesses: { codex: { kind: 'not-ready' }, claude: { kind: 'not-ready' }, opencodeGo: { kind: 'not-ready' } }, modelPolicy: 'provider-discovered-at-execution' });
   await registerRuntime(pool, runtime);
   expect(await (await fetch(url + '/api/runtime-access')).json()).toContainEqual({ runtimeId: runtime.runtimeId, active: false });
   credentials.set(runtime.runtimeId, runtimeAuthorization(await enrollRuntime(url, runtime.runtimeId)));
@@ -126,7 +126,7 @@ test('preparation and per-attempt reports enforce associations, sequencing, immu
   await expect(pool.query('UPDATE attempt_outcomes SET outcome = $1', [{}])).rejects.toThrow('Immutable');
   await worker.close(); await app.close(); await pool.end(); await database.stop();
   database = await startDatabase(join(root, 'postgres')); pool = await connectDatabase(database.url);
-  app = await createApp({ pool, token: 'test-secret' }); url = await app.listen({ port: 0, host: '127.0.0.1' });
+  app = await createApp({ pool }); url = await app.listen({ port: 0, host: '127.0.0.1' });
   worker = createWorkerApp({ pool }); workerUrl = await worker.listen({ port: 0, host: '127.0.0.1' });
   expect(await (await post('/api/worker/attempts', done, workerUrl)).json()).toEqual(receipts[0]);
   expect(await (await fetch(url + `/api/configured-runs/${view.runId}`)).json()).toEqual(reopened);

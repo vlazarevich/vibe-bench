@@ -9,13 +9,39 @@ import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 
 const execute = promisify(execFile);
-const binary = resolve(process.env.VIBE_RUNTIME_BINARY ?? 'dist/runtime/vibe-runtime');
+const binary = resolve(process.env.VIBE_RUNTIME_BINARY ?? 'dist/runtime/vibe-runner');
 const version = (await execute(binary, ['--version'])).stdout.trim();
 assert.match(version, /^v\d+\.\d+\.\d+/);
 
-test('standalone CLI enrolls, persists a private credential, registers, and claims without Node or a checkout', async () => {
+test('standalone CLI exposes command help and actionable errors with consistent exit codes', async () => {
+  assert.equal((await execute(binary, ['--version'], { env: { ...process.env, VIBE_RUNTIME_VERSION: 'forged-version' } })).stdout.trim(), version);
+  const help = (await execute(binary, ['--help'])).stdout;
+  assert.match(help, /vibe-runner/);
+  for (const command of ['pair', 'run', 'run-once']) assert.match(help, new RegExp(command));
+  assert.match((await execute(binary, ['pair', '--help'])).stdout, /status/);
+  await assert.rejects(execute(binary, ['unknown-command']), (error) => error.code === 2 && /unknown command/i.test(error.stderr));
+  const state = await mkdtemp(join(tmpdir(), 'vibe-binary-errors-'));
+  try {
+    const unpaired = 'Unpaired. Create an enrollment token in the dashboard and run vibe-runner pair TOKEN.\n';
+    for (const args of [['run'], ['run-once'], ['pair', 'probe']]) {
+      await assert.rejects(execute(binary, ['--state-dir', state, ...args]), { code: 1, stdout: '', stderr: unpaired });
+    }
+    const status = await execute(binary, ['--state-dir', state, 'pair', 'status']);
+    assert.equal(status.stdout, unpaired);
+    assert.equal(status.stderr, '');
+    const revoke = await execute(binary, ['--state-dir', state, 'pair', 'revoke']);
+    assert.equal(revoke.stdout, 'Local pairing and runner state removed.\n');
+    assert.equal(revoke.stderr, '');
+    for (const malformed of ['abc', 'invalid-token', '!', Buffer.from('{}').toString('base64url')]) {
+      await assert.rejects(execute(binary, ['--state-dir', state, 'pair', malformed]), { code: 1, stdout: '', stderr: 'Invalid enrollment token. Copy the complete token from the dashboard.\n' });
+      assert.deepEqual(await readdir(state), []);
+    }
+  } finally { await rm(state, { recursive: true, force: true }); }
+});
+
+test('standalone CLI pairs, persists a private credential, checks cached status, probes, and revokes without Node or a checkout', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'vibe-binary-auth-'));
-  const standalone = join(directory, 'vibe-runtime');
+  const standalone = join(directory, 'vibe-runner');
   await copyFile(binary, standalone);
   const installationId = randomUUID();
   const runtimeId = randomUUID();
@@ -24,7 +50,8 @@ test('standalone CLI enrolls, persists a private credential, registers, and clai
   const server = createServer(async (request, response) => {
     const chunks = [];
     for await (const chunk of request) chunks.push(chunk);
-    const body = JSON.parse(Buffer.concat(chunks).toString());
+    const payload = Buffer.concat(chunks).toString();
+    const body = payload ? JSON.parse(payload) : null;
     requests.push({ path: request.url, authorization: request.headers.authorization, body });
     response.setHeader('content-type', 'application/json');
     if (request.url === '/api/worker/enrollments') {
@@ -32,34 +59,44 @@ test('standalone CLI enrolls, persists a private credential, registers, and clai
       response.end(JSON.stringify({ installationId, runtimeId, credentialId: body.credentialId, requestId: body.requestId }));
     } else if (request.url === '/api/worker/registrations') {
       response.end(JSON.stringify({ runtimeId, observation: body.observation, observedAt: body.observedAt, receivedAt: new Date().toISOString() }));
-    } else if (request.url === '/api/worker/claims') {
-      response.end(JSON.stringify({ kind: 'idle', requestId: body.requestId }));
+    } else if (request.url === '/api/worker/status') {
+      response.end(JSON.stringify({ runtimeId, observation: 1 }));
+    } else if (request.url === '/api/worker/revoke') {
+      response.end(JSON.stringify({ ok: true }));
     } else { response.statusCode = 404; response.end('{}'); }
   });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   try {
     const address = server.address();
     const state = join(directory, 'state');
-    const env = { HOME: directory, PATH: join(directory, 'no-tools'), VIBE_RUNTIME_STATE: state };
+    const env = { HOME: directory, PATH: join(directory, 'no-tools'), TMPDIR: tmpdir() };
     const command = Buffer.from(JSON.stringify({ apiUrl: `http://127.0.0.1:${address.port}`, key: 'a'.repeat(64), expiresAt: new Date(Date.now() + 60_000).toISOString() })).toString('base64url');
-    const configured = await execute(standalone, ['config', command], { cwd: directory, env });
-    assert.match(configured.stdout, /configured/);
+    const configured = await execute(standalone, ['--state-dir', state, 'pair', command], { cwd: directory, env });
+    assert.match(configured.stdout, /paired/i);
     const config = JSON.parse(await readFile(join(state, 'config.json'), 'utf8'));
     assert.equal(config.runtimeId, runtimeId);
     assert.equal(config.installationId, installationId);
     assert.equal(config.secret, enrollment.secret);
     assert.equal((await stat(join(state, 'config.json'))).mode & 0o777, 0o600);
     assert.equal((await stat(state)).mode & 0o777, 0o700);
-    const worked = await execute(standalone, ['work', '--once'], { cwd: directory, env });
-    assert.deepEqual(JSON.parse(worked.stdout), { kind: 'idle' });
-    assert.deepEqual(requests.map((entry) => entry.path), ['/api/worker/enrollments', '/api/worker/registrations', '/api/worker/claims']);
-    for (const request of requests.slice(1)) assert.equal(request.authorization, `Bearer ${config.credentialId}.${config.secret}`);
-    const registration = requests[1].body;
+    const registration = requests.find((entry) => entry.path === '/api/worker/registrations').body;
     assert.equal(registration.runtimeId, runtimeId);
     assert.equal(registration.tools.find((tool) => tool.name === 'node').availability.kind, 'unavailable');
     for (const name of ['codex', 'claude', 'opencode']) assert.equal(registration.tools.find((tool) => tool.name === name).availability.kind, 'unavailable');
+    assert.equal('capacity' in registration, false);
+    const beforeStatus = requests.filter((entry) => entry.path === '/api/worker/registrations').length;
+    const status = await execute(standalone, ['--state-dir', state, 'pair', 'status'], { cwd: directory, env });
+    assert.equal(JSON.parse(status.stdout).status, 'paired');
+    assert.equal(requests.filter((entry) => entry.path === '/api/worker/registrations').length, beforeStatus);
+    await execute(standalone, ['--state-dir', state, 'pair', 'probe'], { cwd: directory, env });
+    assert.equal(requests.filter((entry) => entry.path === '/api/worker/registrations').length, beforeStatus + 1);
+    const revoked = await execute(standalone, ['--state-dir', state, 'pair', 'revoke'], { cwd: directory, env });
+    assert.equal(requests.at(-1).path, '/api/worker/revoke');
+    await assert.rejects(readFile(join(state, 'config.json'), 'utf8'), { code: 'ENOENT' });
+    for (const request of requests.slice(1)) assert.equal(request.authorization, `Bearer ${config.credentialId}.${config.secret}`);
     assert.ok(!configured.stdout.includes(config.secret));
-    assert.ok(!worked.stdout.includes(config.secret));
+    assert.ok(!status.stdout.includes(config.secret));
+    assert.ok(!revoked.stdout.includes(config.secret));
   } finally {
     await new Promise((resolve) => server.close(resolve));
     await rm(directory, { recursive: true, force: true });
@@ -71,7 +108,7 @@ test('standalone fixture subprocesses execute all three adapter protocols', asyn
   try {
     for (const harness of ['codex', 'claude', 'opencode']) {
       const output = join(directory, `${harness}.txt`);
-      const child = execFile(binary, ['--internal-configured-fixture', harness, '--output-last-message', output], { cwd: directory, env: { PATH: '/nonexistent' } });
+      const child = execFile(binary, ['--internal-configured-fixture', harness, '--output-last-message', output], { cwd: directory, env: { PATH: '/nonexistent', TMPDIR: tmpdir() } });
       child.stdin.end('Task kind: text-generation\n');
       const result = await new Promise((resolve, reject) => {
         let stdout = ''; let stderr = '';
@@ -93,7 +130,7 @@ test('shell installer pins and verifies releases, preserves the old binary on co
   const commands = join(directory, 'commands');
   const installed = join(directory, 'bin with spaces');
   await mkdir(assets); await mkdir(commands);
-  const archive = `vibe-bench-runtime-${version}-linux-x64.tar.gz`;
+  const archive = `vibe-runner-${version}-linux-x64.tar.gz`;
   await copyFile(resolve('dist/runtime', archive), join(assets, archive));
   await copyFile(resolve('dist/runtime/SHA256SUMS'), join(assets, 'SHA256SUMS'));
   await writeFile(join(commands, 'curl'), `#!/bin/sh
@@ -113,12 +150,12 @@ esac
   const install = (overrides = {}) => execFileSync('/bin/sh', [], { input: source, env: { ...env, ...overrides }, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
   try {
     assert.match(install(), /Installed/);
-    assert.equal((await execute(join(installed, 'vibe-runtime'), ['--version'])).stdout.trim(), version);
+    assert.equal((await execute(join(installed, 'vibe-runner'), ['--version'])).stdout.trim(), version);
     assert.match(install({ VIBE_RUNTIME_VERSION: '' }), /Installed/);
-    const previous = createHash('sha256').update(await readFile(join(installed, 'vibe-runtime'))).digest('hex');
+    const previous = createHash('sha256').update(await readFile(join(installed, 'vibe-runner'))).digest('hex');
     await writeFile(join(assets, archive), 'corrupted archive');
     assert.throws(() => install(), /checksum verification failed/);
-    assert.equal(createHash('sha256').update(await readFile(join(installed, 'vibe-runtime'))).digest('hex'), previous);
+    assert.equal(createHash('sha256').update(await readFile(join(installed, 'vibe-runner'))).digest('hex'), previous);
     await writeFile(join(assets, 'SHA256SUMS'), '0'.repeat(64) + '  different.tar.gz\n');
     assert.throws(() => install(), /Missing or duplicate archive checksum/);
     const malformed = join(directory, 'malformed');
@@ -127,12 +164,12 @@ esac
     execFileSync('tar', ['-czf', join(assets, archive), '-C', malformed, 'unexpected']);
     await writeFile(join(assets, 'SHA256SUMS'), `${createHash('sha256').update(await readFile(join(assets, archive))).digest('hex')}  ${archive}\n`);
     assert.throws(() => install(), /unexpected files/);
-    await writeFile(join(malformed, 'vibe-runtime'), `#!/bin/sh\nprintf 'v999.0.0\\n'\n`, { mode: 0o755 });
-    execFileSync('tar', ['-czf', join(assets, archive), '-C', malformed, 'vibe-runtime']);
+    await writeFile(join(malformed, 'vibe-runner'), `#!/bin/sh\nprintf 'v999.0.0\\n'\n`, { mode: 0o755 });
+    execFileSync('tar', ['-czf', join(assets, archive), '-C', malformed, 'vibe-runner']);
     await writeFile(join(assets, 'SHA256SUMS'), `${createHash('sha256').update(await readFile(join(assets, archive))).digest('hex')}  ${archive}\n`);
     assert.throws(() => install(), /version does not match/);
-    assert.equal(createHash('sha256').update(await readFile(join(installed, 'vibe-runtime'))).digest('hex'), previous);
-    assert.deepEqual(await readdir(installed), ['vibe-runtime']);
+    assert.equal(createHash('sha256').update(await readFile(join(installed, 'vibe-runner'))).digest('hex'), previous);
+    assert.deepEqual(await readdir(installed), ['vibe-runner']);
     assert.throws(() => install({ VIBE_RUNTIME_VERSION: '../../unexpected' }), /release tag/);
     await writeFile(join(commands, 'uname'), '#!/bin/sh\nif [ "$1" = -s ]; then printf "Linux\\n"; else printf "aarch64\\n"; fi\n', { mode: 0o755 });
     assert.throws(() => install(), /Only Linux x64 is supported/);
@@ -141,6 +178,6 @@ esac
     await rm(join(commands, 'uname'));
     await writeFile(join(commands, 'getconf'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
     assert.throws(() => install(), /glibc/);
-    assert.equal(createHash('sha256').update(await readFile(join(installed, 'vibe-runtime'))).digest('hex'), previous);
+    assert.equal(createHash('sha256').update(await readFile(join(installed, 'vibe-runner'))).digest('hex'), previous);
   } finally { await rm(directory, { recursive: true, force: true }); }
 });

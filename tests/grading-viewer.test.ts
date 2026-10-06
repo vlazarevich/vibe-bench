@@ -14,7 +14,7 @@ const get = (path: string, authority = cookie) => fetch(url + path, { headers: {
 const post = (path: string, body: unknown, authority = cookie) => fetch(url + path, { method: 'POST', headers: { origin: url, 'content-type': 'application/json', cookie: authority }, body: JSON.stringify(body) });
 beforeAll(async () => {
   await mkdir('.artifacts', { recursive: true }); const root = await mkdtemp(resolve('.artifacts/grading-viewer-'));
-  database = await startDatabase(join(root, 'postgres')); pool = await connectDatabase(database.url); app = await createApp({ pool, token: 'test' }); url = await app.listen({ host: '127.0.0.1', port: 0 });
+  database = await startDatabase(join(root, 'postgres')); pool = await connectDatabase(database.url); app = await createApp({ pool }); url = await app.listen({ host: '127.0.0.1', port: 0 });
   fixture = await seedArtifactRun(url);
   const runs = BlindGradingRuns.parse(await (await get('/api/blind-grading/runs', '')).json());
   const run = runs.find((run) => run.title === fixture.run.snapshot.content.definition.title); if (!run) throw new Error();

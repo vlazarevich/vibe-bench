@@ -1,10 +1,8 @@
 import { expect, test } from 'vitest';
 import { randomUUID } from 'node:crypto';
-import { assessDefinition, Definition, RatingSelection, SaveSuite, TaskKind, toGrade } from '../packages/contracts/src/suites.ts';
+import { assessDefinition, Definition, RatingSelection, SaveSuite, toGrade } from '../packages/contracts/src/suites.ts';
 import { canonicalJson, contentDigest } from '../packages/contracts/src/canonical.ts';
-import { prepareSnapshot, Report, Snapshot } from '../packages/contracts/src/runner.ts';
-import { Progress } from '../apps/runner/src/spool.ts';
-import { definition, pinnedContent } from './suite-fixtures.ts';
+import { definition } from './suite-fixtures.ts';
 
 test('all ten task modes and three controls can be authored with reusable criterion assignments', () => {
   const original = definition();
@@ -65,36 +63,4 @@ test('canonical content digest ignores object key order and preserves array orde
   expect(contentDigest([1, 2])).not.toBe(contentDigest([2, 1]));
   expect(contentDigest({ a: 'x' })).not.toBe(contentDigest({ a: 'y' }));
   expect(canonicalJson({ b: null, a: [true, 'x'] })).toBe('{"a":[true,"x"],"b":null}');
-});
-
-test('snapshot validates exact task, content digest, readiness, supported execution, models and settings', () => {
-  const content = pinnedContent(), task = content.definition.categories[0]?.tasks[0];
-  if (!task) throw new Error('Missing task');
-  const options = { task: { title: 'Ignored local task', prompt: 'Ignored' }, pinned: { content, taskId: task.id }, models: ['gpt-6-luna', 'gpt-6-sol'] satisfies ['gpt-6-luna', 'gpt-6-sol'], timeoutMs: 10_000 };
-  const snapshot = prepareSnapshot(options);
-  expect(snapshot.task).toEqual({ title: 'Indexes', prompt: 'Explain a database index.' });
-  expect(Snapshot.safeParse({ ...snapshot, digest: '0'.repeat(64) }).success).toBe(false);
-  const { digest: _digest, ...body } = snapshot;
-  const changed = { ...body, task: { ...body.task, prompt: 'Tampered' } };
-  expect(Snapshot.safeParse({ ...changed, digest: contentDigest(changed) }).success).toBe(false);
-  expect(() => prepareSnapshot({ ...options, models: ['gpt-6-luna', 'gpt-6-luna'] })).toThrow();
-  expect(() => prepareSnapshot({ ...options, timeoutMs: 0 })).toThrow();
-  for (const kind of TaskKind.options.filter((kind) => kind !== 'text-generation')) {
-    const definition = { ...content.definition, categories: [{ ...content.definition.categories[0], id: randomUUID(), title: 'Modes', tasks: [{ ...task, kind }] }] };
-    expect(() => prepareSnapshot({ ...options, pinned: { content: pinnedContent(Definition.parse(definition)), taskId: task.id } })).toThrow('only text-generation');
-  }
-  expect(() => prepareSnapshot({ ...options, pinned: { content: pinnedContent({ ...content.definition, materials: { kind: 'repository', url: 'https://example.com/a', requestedRef: 'main' } }), taskId: task.id } })).toThrow('only text-generation');
-  expect(() => prepareSnapshot({ ...options, pinned: { content: pinnedContent({ ...content.definition, title: '' }), taskId: task.id } })).toThrow('Complete the suite');
-  expect(() => prepareSnapshot({ ...options, pinned: { content: { ...content, digest: '0'.repeat(64) }, taskId: task.id } })).toThrow('digest');
-});
-
-test('protocol 1 reports and progress remain readable; protocol 2 rejects mismatched report inputs', () => {
-  const entrants = ['gpt-6-luna', 'gpt-6-sol'].map((model) => ({ attemptId: randomUUID(), model, cliVersion: 'fixture', outcome: { kind: 'succeeded', text: 'Answer' } }));
-  const legacy = { protocol: 1, reportId: randomUUID(), runId: randomUUID(), source: 'fixture', createdAt: new Date().toISOString(), task: { title: 'Task', prompt: 'Prompt' }, entrants };
-  expect(Report.parse(legacy).protocol).toBe(1);
-  expect(Progress.parse({ protocol: 1, reportId: legacy.reportId, runId: legacy.runId, source: legacy.source, createdAt: legacy.createdAt, task: legacy.task, attempts: entrants.map((entrant) => ({ kind: 'finished', result: entrant })) }).protocol).toBe(1);
-  const snapshot = prepareSnapshot({ task: legacy.task, models: ['gpt-6-luna', 'gpt-6-sol'], timeoutMs: 1000 });
-  expect(Report.parse({ ...legacy, protocol: 2, snapshot }).protocol).toBe(2);
-  expect(Report.safeParse({ ...legacy, protocol: 2, snapshot, task: { title: 'Wrong', prompt: 'Prompt' } }).success).toBe(false);
-  expect(Report.safeParse({ ...legacy, protocol: 2, snapshot, entrants: [...entrants].reverse() }).success).toBe(false);
 });

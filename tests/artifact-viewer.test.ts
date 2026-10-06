@@ -19,7 +19,7 @@ let root: string;
 beforeAll(async () => {
   await mkdir('.artifacts', { recursive: true }); root = await mkdtemp(resolve('.artifacts/artifact-viewer-'));
   database = await startDatabase(join(root, 'postgres')); pool = await connectDatabase(database.url);
-  app = await createApp({ pool, token: 'test' }); url = await app.listen({ host: '127.0.0.1', port: 0 }); fixture = await seedArtifactRun(url);
+  app = await createApp({ pool }); url = await app.listen({ host: '127.0.0.1', port: 0 }); fixture = await seedArtifactRun(url);
 });
 afterAll(async () => { await app?.close(); await pool?.end(); await database?.stop(); });
 
@@ -86,6 +86,6 @@ test('result projection survives a real database restart', async () => {
   const original = await (await fetch(url + record.resultUrl)).json();
   await app.close(); await pool.end(); await database.stop();
   database = await startDatabase(join(root, 'postgres')); pool = await connectDatabase(database.url);
-  app = await createApp({ pool, token: 'test' }); url = await app.listen({ host: '127.0.0.1', port: 0 });
+  app = await createApp({ pool }); url = await app.listen({ host: '127.0.0.1', port: 0 });
   expect(await (await fetch(url + record.resultUrl)).json()).toEqual(original);
 });

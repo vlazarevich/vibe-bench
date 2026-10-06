@@ -16,13 +16,13 @@ Creation establishes revision 1 and content ordinal 1. Every edit supplies an ex
 
 A suite row points to its current content. A transaction locks that row, rejects stale content IDs with HTTP 409, inserts the immutable content, and moves the pointer. Concurrent edits from one base produce one success and one conflict. The editor retains local changes after a conflict until the author explicitly reloads.
 
-Content stores a schema version and SHA-256 digest of canonical JSON containing the schema version and definition. Canonicalization sorts object keys and preserves array order. PostgreSQL rejects updates and deletes on content and accepted run rows. A composite foreign key prevents a suite from pointing at another suite's content. Ordered migrations use a transaction lock and migration ledger. Existing databases safely apply the idempotent initial schema before the suite migration.
+Content stores a schema version and SHA-256 digest of canonical JSON containing the schema version and definition. Canonicalization sorts object keys and preserves array order. PostgreSQL rejects updates and deletes on suite content and configured execution records. A composite foreign key prevents a suite from pointing at another suite's content. Ordered migrations use a transaction lock and migration ledger. Existing databases safely apply the idempotent initial schema before the suite migration.
 
 ## Rating controls and ranking guidance
 
 The `rating-control-v1` conversion maps integer stars 1 through 5 to 20, 40, 60, 80, and 100. Integer slider values 0 through 10 map to ten times the selected value. Thumbs down maps to 0 and thumbs up to 100. The absence of a selection is ungraded.
 
-The editor previews each conversion. Ranking rules are written guidance only. There is no aggregation formula or persisted rubric judgment in this feature. The existing comparison still asks which answer is better and saves one final choice.
+The editor previews each conversion. Ranking rules are written guidance only. There is no aggregation formula or persisted rubric judgment in this feature.
 
 ## HTTP operations
 
@@ -39,8 +39,4 @@ Malformed requests return 400 with field issues. Unknown suites or versions retu
 
 ## Pinned execution
 
-The editor exports a selected saved task as `{ content, taskId }`. Exports are disabled while local edits differ from the saved content. The runner reads that file through `VIBE_SUITE_FILE`. It accepts only a ready suite's text-generation task without repository materials. Unsupported input fails before any execution directory or subprocess is created.
-
-New protocol-2 progress and reports include an execution snapshot. A suite snapshot copies the full saved definition, evaluation configuration, suite identity, exact content identity, selected task, model pair, timeout, sandbox, and adapter version. Ad-hoc runs snapshot their task and existing pairwise evaluation criterion. The runner saves the snapshot before its first subprocess and constructs execution from that saved input. Reports must match the snapshotted task and models.
-
-Ingestion verifies digests, task membership and exact saved suite provenance. It compares the embedded content to the identified historical record, never the current pointer. Later edits cannot change a prior run. Protocol-1 reports and spool files remain readable and replayable. Blind evaluation responses remain explicit projections and omit snapshot and model metadata.
+Configured Runs select an exact saved content version and one or more tasks. The server stores the complete suite definition, evaluation configuration, selected task IDs, entrants, and a canonical digest before issuing assignments. Later suite edits cannot alter that snapshot. The runner executes dashboard assignments without task export files or runner-specific environment configuration. See [configured runs](configured-runs.md).

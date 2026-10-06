@@ -17,23 +17,23 @@ install_runtime() {
   [ -n "$install_dir" ] || fail 'The installation directory must not be empty.'
   mkdir -p "$install_dir"
   install_dir=$(cd "$install_dir" && pwd -P)
-  [ ! -d "$install_dir/vibe-runtime" ] || fail 'The destination is a directory.'
+  [ ! -d "$install_dir/vibe-runner" ] || fail 'The destination is a directory.'
   temporary=$(mktemp -d "$install_dir/.vibe-bench-install.XXXXXXXX")
   trap 'rm -rf "$temporary"' EXIT HUP INT TERM
-  archive="vibe-bench-runtime-$version-linux-x64.tar.gz"
+  archive="vibe-runner-$version-linux-x64.tar.gz"
   base="https://github.com/$repository/releases/download/$version"
   curl --proto '=https' --tlsv1.2 -fsSL "$base/$archive" -o "$temporary/$archive"
   curl --proto '=https' --tlsv1.2 -fsSL "$base/SHA256SUMS" -o "$temporary/SHA256SUMS"
   awk -v archive="$archive" '$2 == archive { print; found++ } END { if (found != 1) exit 1 }' "$temporary/SHA256SUMS" > "$temporary/archive.sha256" || fail 'Missing or duplicate archive checksum.'
   (cd "$temporary" && sha256sum --check archive.sha256) || fail 'Release checksum verification failed.'
-  [ "$(tar -tzf "$temporary/$archive")" = vibe-runtime ] || fail 'The release archive contains unexpected files.'
+  [ "$(tar -tzf "$temporary/$archive")" = vibe-runner ] || fail 'The release archive contains unexpected files.'
   tar -xzf "$temporary/$archive" --no-same-owner --no-same-permissions -C "$temporary"
-  [ -f "$temporary/vibe-runtime" ] && [ ! -L "$temporary/vibe-runtime" ] || fail 'The release does not contain a regular runtime executable.'
-  chmod 755 "$temporary/vibe-runtime"
-  [ "$("$temporary/vibe-runtime" --version)" = "$version" ] || fail 'The executable version does not match the release tag.'
-  mv -f "$temporary/vibe-runtime" "$install_dir/vibe-runtime"
-  printf 'Installed %s to %s/vibe-runtime\n' "$version" "$install_dir"
-  printf 'Add %s to PATH, then run the configuration command from Runtimes → Add new.\n' "$install_dir"
+  [ -f "$temporary/vibe-runner" ] && [ ! -L "$temporary/vibe-runner" ] || fail 'The release does not contain a regular runtime executable.'
+  chmod 755 "$temporary/vibe-runner"
+  [ "$("$temporary/vibe-runner" --version)" = "$version" ] || fail 'The executable version does not match the release tag.'
+  mv -f "$temporary/vibe-runner" "$install_dir/vibe-runner"
+  printf 'Installed %s to %s/vibe-runner\n' "$version" "$install_dir"
+  printf 'Add %s to PATH, then run the pairing command from Runtimes → Add new.\n' "$install_dir"
 }
 
 install_runtime

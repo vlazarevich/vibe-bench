@@ -33,7 +33,7 @@ export async function seedArtifactRun(url: string, cookie = '') {
     await context.close(); recording = await readFile(await video.path());
   } finally { await browser.close(); }
   const runtimeId = configuration.runtimeId;
-  await post('/api/worker/registrations', { protocol: 1, runtimeId, observation: 1, observedAt: new Date().toISOString(), capacity: { slots: 2 }, machine: { platform: 'linux', architecture: 'x64', logicalCpus: 2, memoryBytes: 4_000_000_000 }, tools: ToolName.options.map((name) => ({ name, availability: { kind: 'unavailable', reason: 'missing' } })), harnesses: { codex: { kind: 'not-ready' }, claude: { kind: 'not-ready' }, opencodeGo: { kind: 'not-ready' } }, modelPolicy: 'provider-discovered-at-execution' });
+  await post('/api/worker/registrations', { protocol: 1, runtimeId, observation: 1, observedAt: new Date().toISOString(), machine: { platform: 'linux', architecture: 'x64', logicalCpus: 2, memoryBytes: 4_000_000_000 }, tools: ToolName.options.map((name) => ({ name, availability: { kind: 'unavailable', reason: 'missing' } })), harnesses: { codex: { kind: 'not-ready' }, claude: { kind: 'not-ready' }, opencodeGo: { kind: 'not-ready' } }, modelPolicy: 'provider-discovered-at-execution' });
   const value = definition();
   const kinds = ['text-generation', 'image-generation', 'coding-feature', 'html-interactive', 'browser-scenario'].map((kind) => TaskKind.parse(kind));
   const tasks = kinds.map((kind) => ({ id: randomUUID(), title: kind, kind, prompt: 'Artifact viewer fixture', criterionIds: value.evaluation.criteria.map((criterion) => criterion.id) }));

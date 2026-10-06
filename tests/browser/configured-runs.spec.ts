@@ -14,7 +14,7 @@ async function seed(request: APIRequestContext, baseURL: string) {
   const authorization = runtimeAuthorization(configuration);
   runtimeCredentials.set(runtimeId, authorization);
   const registration = await request.post('/api/worker/registrations', { headers: { authorization }, data: {
-    protocol: 1, runtimeId, observation: 1, observedAt: new Date().toISOString(), capacity: { slots: 2 },
+    protocol: 1, runtimeId, observation: 1, observedAt: new Date().toISOString(),
     machine: { platform: 'linux', architecture: 'x64', logicalCpus: 2, memoryBytes: 4_000_000_000 },
     tools: ToolName.options.map((name) => ({ name, availability: { kind: 'available', version: '1.2.3' } })),
     harnesses: { codex: { kind: 'ready' }, claude: { kind: 'ready' }, opencodeGo: { kind: 'ready' } }, modelPolicy: 'provider-discovered-at-execution',
@@ -100,8 +100,8 @@ test('preview full and selected tasks, preserve saved inputs across suite edits 
   await expect(page.getByRole('combobox', { name: 'Saved version' })).toHaveValue(latest.content.contentId);
   await page.getByRole('combobox', { name: 'Saved version' }).selectOption(suite.content.contentId);
   await expect(page.getByRole('combobox', { name: 'Saved version' })).toHaveValue(suite.content.contentId);
-  await page.getByRole('link', { name: 'Comparisons', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Available runs', exact: true })).toBeVisible();
+  await page.getByRole('link', { name: 'Runs', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'Run management', exact: true })).toBeVisible();
 });
 
 test('missing models and invalid time limits cannot produce a plan or create a run', async ({ page, request, baseURL }) => {

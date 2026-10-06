@@ -1,3 +1,4 @@
+import { checkExecutable } from './executables.ts';
 import { randomUUID } from 'node:crypto';
 import { lstat, mkdir, readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -13,13 +14,12 @@ export { TaskIO } from '../../../packages/contracts/src/work.ts';
 export const PreparedMaterials = z.discriminatedUnion('kind', [z.object({ kind: z.literal('none') }).strict(), z.object({ kind: z.literal('repository'), commit: z.string().regex(/^[a-f0-9]{40,64}$/), manifestDigest: z.string().regex(/^[a-f0-9]{64}$/), manifest: MaterialManifest, repository: z.string() }).strict()]);
 export type PreparedMaterials = z.infer<typeof PreparedMaterials>;
 export function executionEnvironment(): NodeJS.ProcessEnv {
-  const names = ['PATH', 'HOME', 'TMPDIR', 'CODEX_HOME', 'CLAUDE_CONFIG_DIR', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'CLAUDE_CODE_OAUTH_TOKEN', 'SSL_CERT_FILE', 'SSL_CERT_DIR', 'HTTPS_PROXY', 'HTTP_PROXY', 'NO_PROXY', 'SSH_AUTH_SOCK'];
-  return Object.fromEntries(names.flatMap((name) => process.env[name] === undefined ? [] : [[name, process.env[name]]]));
+  return Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith('VIBE_')));
 }
 export async function git(args: string[], cwd: string, diagnostics: string) {
   const directory = join(diagnostics, randomUUID());
   await mkdir(directory, { recursive: true });
-  const result = await runProcess({ executable: 'git', args: ['-c', 'core.hooksPath=/dev/null', ...args], cwd, directory, input: '', timeoutMs: 60_000, env: { ...executionEnvironment(), GIT_TERMINAL_PROMPT: '0', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' } });
+  const result = await runProcess({ executable: await checkExecutable('git'), args: ['-c', 'core.hooksPath=/dev/null', ...args], cwd, directory, input: '', timeoutMs: 60_000, env: { ...executionEnvironment(), GIT_TERMINAL_PROMPT: '0' } });
   if (result.kind !== 'exited' || result.code !== 0) throw new Error('Repository operation failed. See local Git diagnostics.');
   return readBounded(join(directory, 'stdout.log'), 500_000);
 }

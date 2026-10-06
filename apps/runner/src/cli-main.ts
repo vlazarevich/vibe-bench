@@ -1,3 +1,3 @@
-import { main } from './cli.ts';
+import { main, reportCliError } from './cli.ts';
 try { await main(process.argv.slice(2)); }
-catch (error) { process.stderr.write(`${error instanceof Error ? error.message : 'Runtime failed'}\n`); process.exitCode = 1; }
+catch (error) { reportCliError(error); }

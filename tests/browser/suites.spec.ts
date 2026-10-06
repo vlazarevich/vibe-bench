@@ -1,9 +1,4 @@
 import { expect, test } from '@playwright/test';
-import { readFile } from 'node:fs/promises';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
-import { join } from 'node:path';
-import { PinnedSuiteTask } from '../../packages/contracts/src/suites.ts';
 
 test('author every task mode, rating control, ranking guidance and materials; save drafts and review history', async ({ page }) => {
   await page.goto('/'); await page.getByRole('link', { name: 'Suites', exact: true }).click();
@@ -70,14 +65,7 @@ test('author every task mode, rating control, ranking guidance and materials; sa
     await expect(task.getByRole('checkbox', { name: 'Quality 2', exact: true })).toBeChecked();
   }
   await expect(page.getByRole('textbox', { name: 'Rule guidance', exact: true })).toHaveValue('Use clarity when other qualities tie.');
-  const downloadEvent = page.waitForEvent('download');
-  await page.getByRole('button', { name: 'Export Task text-generation', exact: true }).click();
-  const download = await downloadEvent, path = await download.path();
-  if (!path) throw new Error('Missing downloaded input');
-  const pinned = PinnedSuiteTask.parse(JSON.parse(await readFile(path, 'utf8')));
-  expect(pinned.content.ordinal).toBe(2); expect(pinned.content.definition.categories[0]?.tasks.map((task) => task.kind)).toEqual(kinds);
   await page.getByRole('textbox', { name: 'Suite title', exact: true }).fill('Later local edit');
-  await expect(page.getByRole('button', { name: 'Export Task text-generation', exact: true })).toBeDisabled();
   await page.getByRole('combobox', { name: 'Materials source', exact: true }).selectOption('repository');
   await page.getByRole('textbox', { name: 'Repository URL', exact: true }).fill('https://secret@example.com/materials');
   await page.getByRole('textbox', { name: 'Requested ref', exact: true }).fill('release-v1');
@@ -91,7 +79,6 @@ test('author every task mode, rating control, ranking guidance and materials; sa
   await page.reload();
   await expect(page.getByRole('textbox', { name: 'Repository URL', exact: true })).toHaveValue('ssh://git@example.com/materials.git');
   await expect(page.getByRole('textbox', { name: 'Requested ref', exact: true })).toHaveValue('release-v1');
-  await expect(page.getByRole('button', { name: 'Export Task text-generation', exact: true })).toHaveCount(0);
   await page.getByRole('region', { name: 'Suite history' }).getByRole('button', { name: 'Revision 1 · Content 2', exact: true }).click();
   const historical = page.getByRole('region', { name: 'Suite history' });
   await expect(historical).toContainText('All task types');
@@ -138,46 +125,4 @@ test('stale editor keeps its local changes and reload explicitly adopts the save
   await second.getByRole('button', { name: 'Save new revision' }).click();
   await expect(second.getByText('Revision 2 · Content 3', { exact: true }).first()).toBeVisible();
   await second.reload(); await expect(second.getByRole('textbox', { name: 'Suite title', exact: true })).toHaveValue('Saved elsewhere');
-});
-
-test('downloaded saved task runs through the CLI after an edit and remains blind in comparison', async ({ page }) => {
-  test.setTimeout(150_000);
-  await page.goto('/?view=suites'); await page.getByRole('button', { name: 'New suite' }).click();
-  await page.getByRole('textbox', { name: 'Suite title', exact: true }).fill('Pinned browser suite');
-  await page.getByRole('button', { name: 'Add criterion', exact: true }).click();
-  await page.getByRole('textbox', { name: 'Criterion title', exact: true }).fill('Clarity');
-  await page.getByRole('textbox', { name: 'Criterion guidance', exact: true }).fill('Prefer clear explanations');
-  await page.getByRole('button', { name: 'Add category', exact: true }).click();
-  await page.getByRole('textbox', { name: 'Category title', exact: true }).fill('Writing');
-  await page.getByRole('button', { name: 'Add task', exact: true }).click();
-  await page.getByRole('textbox', { name: 'Task title', exact: true }).fill('Original browser task');
-  await page.getByRole('textbox', { name: 'Prompt', exact: true }).fill('Explain an index using an everyday analogy.');
-  await page.getByRole('checkbox', { name: 'Clarity', exact: true }).check();
-  await page.getByRole('button', { name: 'Create suite', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Export Original browser task', exact: true })).toBeEnabled();
-  const downloadEvent = page.waitForEvent('download');
-  await page.getByRole('button', { name: 'Export Original browser task', exact: true }).click();
-  const download = await downloadEvent;
-  const root = process.env.VIBE_BROWSER_ROOT; if (!root) throw new Error('Missing isolated browser state root');
-  const path = join(root, 'exported-suite-task.json'); await download.saveAs(path);
-  await page.getByRole('textbox', { name: 'Prompt', exact: true }).fill('FIXTURE_FAIL');
-  await page.getByRole('button', { name: 'Save minor change' }).click();
-  await expect(page.getByText('Revision 1 · Content 2', { exact: true }).first()).toBeVisible();
-  const result = await promisify(execFile)(process.execPath, ['--import', 'tsx', 'apps/runner/src/main.ts', 'fixture'], { cwd: process.cwd(), env: { ...process.env, VIBE_LOCAL_ROOT: root, VIBE_SUITE_FILE: path, VIBE_TASK_FILE: undefined }, timeout: 120_000 });
-  expect(result.stdout).toContain('Saved fixture run');
-  const responses: string[] = [];
-  page.on('response', async (response) => { if (response.url().includes('/api/')) responses.push(await response.text()); });
-  await page.getByRole('link', { name: 'Comparisons', exact: true }).click();
-  const run = page.locator('.run').filter({ has: page.getByRole('heading', { name: 'Original browser task', exact: true }) });
-  await run.getByRole('button', { name: 'Compare answers', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Which answer is better?' })).toBeVisible();
-  await expect(page.locator('details')).toContainText('Explain an index using an everyday analogy.');
-  await expect(page.locator('body')).not.toContainText('FIXTURE_FAIL');
-  expect(responses.join('\n')).not.toMatch(/gpt-6|snapshot|contentId|attemptId|reportId|cliVersion|runId/);
-  await page.reload();
-  await expect(page.locator('.card')).toHaveCount(2);
-  await expect(page.locator('details')).toContainText('Explain an index using an everyday analogy.');
-  await page.screenshot({ path: '.artifacts/suite-pinned-comparison.png', fullPage: true });
-  await page.getByRole('button', { name: 'Choose answer A' }).click();
-  await expect(page.getByRole('heading', { name: 'Your choice is saved.' })).toBeVisible();
 });

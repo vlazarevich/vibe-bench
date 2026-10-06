@@ -16,7 +16,7 @@ export async function gradingFixture(url: string, cookie = '') {
     return response.json();
   }
   const runtimeId = configuration.runtimeId;
-  await post('/api/worker/registrations', { protocol: 1, runtimeId, observation: 1, observedAt: new Date().toISOString(), capacity: { slots: 3 }, machine: { platform: 'linux', architecture: 'x64', logicalCpus: 2, memoryBytes: 1_000_000 }, tools: ToolName.options.map((name) => ({ name, availability: { kind: 'unavailable', reason: 'missing' } })), harnesses: { codex: { kind: 'not-ready' }, claude: { kind: 'not-ready' }, opencodeGo: { kind: 'not-ready' } }, modelPolicy: 'provider-discovered-at-execution' });
+  await post('/api/worker/registrations', { protocol: 1, runtimeId, observation: 1, observedAt: new Date().toISOString(), machine: { platform: 'linux', architecture: 'x64', logicalCpus: 2, memoryBytes: 1_000_000 }, tools: ToolName.options.map((name) => ({ name, availability: { kind: 'unavailable', reason: 'missing' } })), harnesses: { codex: { kind: 'not-ready' }, claude: { kind: 'not-ready' }, opencodeGo: { kind: 'not-ready' } }, modelPolicy: 'provider-discovered-at-execution' });
   const criteria = ['stars-5', 'slider-10', 'thumbs'].map((control) => ({ id: randomUUID(), title: control, instructions: `Original ${control} guidance`, control }));
   const value = Definition.parse({ title: `Grading ${randomUUID().slice(0, 8)}`, description: 'Fixture grading', categories: [
     { id: randomUUID(), title: 'Writing', tasks: ['First task', 'Excluded task'].map((title) => ({ id: randomUUID(), title, prompt: `Original ${title} prompt`, kind: 'text-generation', criterionIds: criteria.map((criterion) => criterion.id) })) },

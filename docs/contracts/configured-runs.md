@@ -1,6 +1,6 @@
 # Configured runs
 
-The executable schemas are `packages/contracts/src/configured-runs.ts`, `task-io.ts`, and `work.ts`. Configured runs have a management API separate from the original two-answer comparison protocol. Their outcomes do not create grades or blind evaluation sessions.
+The executable schemas are `packages/contracts/src/configured-runs.ts`, `task-io.ts`, and `work.ts`. Configured runs are the default dashboard view. Their outcomes do not automatically create grades or blind grading sessions.
 
 ## Configuration and immutable inputs
 
@@ -12,15 +12,23 @@ Creation accepts a stable request ID. An identical replay returns the original c
 
 ## Outbound worker protocol
 
-The runtime initiates every request. The worker API exposes registration, claims, preparation reports, and attempt reports. The separate worker listener rejects browser requests. Runtime and assignment IDs establish record membership. Individually revocable runtime credentials authorize every worker request on both listeners. The [access contract](access.md) defines enrollment and dashboard authority.
+The runtime initiates every request. The worker API exposes pairing enrollment, status, revocation, registration, claims, preparation reports, and attempt reports. The separate worker listener rejects browser requests. Runtime and assignment IDs establish record membership. Individually revocable runtime credentials authorize every worker request on both listeners. The [access contract](access.md) defines enrollment and dashboard authority.
 
-A runtime claims one whole run and executes its attempts in order. One unfinished assignment prevents that runtime from claiming another run. Claims have durable request IDs. Replaying a claim returns the same assignment or idle receipt, even if new work arrived afterward.
+A runtime claims one whole run and executes its attempts in order. One unfinished assignment prevents that runtime from claiming another run. Execution is sequential, with no slots or advertised capacity. Claims have durable request IDs. Replaying a claim returns the same assignment or idle receipt, even if new work arrived afterward.
 
 Preparation is recorded once before attempts start. Repository preparation records the exact commit and parsed `vibe-bench.json` declarations with their canonical digest. Every attempt starts from that commit in a separate workspace. A failed preparation remains a recorded failure.
 
 Attempt states distinguish queued, assigned, started, and terminal work. Terminal outcomes distinguish completed, skipped before execution, and failed. Reports are saved locally before transmission. The server accepts the report and its receipt in one transaction. Identical delivery returns the original receipt. Conflicting reuse of a report ID or replacement of an accepted outcome fails.
 
 An interrupted attempt may already have called a model. The worker retains its identity and diagnostics and never launches it again under that ID. This protocol has no leases, reassignment, or automatic re-execution.
+
+## Runner lifecycle and abandonment
+
+`vibe-runner run` recovers pending reports, refreshes capabilities, waits for assignments, executes attempts sequentially, and continues with later runs. `vibe-runner run-once` waits through an empty queue and exits only after the entire first assigned run and its artifacts have durable acknowledgements.
+
+Credential revocation or replacement marks an unfinished assigned run `abandoned`. Accepted preparation, outcomes, and artifacts remain immutable. Completed runs keep their history. Abandoned assignments reject further reports and no longer block a subsequent claim. Connectivity loss alone never abandons a run. The dashboard displays abandonment alongside saved attempt results.
+
+Pairing or local revocation must refuse while execution owns the selected state directory. Cached status and capability probing remain available during execution. A newer observation never cancels or restarts the current assignment.
 
 ## Repository task declarations
 

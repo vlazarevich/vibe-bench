@@ -1,6 +1,6 @@
 # Configured-run blind grading
 
-Status: implemented. `packages/contracts/src/blind-grading.ts` defines the browser contract. `apps/server/src/features/blind-grading.ts` owns session mappings, judgments, and anonymous artifact access. The pairwise comparison demo has separate storage, cookies, and final-choice behavior.
+Status: implemented. `packages/contracts/src/blind-grading.ts` defines the browser contract. `apps/server/src/features/blind-grading.ts` owns session mappings, judgments, and anonymous artifact access.
 
 ## Eligibility and presentation
 
@@ -8,7 +8,7 @@ Grading starts after every configured attempt has a terminal outcome. A session 
 
 Each task shuffles its cards once when the session opens. Random card handles and presentation order persist across reloads and database restarts. A card handle does not identify the same entrant across tasks. The session never adds new attempts. Task navigation lives in the URL. Saved judgment counts supply progress without calculating an aggregate score.
 
-The grading page requests only the neutral run list, session navigation, and one selected task. It never fetches runtime records, configured-run management DTOs, or the pairwise demo list. The public run list contains a random review ID, suite title, fixture or live label, and readiness. It contains no execution identifiers or timing.
+The grading page requests only the neutral run list, session navigation, and one selected task. It never fetches runtime records, configured-run management DTOs. The public run list contains a random review ID, suite title, fixture or live label, and readiness. It contains no execution identifiers or timing.
 
 ## Pinned criteria and selections
 
