@@ -8,10 +8,19 @@ import { durableDirectory, durableWrite } from './spool.ts';
 export function runtimeRoot(stateRoot: string, configuration: RuntimeConfiguration) {
   return resolve(stateRoot, 'installations', configuration.installationId, configuration.runtimeId);
 }
-export async function stateLock(stateRoot: string) {
+export async function stateLock(stateRoot: string, { wait = false }: { wait?: boolean } = {}) {
   await durableDirectory(resolve(stateRoot));
   await chmod(resolve(stateRoot), 0o700);
-  return acquireLocalLock(resolve(stateRoot));
+  const deadline = Date.now() + 120_000;
+  for (;;) {
+    try { return await acquireLocalLock(resolve(stateRoot)); }
+    catch (error) {
+      if (!(error instanceof Error && error.message === 'Local server is already running for this state directory')) throw error;
+      if (!wait) throw new Error('Runner state is busy. Stop the runner first if execution is active, or wait for pairing or capability refresh to finish and retry.');
+      if (Date.now() >= deadline) throw new Error('Runner state remained busy for two minutes. Wait for pairing or capability refresh to finish and retry.');
+      await new Promise((done) => setTimeout(done, 100));
+    }
+  }
 }
 export async function executionLock(stateRoot: string) {
   const path = join(stateRoot, 'execution-lock');
@@ -26,7 +35,11 @@ export async function clearState(stateRoot: string) {
   for (const name of await readdir(stateRoot)) await rm(join(stateRoot, name), { recursive: true, force: true });
 }
 export async function readConfiguration(stateRoot: string) {
-  return RuntimeConfiguration.parse(JSON.parse(await readFile(join(stateRoot, 'config.json'), 'utf8')));
+  try { return RuntimeConfiguration.parse(JSON.parse(await readFile(join(stateRoot, 'config.json'), 'utf8'))); }
+  catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') error.message = 'Unpaired. Create an enrollment token in the dashboard and run vibe-runner pair TOKEN.';
+    throw error;
+  }
 }
 export class RequestRejected extends Error {
   constructor(readonly status: number) { super(`Dashboard request rejected with HTTP ${status}. ${status === 401 ? 'Pair again with a valid enrollment token.' : 'Check the dashboard and retry.'}`); }
@@ -44,7 +57,9 @@ async function request(apiUrl: string, path: string, body?: unknown, credential?
 }
 export async function configureRuntime(stateRoot: string, encoded: string) {
   if (!/^[A-Za-z0-9_-]+$/.test(encoded) || encoded.length > 16_000) throw new Error('Invalid enrollment token. Copy the complete token from the dashboard.');
-  const command = EnrollmentCommand.parse(JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8')));
+  let command: ReturnType<typeof EnrollmentCommand.parse>;
+  try { command = EnrollmentCommand.parse(JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8'))); }
+  catch { throw new Error('Invalid enrollment token. Copy the complete token from the dashboard.'); }
   if (Date.parse(command.expiresAt) <= Date.now()) throw new Error('Enrollment token expired. Create a new token in the dashboard.');
   const exchange = EnrollmentExchange.parse({ requestId: randomUUID(), key: command.key, credentialId: randomUUID(), secret: randomBytes(32).toString('hex') });
   const receipt = EnrollmentReceipt.parse(await request(command.apiUrl, '/api/worker/enrollments', exchange));

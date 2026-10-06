@@ -15,7 +15,6 @@ import { createApp } from '../apps/server/src/app.ts';
 import { createWorkerApp } from '../apps/server/src/worker-app.ts';
 import { discoverRuntime, onboard, onboardingUrl } from '../apps/runner/src/onboarding.ts';
 import { RuntimeId, RegisteredRuntimes, RuntimeRegistration } from '../packages/contracts/src/runtime.ts';
-import { acquireLocalLock } from '../scripts/local-lock.ts';
 
 let root: string;
 let database: Awaited<ReturnType<typeof startDatabase>>;
@@ -164,8 +163,6 @@ test('probe uses acknowledged snapshots, fresh scans, and server sequence after 
   expect(first.receipt.observation).toBe(1);
   const cached = JSON.parse((await cli('status')).stdout);
   expect(cached.capabilities).toEqual(first);
-  const release = await acquireLocalLock(stateRoot);
-  try { await expect(onboard({ stateRoot })).rejects.toThrow('already running'); } finally { await release(); }
   await durableWrite(join(stateRoot,'config.json'),{...cliConfiguration,apiUrl:'http://127.0.0.1:1'});
   await expect(onboard({ stateRoot })).rejects.toThrow();
   expect(JSON.parse(await readFile(join(observationRoot, 'capabilities.json'), 'utf8'))).toEqual(first);

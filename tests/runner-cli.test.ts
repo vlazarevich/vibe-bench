@@ -24,6 +24,20 @@ async function createRun(runtimeId: string) { const suite = SuiteView.parse(awai
 beforeAll(async () => { await mkdir('.artifacts',{recursive:true}); root=await mkdtemp(resolve('.artifacts/runner-cli-')); database=await startDatabase(join(root,'postgres'));pool=await connectDatabase(database.url);app=await createApp({pool});url=await app.listen({host:'127.0.0.1',port:0}); });
 afterAll(async () => {await app?.close();await pool?.end();await database?.stop();});
 
+test('unpaired commands and malformed tokens explain how to pair without exposing parser or filesystem errors', async () => {
+  const state = join(root, 'unpaired-errors');
+  const unpaired = 'Unpaired. Create an enrollment token in the dashboard and run vibe-runner pair TOKEN.\n';
+  for (const args of [['run'], ['run-once'], ['pair', 'probe']]) {
+    await expect(cli(state, ...args)).rejects.toMatchObject({ code: 1, stdout: '', stderr: unpaired });
+  }
+  expect(await cli(state, 'pair', 'status')).toMatchObject({ stdout: unpaired, stderr: '' });
+  expect(await cli(state, 'pair', 'revoke')).toMatchObject({ stdout: 'Local pairing and runner state removed.\n', stderr: '' });
+  for (const malformed of ['abc', 'invalid-token', '!', Buffer.from('{}').toString('base64url')]) {
+    await expect(cli(state, 'pair', malformed)).rejects.toMatchObject({ code: 1, stdout: '', stderr: 'Invalid enrollment token. Copy the complete token from the dashboard.\n' });
+    expect(await readdir(state)).toEqual([]);
+  }
+});
+
 test('pair token reuse replaces authority without duplicate runtimes and failed pairing removes selected state', async () => {
   const state=join(root,'reuse'), enrollment=await token();
   await cli(state,'pair',enrollment);const first=await config(state);
@@ -37,6 +51,32 @@ test('pair token reuse replaces authority without duplicate runtimes and failed 
   await expect(cli(state,'pair','invalid-token')).rejects.toThrow();expect(await readdir(state)).toEqual([]);
   expect((await pool.query('SELECT count(DISTINCT runtime_id)::int AS n FROM runtime_credentials WHERE runtime_id=$1',[first.runtimeId])).rows[0].n).toBe(1);
 },30000);
+
+test('status and probe wait for automatic capability refresh without rescanning status or allowing auth mutation', async () => {
+  const state = join(root, 'refresh'), bin = join(root, 'refresh-bin'), marker = join(root, 'refresh-marker');
+  await mkdir(bin);
+  const executable = process.env.VIBE_RUNTIME_BINARY ?? process.execPath;
+  const args = [...(process.env.VIBE_RUNTIME_BINARY ? [] : ['--import', 'tsx', 'apps/runner/src/cli-main.ts']), '--state-dir', state];
+  const env = { ...process.env, PATH: bin };
+  const invoke = (...command: string[]) => exec(executable, [...args, ...command], { env });
+  const enrollment = await token();
+  await invoke('pair', enrollment);
+  await writeFile(join(bin, 'codex'), `#!${process.execPath}\nconst fs = await import('node:fs'); if (process.argv.includes('--version')) { fs.writeFileSync(${JSON.stringify(marker)}, 'refresh'); setTimeout(() => console.log('codex 1.2.3'), 3000); } else console.log('Logged in using ChatGPT');\n`, { mode: 0o700 });
+  const child = spawn(executable, [...args, 'run'], { env, stdio: ['ignore', 'pipe', 'pipe'] });
+  const exited = new Promise<number | null>((done) => child.once('exit', done));
+  try {
+    await expect.poll(async () => { try { return await readFile(marker, 'utf8'); } catch { return ''; } }, { timeout: 10000 }).toBe('refresh');
+    const reads = Promise.all([invoke('pair', 'status'), invoke('pair', 'probe')]);
+    await expect(invoke('pair', 'revoke')).rejects.toThrow('Stop the runner first');
+    await expect(invoke('pair', enrollment)).rejects.toThrow('Stop the runner first');
+    await expect(invoke('run')).rejects.toThrow('Stop the runner first');
+    const [status, probe] = await reads;
+    expect(JSON.parse(status.stdout).status).toBe('paired');
+    expect(probe.stdout).toContain('Capabilities acknowledged');
+    expect(JSON.parse((await invoke('pair', 'status')).stdout).capabilities.receipt.observation).toBe(3);
+    expect(child.exitCode).toBeNull();
+  } finally { child.kill('SIGTERM'); await exited; }
+}, 30000);
 
 test('run-once waits through an empty queue, permits cached status and probe, refuses auth mutation, and acknowledges the whole run', async () => {
   const state=join(root,'waiting'), enrollment=await token();await cli(state,'pair',enrollment);const configuration=await config(state);

@@ -22,7 +22,20 @@ test('standalone CLI exposes command help and actionable errors with consistent 
   await assert.rejects(execute(binary, ['unknown-command']), (error) => error.code === 2 && /unknown command/i.test(error.stderr));
   const state = await mkdtemp(join(tmpdir(), 'vibe-binary-errors-'));
   try {
-    await assert.rejects(execute(binary, ['--state-dir', state, 'pair', 'invalid-token']), (error) => error.code === 1 && error.stderr.length > 0 && !error.stderr.includes('Runtime failed'));
+    const unpaired = 'Unpaired. Create an enrollment token in the dashboard and run vibe-runner pair TOKEN.\n';
+    for (const args of [['run'], ['run-once'], ['pair', 'probe']]) {
+      await assert.rejects(execute(binary, ['--state-dir', state, ...args]), { code: 1, stdout: '', stderr: unpaired });
+    }
+    const status = await execute(binary, ['--state-dir', state, 'pair', 'status']);
+    assert.equal(status.stdout, unpaired);
+    assert.equal(status.stderr, '');
+    const revoke = await execute(binary, ['--state-dir', state, 'pair', 'revoke']);
+    assert.equal(revoke.stdout, 'Local pairing and runner state removed.\n');
+    assert.equal(revoke.stderr, '');
+    for (const malformed of ['abc', 'invalid-token', '!', Buffer.from('{}').toString('base64url')]) {
+      await assert.rejects(execute(binary, ['--state-dir', state, 'pair', malformed]), { code: 1, stdout: '', stderr: 'Invalid enrollment token. Copy the complete token from the dashboard.\n' });
+      assert.deepEqual(await readdir(state), []);
+    }
   } finally { await rm(state, { recursive: true, force: true }); }
 });
 

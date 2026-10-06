@@ -42,7 +42,7 @@ async function revoke(stateRoot: string) {
   finally { await stop?.(); await release(); }
 }
 async function status(stateRoot: string) {
-  const release = await stateLock(stateRoot);
+  const release = await stateLock(stateRoot, { wait: true });
   try {
   let configuration;
   try { configuration = await readConfiguration(stateRoot); }

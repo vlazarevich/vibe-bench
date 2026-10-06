@@ -80,7 +80,7 @@ export function onboardingUrl(value: string) {
 export const Status = z.object({ runtimeId: RuntimeId, observation: z.number().int().nonnegative() }).strict();
 export const AcknowledgedCapabilities = z.object({ registration: RuntimeRegistration, receipt: RuntimeReceipt }).strict();
 export async function onboard({ stateRoot, locked = false }: { stateRoot: string; locked?: boolean }) {
-  const release = locked ? async () => {} : await stateLock(stateRoot);
+  const release = locked ? async () => {} : await stateLock(stateRoot, { wait: true });
   try {
     const configuration = await readConfiguration(stateRoot);
     const root = runtimeRoot(stateRoot, configuration);
