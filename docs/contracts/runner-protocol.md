@@ -58,9 +58,9 @@ Check installed CLI behavior and official documentation when changing an adapter
 
 ## Implemented pairing and capabilities
 
-The CLI exposes `pair TOKEN`, `pair status`, `pair probe`, `pair revoke`, `run`, and `run-once`. Global `--state-dir`, help, and version commands work for source checkouts and the standalone executable. Pairing succeeds after an acknowledged capability report. Reusable enrollment tokens retain one server-issued identity until expiry. Failed pairing clears the selected local state directory. Revocation attempts the remote operation, then clears local state and reports whether dashboard abandonment was confirmed.
+The CLI exposes `pair TOKEN`, `pair status`, `pair probe`, `pair revoke`, `run`, and `run-once`. Global `--state-dir`, help, and the embedded build version work for source checkouts and the standalone executable. Pairing succeeds after an acknowledged capability report. Reusable enrollment tokens retain one server-issued identity until expiry. Failed pairing clears the selected local state directory. Revocation attempts the remote operation, then clears local state and reports whether dashboard abandonment was confirmed.
 
-Protocol-1 observations contain machine facts, installed tool versions, explicit harness authentication readiness, and the embedded runner version. They contain no slots or capacity field. Readiness does not prove model entitlement. Discovery and execution select the same executable from `PATH`.
+Protocol-1 observations contain machine facts, installed tool versions, explicit harness authentication readiness. They contain no slots or capacity field. Readiness does not prove model entitlement. Discovery and execution select the same executable from `PATH`.
 
 A stable runtime UUID and monotonic observation sequence identify each immutable registration. Identical replay returns its saved receipt; conflicting content under the same sequence returns 409. Late observations cannot replace newer observations. Pairing recovers the dashboard sequence floor after local state erasure. Cached status never rescans. Failed probe delivery never replaces the last acknowledged snapshot.
 

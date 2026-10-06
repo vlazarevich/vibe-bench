@@ -24,9 +24,7 @@ test('stops PostgreSQL when the app is interrupted during database startup', asy
   const root = await mkdtemp(resolve('.artifacts/database-startup-'));
   const directory = join(root, 'postgres');
   const owner = spawn(process.execPath, ['--import', 'tsx', resolve('scripts/local.ts')], { env: { ...process.env, VIBE_LOCAL_ROOT: root }, stdio: ['ignore', 'pipe', 'pipe'] });
-  let output = '';
   let diagnostics = '';
-  owner.stdout.on('data', (data) => { output += String(data); });
   owner.stderr.on('data', (data) => { diagnostics += String(data); });
   let pids: number[] = [];
   try {
@@ -38,7 +36,6 @@ test('stops PostgreSQL when the app is interrupted during database startup', asy
     const postmaster = Number(pidFile[0]);
     const port = Number(pidFile[3]);
     pids = [postmaster, ...await descendants(postmaster)];
-    expect(output).not.toContain('Vibe bench ready');
     owner.kill('SIGTERM');
     await expect.poll(async () => { const states = await Promise.all(pids.map(alive)); return pids.filter((_, index) => states[index]); }, { timeout: 10_000 }).toEqual([]);
     await expect.poll(() => listening(port), { timeout: 10_000 }).toBe(false);

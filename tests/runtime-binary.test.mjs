@@ -13,6 +13,18 @@ const binary = resolve(process.env.VIBE_RUNTIME_BINARY ?? 'dist/runtime/vibe-run
 const version = (await execute(binary, ['--version'])).stdout.trim();
 assert.match(version, /^v\d+\.\d+\.\d+/);
 
+test('standalone CLI exposes command help and actionable errors with consistent exit codes', async () => {
+  const help = (await execute(binary, ['--help'])).stdout;
+  assert.match(help, /vibe-runner/);
+  for (const command of ['pair', 'run', 'run-once']) assert.match(help, new RegExp(command));
+  assert.match((await execute(binary, ['pair', '--help'])).stdout, /status/);
+  await assert.rejects(execute(binary, ['unknown-command']), (error) => error.code === 2 && /unknown command/i.test(error.stderr));
+  const state = await mkdtemp(join(tmpdir(), 'vibe-binary-errors-'));
+  try {
+    await assert.rejects(execute(binary, ['--state-dir', state, 'pair', 'invalid-token']), (error) => error.code === 1 && error.stderr.length > 0 && !error.stderr.includes('Runtime failed'));
+  } finally { await rm(state, { recursive: true, force: true }); }
+});
+
 test('standalone CLI pairs, persists a private credential, checks cached status, probes, and revokes without Node or a checkout', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'vibe-binary-auth-'));
   const standalone = join(directory, 'vibe-runner');

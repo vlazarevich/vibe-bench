@@ -20,7 +20,8 @@ if (process.argv[2] === '--internal-configured-fixture') {
   process.argv.splice(1, 2, join(directory, 'tests/fixtures/configured-harness.mjs'));
   import(pathToFileURL(join(directory, 'tests/fixtures/configured-harness.mjs')).href).catch(fail);
 } else {
-  Promise.resolve().then(() => runtimeRequire(entry).main(process.argv.slice(2))).catch(fail);
+  const runner = runtimeRequire(entry);
+  runner.main(process.argv.slice(2)).catch(runner.reportCliError);
 }
 function fail() {
   process.stderr.write('Runtime failed. Check configuration, prerequisites, and saved runtime state.\n');

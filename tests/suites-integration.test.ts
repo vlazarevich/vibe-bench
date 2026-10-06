@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, expect, test } from 'vitest';
-import { mkdir, mkdtemp } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import pg from 'pg';
 import { startDatabase } from '../scripts/local-database.ts';
 import { connectDatabase } from '../apps/server/src/db.ts';
 import { createApp } from '../apps/server/src/app.ts';
@@ -109,4 +110,32 @@ test('persisted text rejects NUL and lone surrogates while preserving valid Unic
   const title = '日本語 😀 e\u0301\n';
   const created = await create({ ...definition(), title });
   expect(created.content.definition.title).toBe(title);
+});
+
+test('legacy cleanup preserves configured history and the shared immutability function', async () => {
+  const previous = await startDatabase(join(root, 'upgrade-postgres'));
+  const client = new pg.Client({ connectionString: previous.url });
+  try {
+    await client.connect();
+    for (const name of ['001-text-comparison.sql', '002-suites.sql', '003-runtimes.sql', '004-configured-runs.sql', '005-blind-grading.sql', '006-access.sql']) {
+      await client.query(await readFile(new URL(`../db/migrations/${name}`, import.meta.url), 'utf8'));
+    }
+    const oldRun = randomUUID(), configuredRun = randomUUID();
+    await client.query('INSERT INTO runs(id,report_id,review_id,digest,report) VALUES($1,$2,$3,$4,$5)', [oldRun, randomUUID(), randomUUID(), 'legacy', { legacy: true }]);
+    await client.query('INSERT INTO evaluation_sessions(id,run_id,authority_hash,mapping) VALUES($1,$2,$3,$4)', [randomUUID(), oldRun, 'authority', {}]);
+    await client.query('INSERT INTO configured_runs(id,request_id,request,runtime_id,snapshot) VALUES($1,$2,$3,$4,$5)', [configuredRun, randomUUID(), { preserved: true }, randomUUID(), { preserved: true }]);
+    await client.query(await readFile(new URL('../db/migrations/008-remove-legacy-demo.sql', import.meta.url), 'utf8'));
+    expect((await client.query("SELECT to_regclass('runs') AS runs, to_regclass('evaluation_sessions') AS sessions")).rows).toEqual([{ runs: null, sessions: null }]);
+    expect((await client.query('SELECT request,snapshot FROM configured_runs WHERE id=$1', [configuredRun])).rows).toEqual([{ request: { preserved: true }, snapshot: { preserved: true } }]);
+    await expect(client.query('UPDATE configured_runs SET snapshot=$1 WHERE id=$2', [{ replaced: true }, configuredRun])).rejects.toThrow('Immutable');
+    expect((await client.query("SELECT to_regprocedure('reject_immutable_change()') IS NOT NULL AS preserved")).rows).toEqual([{ preserved: true }]);
+  } finally { await client.end(); await previous.stop(); }
+});
+
+test('obsolete report and evaluation APIs are absent and retain normal browser authority checks', async () => {
+  for (const path of ['/api/runner/reports', '/api/evaluations', `/api/evaluations/${randomUUID()}/choice`]) {
+    expect((await post(path, {})).status).toBe(404);
+    expect((await post(path, {}, '')).status).toBe(403);
+  }
+  expect((await fetch(url + '/api/runs')).status).toBe(404);
 });

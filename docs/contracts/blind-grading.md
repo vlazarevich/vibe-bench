@@ -1,6 +1,6 @@
 # Configured-run blind grading
 
-Status: implemented. `packages/contracts/src/blind-grading.ts` defines the browser contract. `apps/server/src/features/blind-grading.ts` owns session mappings, judgments, and anonymous artifact access. The pairwise comparison demo has separate storage, cookies, and final-choice behavior.
+Status: implemented. `packages/contracts/src/blind-grading.ts` defines the browser contract. `apps/server/src/features/blind-grading.ts` owns session mappings, judgments, and anonymous artifact access.
 
 ## Eligibility and presentation
 
