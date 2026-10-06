@@ -16,7 +16,7 @@ let url: string;
 beforeAll(async () => {
   await mkdir('.artifacts', { recursive: true }); root = await mkdtemp(resolve('.artifacts/grading-'));
   database = await startDatabase(join(root, 'postgres')); pool = await connectDatabase(database.url);
-  app = await createApp({ pool, token: 'secret' }); url = await app.listen({ host: '127.0.0.1', port: 0 });
+  app = await createApp({ pool }); url = await app.listen({ host: '127.0.0.1', port: 0 });
 });
 afterAll(async () => { await app?.close(); await pool?.end(); await database?.stop(); });
 async function request(path: string, cookie = '', body?: unknown) {
@@ -131,7 +131,7 @@ test('all selections, equal grades, explicit skip/clear, exact retry, competing 
   const before = await task(session, cookie);
   const progress = await (await request(`/api/blind-grading/${session.id}`, cookie)).json();
   await app.close(); await pool.end(); await database.stop();
-  database = await startDatabase(join(root, 'postgres')); pool = await connectDatabase(database.url); app = await createApp({ pool, token: 'secret' }); url = await app.listen({ host: '127.0.0.1', port: 0 });
+  database = await startDatabase(join(root, 'postgres')); pool = await connectDatabase(database.url); app = await createApp({ pool }); url = await app.listen({ host: '127.0.0.1', port: 0 });
   expect(await task(session, cookie)).toEqual(before); expect(await (await request(`/api/blind-grading/${session.id}`, cookie)).json()).toEqual(progress);
 });
 

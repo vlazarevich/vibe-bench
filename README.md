@@ -1,159 +1,93 @@
 # Vibe bench
 
-Run one text task through two Codex models on your machine, compare the answers without model labels, and reveal their identities after saving a choice.
+Vibe bench authors versioned suites, executes configured task and entrant matrices, and grades results anonymously. A Linux dashboard stores immutable inputs and outcomes in PostgreSQL 18. The standalone `vibe-runner` pairs with that dashboard and initiates all execution traffic.
 
-## Run the local demo
+## Start the dashboard
 
-Install Node.js 24 and pnpm 11.22.0. On Linux x64, run:
+Use Linux, Node 24.21.0, and pnpm 11.22.0.
 
 ```sh
 pnpm install --frozen-lockfile
-pnpm demo
+pnpm exec playwright install chromium
+pnpm local
 ```
 
-Open the URL printed after `Vibe bench ready`. Select **Compare answers**, read both answers, and choose one. Reload to verify that the presentation order and choice remain saved.
+Open the printed URL. The dashboard starts without seeded runs. Database files live under `.local/`, or the dashboard's `VIBE_LOCAL_ROOT`. A state-directory lock prevents simultaneous dashboard owners. Stop with Ctrl+C before starting another owner.
 
-The demo uses deterministic fixture text. It does not call a model. The server binds to `127.0.0.1`. A pinned PostgreSQL 18 binary starts automatically, so Docker and a separate database installation are unnecessary. The first install downloads the database binaries.
+Copy `.env.example` to `.env` for dashboard configuration. Set `VIBE_APP_PASSWORD` to require a shared password, or leave it empty for intentional passwordless operation. Dashboard users can manage every runtime and schedule work. Runtime credentials remain required in either mode.
 
-The application, PostgreSQL, and execution runtime support Linux only.
+Remote dashboards require `VIBE_PUBLIC_URL=https://your-host.example`. A trusted reverse proxy must preserve the public Host and terminate HTTPS. `VIBE_TRUSTED_PROXY` lists trusted proxy addresses or CIDRs. Unsafe browser requests require the canonical Origin. Login sessions expire after 12 hours; password changes and mode changes invalidate earlier sessions. Login is limited to ten attempts per source and 100 installation-wide per 15 minutes.
 
-`pnpm local` starts the same app without adding a fixture run. Leave that terminal running and use a second terminal for runner commands. Stop the server with Ctrl+C. Database contents and runner diagnostics remain under `.local/`. Each worktree has its own directory and automatically allocated ports. `VIBE_LOCAL_ROOT` overrides that directory for both the server and runner. `VIBE_PORT` optionally fixes the HTTP port.
+Set `VIBE_WORKER_HOST` and `VIBE_WORKER_PORT` for an optional worker-only listener. Route `/api/worker/` at the public origin to either listener. The separate listener exposes no dashboard routes and rejects browser requests.
 
-## Run the actual models
+## Pair and run
 
-Install Codex CLI 0.159.2 and authenticate it outside this repository. Copy `.env.example` to `.env`. Set both model variables and the absolute path to the native executable:
-
-```dotenv
-VIBE_MODEL_A=gpt-6-luna
-VIBE_MODEL_B=gpt-6-sol
-VIBE_CODEX_BIN=/path/to/codex
-```
-
-Use the native `codex` binary path. A wrapper or shell script is not supported. An npm installation keeps the native executable in the platform package beneath `@openai/codex/node_modules/@openai/codex-<platform>/vendor/<target>/bin/`. Both models must be distinct and must be one of the two IDs above. The runner never substitutes another model.
-
-With `pnpm local` or `pnpm demo` running, execute:
+Install the standalone executable using the [release guide](docs/releases.md). In **Runtimes**, select **Add new**, copy the pairing command, and execute it on the runner machine. Install and authenticate the harnesses separately. Pairing discovers Codex, Claude Code, OpenCode, and supporting tools on `PATH`, connects to the dashboard, and succeeds after its capability report is acknowledged.
 
 ```sh
-pnpm run:live
+vibe-runner pair TOKEN
+vibe-runner pair status
+vibe-runner pair probe
+vibe-runner run
+vibe-runner run-once
+vibe-runner pair revoke
 ```
 
-Refresh **Available runs** in the browser. A live run uses the same prompt for both models and records the exact requested model and executable version. The default task asks for a short explanation of database indexes. Set `VIBE_TASK_FILE` to a UTF-8 text file to use another prompt. Its text is snapshotted before either attempt starts. `VIBE_TIMEOUT_MS` sets each attempt's deadline, from 100 to 600000 milliseconds, with a default of 180000.
+For a source checkout, replace `vibe-runner` with `pnpm runner`. The same commands support global `--state-dir PATH`, `--help`, and `--version`. The runner uses a standard private state directory and loads no `.env` file. Preserve standard harness login directories, provider credentials, proxies, certificates, `PATH`, and SSH-agent settings.
 
-Codex runs with `--ignore-user-config`, `--ignore-rules`, `--skip-git-repo-check`, `--ephemeral`, `--sandbox read-only`, and the exact configured model. The adapter reads the final-message file and requires a `turn.completed` JSON event. Login credentials stay in your existing external Codex home. The server bearer token is never placed in an attempt workspace or its child environment. This is a local text comparison tool, not a security boundary for arbitrary untrusted execution.
+Enrollment tokens remain reusable until their ten-minute expiry. Reusing a token preserves its runtime identity and replaces its previous credential. Failed pairing clears all local state in the selected directory. Dashboard history is preserved. An expired token requires a new token.
 
-## Author and run a suite task
+`pair status` displays the last acknowledged capabilities and timestamp without rescanning. It distinguishes unpaired state, rejected or revoked credentials, and an unreachable dashboard. `pair probe` rescans and uploads; failed delivery preserves the last acknowledged observation. Status and probe remain available during execution. Pairing and revocation require stopping execution first.
 
-Open **Suites** in the local app. Create a suite, add categories and tasks, then create criteria and assign them to tasks. Choose a rating control to preview its 0–100 conversion. Add optional ranking guidance and repository configuration as needed. The app saves incomplete drafts and lists fields that need attention.
+`run` recovers saved delivery, refreshes capabilities, waits for assignments, and processes runs sequentially. `run-once` waits for the first assigned run, including when the queue starts empty, and exits after every required report and artifact is acknowledged. Probing proves installed availability and authentication readiness, not model entitlement or successful execution.
 
-For each edit, choose **Save minor change** or **Save new revision**. Both preserve previous content. Use **History** to inspect earlier definitions. If another editor saves first, your local edits remain available and the app offers an explicit reload.
+Revocation attempts the remote operation, then removes local state regardless of delivery. Its output distinguishes confirmed remote revocation from failure or an unconfirmed result. Dashboard revocation and credential replacement abandon unfinished assigned runs. Accepted results and completed history survive. Connectivity loss alone does not abandon work.
 
-For a ready text-generation task with materials set to **None**, save the suite and select **Export** beside the task. Save the JSON file locally. Set its absolute path in `.env`:
+## Author suites and configure runs
 
-```dotenv
-VIBE_SUITE_FILE=/path/to/suite-task.json
-```
+Open **Suites** to author any of the ten supported task kinds, criteria, rating controls, ranking guidance, and repository materials. Incomplete drafts can be saved. Every later save requires an explicit minor change or new revision and preserves earlier content. Concurrent edits retain local changes after a conflict until the author reloads.
 
-Remove `VIBE_TASK_FILE` if it is set. With the same local server running, run `pnpm run:fixture` or `pnpm run:live`. Refresh **Comparisons** to review the result. The run uses the exported content even if the suite has since changed. Remove `VIBE_SUITE_FILE` to return to the default task or `VIBE_TASK_FILE`.
+**Runs** is the default dashboard page. Select an exact suite content version, a paired runtime, tasks, and entrants. Each entrant names its harness, exact model, timeout, and supported settings. Preview the full or partial matrix before creating it. Later suite edits cannot change execution inputs.
 
-All ten task kinds can be authored. The exported single-task command supports text generation without repository materials. Use configured runs for the broader execution flow below. Rubric judgment collection and aggregate ranking remain separate work. Ranking rules are saved written guidance.
+**Live** invokes actual harnesses. **Fixture** uses deterministic configured-harness subprocesses and remains labeled fixture evidence. Missing tools or known unsupported capabilities produce skips. Execution errors and missing required outputs produce failures with diagnostics. Other attempts continue.
 
-## Configure full or partial runs
+Repository runs resolve one exact commit and give each attempt an independent checkout. Declare task inputs, required outputs, and browser context in the repository's `vibe-bench.json`. See the [configured-run contract](docs/contracts/configured-runs.md).
 
-Open **Runs** in the dashboard. Select a suite, its saved content version, a registered runtime, and the tasks to execute. The latest suite content is selected initially. A partial run includes the union of selected categories and individual tasks. Add entrants with their harness, exact model, timeout, and supported settings, then preview the task and entrant matrix before starting.
+Expand **View result** to inspect text, raster images, HTML bundles, changed files and patches, or browser recordings. Downloads retain original bytes. Browser scenarios use a fresh Chromium context and WebM recording. Provision Chromium on runner machines with `pnpm exec playwright install chromium`, or follow the standalone provisioning instructions in the release guide.
 
-A run preserves its suite content, evaluation criteria, selected tasks, and entrants. Open the saved run and expand **View result** to inspect text, images, changed code files and patches, HTML previews, and browser recordings. Downloads preserve the original bytes. Later suite edits do not change it. These management results are separate from the original blind comparisons.
+## Grade results
 
-Open **Runtimes**, select **Add new**, and copy the enrollment command to the runtime machine. For a source checkout, replace `vibe-runtime` with `pnpm runtime`. Keep the same `VIBE_RUNTIME_STATE` for configuration, onboarding, and work. Set absolute executable paths for the harnesses you use:
+Open **Grading**, select a finished run, and navigate its categories and tasks. Inspect each anonymous result and grade it against pinned criteria. Stars, the 0–10 slider, and thumbs preserve the original selection and convert it to a 0–100 grade. Equal grades are allowed. Skip and clear differ from a zero grade. Failed and execution-skipped attempts remain visible without grading controls.
 
-```dotenv
-VIBE_RUNTIME_STATE=/path/to/runtime-state
-VIBE_CODEX_BIN=/path/to/codex
-VIBE_CLAUDE_BIN=/path/to/claude
-VIBE_OPENCODE_BIN=/path/to/opencode
-```
+Saved judgments and card order survive reloads and restarts. A grading cookie authorizes that session; its URL alone grants no access. Conflicting changes require reloading. Submitted content can identify its author. The [blind-grading contract](docs/contracts/blind-grading.md) defines anonymous transport and persistence.
 
-Run `vibe-runtime onboard` to report tool readiness. Run `vibe-runtime work` to poll for work, or `vibe-runtime work --once` to process at most one run. Source checkouts also support `pnpm runtime:onboard` and `pnpm runtime:work --once`. The runtime makes outbound connections and needs no inbound port. Use a loopback HTTP URL for a local API. Remote origins require HTTPS. Harness login credentials stay on the runtime machine.
+## Recovery and preview prerequisites
 
-Use **Live** for actual harness execution. **Fixture** uses deterministic subprocesses and remains labeled as fixture evidence. Missing executables or known unsupported capabilities produce skips. Errors and missing required outputs discovered during execution produce failures with diagnostics. Other attempts continue.
+The runner saves immutable assignments, preparation, attempt starts, terminal reports, and artifacts before upload. Saved delivery retries retain original IDs. Identical replay has one effect; changed accepted content conflicts. A started attempt without a saved terminal result is uncertain and never executes again under its old ID. Recovery reports interruption truthfully.
 
-For repository materials, the runtime resolves one exact commit per run and gives each attempt an independent checkout. Keep task input and output declarations in that repository's `vibe-bench.json`. The [configured-run contract](docs/contracts/configured-runs.md) describes result types and the supported browser action format. Repository content is maintained separately from Vibe bench.
+The server needs Bubblewrap at `/usr/bin/bwrap`, unprivileged user and network namespaces, Playwright Chromium, and browser system libraries and fonts for isolated HTML and media previews. Missing prerequisites show unavailable previews while original downloads remain available. HTML previews render 960 by 640 frames, accept clicks, keyboard input, and text, and allow two concurrent sessions. They expire after 30 seconds idle or two minutes total.
 
-Configured runs collect text, raster images, HTML bundles, code patches and changed files, or browser recordings. Browser scenarios use a fresh Chromium context and WebM recording. Install Chromium with `pnpm exec playwright install chromium` on the runtime. Original files download as attachments. Inspect rich results in **Runs** or **Grading**.
-
-## Grade configured results
-
-Open **Grading**, select a finished configured run, then navigate its categories and tasks. Expand **View result** to inspect each anonymous completed result, then grade it against its pinned criteria. Stars, the 0–10 slider, and thumbs retain the original selection and convert it to a 0–100 grade. Equal grades are allowed. **Skip** and **Clear** remain distinct from a zero grade. Failed or execution-skipped attempts stay visible with no grading controls.
-
-Saved judgments and anonymous result order survive reloads and application restarts. Keep the grading cookie to resume the same session. Another browser cannot resume from the URL alone. Conflicting edits require reloading the saved judgment. Fixture results remain labeled. The [blind-grading contract](docs/contracts/blind-grading.md) documents persistence, authority, and anonymous downloads. The **Comparisons** tab remains the separate pairwise demonstration with a final choice and identity reveal.
-
-## Inspect failures and retry delivery
-
-`pnpm run:fixture` creates another deterministic run through the real runner and HTTP API. Fixture runs are labeled in the UI and persisted separately from live evidence.
-
-Each `.local/runner/<run-id>/` contains the immutable input snapshot and progress, per-attempt diagnostics, a completed `report.json`, and an accepted `receipt.json`. Failed attempts retain logs and partial output. A run with any failed attempt cannot be evaluated. A live runner command exits nonzero when an attempt fails.
-
-If execution completed but delivery failed, run:
-
-```sh
-pnpm report:retry
-```
-
-Retry sends saved reports with their original IDs. Identical delivery has one effect. Changed content under an accepted ID conflicts. A directory without a completed report is reported as uncertain and is never automatically executed again. Start a new run to retry execution and retain the earlier diagnostics.
-
-Choices are final for a browser session. Repeating the same choice succeeds, while changing a saved choice conflicts. The browser's HTTP-only cookie authorizes session reads and writes. A session URL alone grants no access. Clearing the cookie loses access to that session. Submitted text can identify its author through its own content.
+Authentication does not establish deployment readiness. Backups, artifact storage, HTTPS, upload limits, and Chromium isolation need infrastructure verification.
 
 ## Verify locally
 
 ```sh
-pnpm exec playwright install chromium
 pnpm check
+pnpm build:runtime
+pnpm test:binary
 ```
 
-`pnpm check` checks TypeScript and import boundaries, runs real PostgreSQL, HTTP, and subprocess tests, builds the app, and drives it in Chromium. Tests use isolated databases and ports under `.artifacts/`. Linux machines may need `pnpm exec playwright install --with-deps chromium` for browser system libraries. CI runs the same checks on the self-hosted Linux x64 runner without model credentials. Browser system libraries must already be installed. The required merge check is `verify (self-hosted Linux)`.
-
-Fixture checks do not prove live model access. Run `pnpm run:live` separately with the required account and exact model configuration.
+Checks exercise schemas, import boundaries, PostgreSQL, HTTP, subprocesses, Chromium, installers, and the compiled executable. State and evidence stay under ignored `.artifacts/`. CI requires `verify (self-hosted Linux)`. Missing or skipped checks are not passing evidence. Fixture checks do not establish live provider access.
 
 ## Engineering reference
 
-- [Architecture and implemented module ownership](docs/architecture.md)
-- [Verification and evidence requirements](docs/verification.md)
-- [Implemented text protocol](docs/contracts/text-comparison.md)
-- [Suite authoring and pinned execution](docs/contracts/suites.md)
-- [Dashboard and runtime access](docs/contracts/access.md)
-- [Configured runs and outbound execution](docs/contracts/configured-runs.md)
-- [Configured-run blind grading](docs/contracts/blind-grading.md)
-- [Broader domain design](docs/contracts/domain.md)
-- [Runner lifecycle guidance](docs/contracts/runner-protocol.md)
-- [Evaluation boundary guidance](docs/contracts/artifacts-evaluation.md)
+- [Architecture and module ownership](docs/architecture.md)
+- [Verification guidance](docs/verification.md)
+- [Suite authoring](docs/contracts/suites.md)
+- [Dashboard and runner access](docs/contracts/access.md)
+- [Configured execution](docs/contracts/configured-runs.md)
+- [Blind grading](docs/contracts/blind-grading.md)
+- [Runner protocol](docs/contracts/runner-protocol.md)
+- [Result viewing](docs/contracts/artifacts-evaluation.md)
 - [Development workflow](docs/agent-workflow.md)
-- [Architecture decision](docs/decisions/0001-architecture.md)
-
-## Configure dashboard access
-
-Set `VIBE_APP_PASSWORD` to require a shared password, or leave it empty for intentional passwordless operation. Anyone with dashboard access can manage every runtime and schedule work. Passwordless deployments still require individual runtime credentials.
-
-Login creates an opaque 12-hour browser session. Logout invalidates it immediately. Restarting with a changed password or switching passwordless mode invalidates earlier sessions. API data, grading, artifact bytes, and preview actions require dashboard access. Blind grading cookies still restrict each saved evaluation session.
-
-Remote deployments require `VIBE_PUBLIC_URL=https://your-host.example`. The server checks that origin and host, uses Secure cookies, and rejects cross-origin browser writes. `VIBE_TRUSTED_PROXY` is a comma-separated list of proxy IP addresses or CIDRs. Only those proxies can supply client IPs for the login throttle. The proxy must preserve the public Host and terminate HTTPS. Login permits ten attempts per source and 100 installation-wide per 15-minute window. Keep the app password and runtime state private.
-
-Authentication does not establish deployment readiness. PostgreSQL, durable artifact storage, backups, Chromium isolation, HTTPS, and the upload body limit still need infrastructure verification.
-
-## Runtime onboarding
-
-Install the runtime using the [release and installation guide](docs/releases.md). In **Runtimes**, select **Add new**, copy the single-use command, and run it on the runtime machine. The key expires in ten minutes. Then run `vibe-runtime onboard`. Installation does not enroll the runtime or install external harnesses. Configure `VIBE_RUNTIME_SLOTS` from 1 to 256 and `VIBE_RUNTIME_STATE` for its private state directory. The runtime needs no local app, database, or `instance.json`.
-
-The command probes Codex, Claude Code, OpenCode Go, Git, GitHub CLI, Node, .NET, Python, npm, pnpm, make, CMake, GCC, and Docker. Installation and authentication readiness are separate. Authentication probes use each harness's status command. OpenCode Go requires its own provider credential. A credential for another OpenCode provider does not establish Go readiness. Readiness is not proof of model entitlement or successful execution. Model selection remains provider-discovered at execution, with no onboarding model allowlist.
-
-Each state directory owns one server-issued runtime registration and a monotonic observation sequence. One command owns it at a time. Failed delivery leaves a saved observation. Re-running retries that exact observation before discovering new facts. Accepted observations have stable receipts. Older deliveries cannot replace the latest sequence. The local browser API exposes the latest observations at `GET /api/runtimes`.
-
-Both app and optional worker-only listeners require runtime credentials. Set `VIBE_WORKER_HOST` and `VIBE_WORKER_PORT` to enable the separate listener. The enrollment command uses the dashboard's public origin. Your reverse proxy must route `/api/worker/` at that origin to either listener. The worker-only listener exposes no dashboard routes and rejects browser requests. Set `VIBE_PUBLIC_URL` to the canonical HTTPS origin. Trust only the actual proxy addresses through `VIBE_TRUSTED_PROXY`.
-
-Select **Revoke** to immediately block a runtime credential. Select **Replace credential** to recover that same runtime's saved assignments. **Add new** creates a separate identity. Reconfiguration preserves old results, but a different installation or runtime never receives their pending uploads. Revocation and disconnection do not stop assigned collection. The runtime saves reports before upload and retries with progressive backoff. Restart resumes saved delivery without rerunning uncertain attempts.
-
-Only numeric versions and explicit readiness states enter registrations. Probe output is bounded, held in private temporary directories, and removed after each probe. Raw authentication output is never persisted in onboarding state or HTTP payloads. Fixture tests prove discovery mechanics. They do not prove account entitlement or model execution.
-
-### Result preview prerequisites
-
-Install Bubblewrap at `/usr/bin/bwrap`, permit unprivileged Linux user and network namespaces, and run `pnpm exec playwright install chromium` on the server host. The isolated browser needs the system runtime libraries and fonts. Missing isolation or browser dependencies produce an unavailable preview with the original download still available. Media validation also uses this isolated browser.
-
-HTML previews show a 960 by 640 image of an isolated browser. Open a preview, click the image, send keyboard input or text, and use **Refresh preview** for delayed changes. Only saved local assets can load. At most two interactive previews can run at once. They expire after 30 seconds without input and stop after two minutes even with input. The preview does not provide streaming video or a screen-reader representation of submitted HTML.
+- [Release and installation](docs/releases.md)

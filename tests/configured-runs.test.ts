@@ -27,7 +27,7 @@ const credentials = new Map<string, string>();
 beforeAll(async () => {
   await mkdir('.artifacts', { recursive: true }); root = await mkdtemp(resolve('.artifacts/configured-runs-'));
   database = await startDatabase(join(root, 'postgres')); pool = await connectDatabase(database.url);
-  app = await createApp({ pool, token: 'test-secret' }); url = await app.listen({ port: 0, host: '127.0.0.1' });
+  app = await createApp({ pool }); url = await app.listen({ port: 0, host: '127.0.0.1' });
   worker = createWorkerApp({ pool }); workerUrl = await worker.listen({ port: 0, host: '127.0.0.1' });
 });
 afterAll(async () => { await worker?.close(); await app?.close(); await pool?.end(); await database?.stop(); });
@@ -126,7 +126,7 @@ test('preparation and per-attempt reports enforce associations, sequencing, immu
   await expect(pool.query('UPDATE attempt_outcomes SET outcome = $1', [{}])).rejects.toThrow('Immutable');
   await worker.close(); await app.close(); await pool.end(); await database.stop();
   database = await startDatabase(join(root, 'postgres')); pool = await connectDatabase(database.url);
-  app = await createApp({ pool, token: 'test-secret' }); url = await app.listen({ port: 0, host: '127.0.0.1' });
+  app = await createApp({ pool }); url = await app.listen({ port: 0, host: '127.0.0.1' });
   worker = createWorkerApp({ pool }); workerUrl = await worker.listen({ port: 0, host: '127.0.0.1' });
   expect(await (await post('/api/worker/attempts', done, workerUrl)).json()).toEqual(receipts[0]);
   expect(await (await fetch(url + `/api/configured-runs/${view.runId}`)).json()).toEqual(reopened);

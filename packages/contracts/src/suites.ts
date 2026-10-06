@@ -104,5 +104,3 @@ export const CreateSuite = z.object({ definition: Definition }).strict();
 export const SaveSuite = z.object({ expectedContentId: ContentId, change: z.enum(['minor', 'revision']), definition: Definition }).strict();
 export const SuiteHistory = z.array(SuiteContent);
 export const SuiteList = z.array(z.object({ suiteId: SuiteId, title, revision: z.number().int().positive(), ordinal: z.number().int().positive() }).strict());
-export const PinnedSuiteTask = z.object({ content: SuiteContent, taskId: TaskId }).strict();
-export type PinnedSuiteTask = z.infer<typeof PinnedSuiteTask>;

@@ -6,7 +6,7 @@ const { join, dirname } = require('node:path');
 const { createRequire } = require('node:module');
 const { pathToFileURL } = require('node:url');
 
-const directory = mkdtempSync(join(tmpdir(), 'vibe-bench-runtime-'));
+const directory = mkdtempSync(join(tmpdir(), 'vibe-runner-'));
 process.on('exit', () => rmSync(directory, { recursive: true, force: true }));
 const files = JSON.parse(brotliDecompressSync(Buffer.from(getAsset('runtime'))));
 for (const [name, content] of Object.entries(files)) {

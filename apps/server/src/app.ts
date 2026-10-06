@@ -1,6 +1,6 @@
 import { registerGradingViewer } from './features/grading-viewer-routes.ts';
 import { registerArtifactViewer } from './features/artifact-viewer-routes.ts';
-import { randomBytes, timingSafeEqual } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import Fastify from 'fastify';
 import cookie from '@fastify/cookie';
 import staticFiles from '@fastify/static';
@@ -16,14 +16,10 @@ import { listRuntimes } from './features/runtimes.ts';
 import { BlindGradingSession, GradingReviewId, GradingSessionId, GradingTaskHandle, GradingAssetHandle, SaveJudgment } from '../../../packages/contracts/src/blind-grading.ts';
 import { listGradingRuns, createGrading, readGrading, readGradingTask, saveGradingJudgment, readGradingAsset } from './features/blind-grading.ts';
 import { Conflict, NotFound } from './errors.ts';
-import { Report } from '../../../packages/contracts/src/runner.ts';
-import { Choice, SessionId, Runs } from '../../../packages/contracts/src/evaluation.ts';
-import { acceptReport, listRuns } from './features/runs.ts';
-import { createEvaluation, readEvaluation, saveChoice } from './features/evaluation.ts';
 import { ContentId, CreateSuite, SaveSuite, SuiteId, SuiteView, SuiteHistory } from '../../../packages/contracts/src/suites.ts';
 import { createSuite, listSuites, readSuite, readSuiteContent, saveSuite, suiteHistory } from './features/suites.ts';
 
-export async function createApp({ pool, token, webRoot, ready = () => true, password = process.env.VIBE_APP_PASSWORD, publicUrl = process.env.VIBE_PUBLIC_URL, trustedProxy = process.env.VIBE_TRUSTED_PROXY?.split(',').map((value) => value.trim()) }: { pool: pg.Pool; token: string; webRoot?: string; ready?: () => boolean; password?: string; publicUrl?: string; trustedProxy?: string[] }) {
+export async function createApp({ pool, webRoot, ready = () => true, password = process.env.VIBE_APP_PASSWORD, publicUrl = process.env.VIBE_PUBLIC_URL, trustedProxy = process.env.VIBE_TRUSTED_PROXY?.split(',').map((value) => value.trim()) }: { pool: pg.Pool; webRoot?: string; ready?: () => boolean; password?: string; publicUrl?: string; trustedProxy?: string[] }) {
   const canonicalOrigin = publicUrl === undefined ? undefined : ApiUrl.parse(publicUrl);
   const access = await initializeAccess(pool, password);
   const secure = canonicalOrigin?.startsWith('https:') ?? false;
@@ -35,10 +31,10 @@ export async function createApp({ pool, token, webRoot, ready = () => true, pass
     const host = request.headers.host;
     if (!host || (canonicalOrigin ? host !== new URL(canonicalOrigin).host : !/^(127\.0\.0\.1|localhost):\d+$/.test(host))) return reply.code(403).send({ error: 'Local access only' });
     if (request.url.startsWith('/api/worker/') && (request.headers.origin || request.headers['sec-fetch-site'] || request.headers['sec-fetch-dest'] || request.headers['sec-fetch-user'])) return reply.code(403).send({ error: 'Worker requests only' });
-    if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method) && request.url !== '/api/runner/reports' && !request.url.startsWith('/api/worker/') && request.headers.origin !== (canonicalOrigin ?? `http://${host}`)) return reply.code(403).send({ error: 'Same-origin request required' });
+    if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method) && !request.url.startsWith('/api/worker/') && request.headers.origin !== (canonicalOrigin ?? `http://${host}`)) return reply.code(403).send({ error: 'Same-origin request required' });
     const path = request.url.split('?')[0] ?? '';
     const publicPath = ['/api/health', '/api/access/session', '/api/access/login', '/api/access/logout', '/login', '/'].includes(path) || /^\/assets\/[a-zA-Z0-9._-]+$/.test(path);
-    if (!publicPath && !path.startsWith('/api/worker/') && path !== '/api/runner/reports' && !await access.authenticated(request.cookies.vibe_session)) return reply.code(401).send({ error: 'Dashboard login required' });
+    if (!publicPath && !path.startsWith('/api/worker/') && !await access.authenticated(request.cookies.vibe_session)) return reply.code(401).send({ error: 'Dashboard login required' });
   });
   app.setErrorHandler((error, _request, reply) => {
     if (error instanceof z.ZodError) return reply.code(400).send({ error: 'Invalid request', issues: error.issues.map((issue) => ({ path: issue.path, message: issue.message })) });
@@ -54,12 +50,6 @@ export async function createApp({ pool, token, webRoot, ready = () => true, pass
     return reply.code(500).send({ error: 'Request failed' });
   });
   app.get('/api/health', async (_request, reply) => { if (!ready()) return reply.code(503).send({ ok: false }); await pool.query('SELECT 1'); return { ok: true }; });
-  app.post('/api/runner/reports', { bodyLimit: 2_100_000 }, async (request, reply) => {
-    const provided = Buffer.from(request.headers.authorization ?? '');
-    const expected = Buffer.from(`Bearer ${token}`);
-    if (provided.length !== expected.length || !timingSafeEqual(provided, expected)) return reply.code(401).send({ error: 'Unauthorized' });
-    return acceptReport(pool, Report.parse(request.body));
-  });
   registerWorkerRoutes(app, pool);
   app.get('/api/access/session', async (request) => ({ passwordRequired: access.passwordRequired, authenticated: await access.authenticated(request.cookies.vibe_session) }));
   app.post('/api/access/login', async (request, reply) => {
@@ -108,7 +98,6 @@ export async function createApp({ pool, token, webRoot, ready = () => true, pass
     return reply.header('Content-Type', result.mediaType).header('Content-Disposition', `${result.previewable ? 'inline' : 'attachment'}; filename="result.bin"`).header('Content-Security-Policy', "sandbox; default-src 'none'").send(result.bytes);
   });
   app.get('/api/runtimes', async () => listRuntimes(pool));
-  app.get('/api/runs', async () => Runs.parse(await listRuns(pool)));
   app.get('/api/suites', async () => listSuites(pool));
   app.post('/api/suites', async (request) => SuiteView.parse(await createSuite(pool, CreateSuite.parse(request.body))));
   app.get('/api/suites/:id', async (request) => SuiteView.parse(await readSuite(pool, z.object({ id: SuiteId }).parse(request.params).id)));
@@ -117,23 +106,6 @@ export async function createApp({ pool, token, webRoot, ready = () => true, pass
   app.get('/api/suites/:id/contents/:contentId', async (request) => {
     const params = z.object({ id: SuiteId, contentId: ContentId }).parse(request.params);
     return readSuiteContent(pool, params.id, params.contentId);
-  });
-  app.post('/api/evaluations', async (request, reply) => {
-    const { reviewId } = z.object({ reviewId: z.uuid() }).strict().parse(request.body);
-    const existing = z.string().regex(/^[a-f0-9]{64}$/).safeParse(request.cookies.vibe_authority);
-    const authority = existing.success ? existing.data : randomBytes(32).toString('hex');
-    const id = await createEvaluation(pool, reviewId, authority);
-    reply.setCookie('vibe_authority', authority, { httpOnly: true, sameSite: 'strict', secure, path: '/', maxAge: 60 * 60 * 24 * 30 });
-    return readEvaluation(pool, id, authority);
-  });
-  app.get('/api/evaluations/:id', async (request) => {
-    const { id } = z.object({ id: SessionId }).parse(request.params);
-    return readEvaluation(pool, id, request.cookies.vibe_authority ?? '');
-  });
-  app.post('/api/evaluations/:id/choice', async (request) => {
-    const { id } = z.object({ id: SessionId }).parse(request.params);
-    const { handle } = Choice.parse(request.body);
-    return saveChoice(pool, id, request.cookies.vibe_authority ?? '', handle);
   });
   if (webRoot) {
     await app.register(staticFiles, { root: webRoot });

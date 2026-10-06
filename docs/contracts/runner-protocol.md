@@ -1,6 +1,6 @@
 # Runner protocol and process ownership
 
-Status: design guidance. Implement only the operations required by the current task and document supported protocol behavior beside its executable schemas.
+The implemented CLI is `vibe-runner`. Executable schemas live in `runtime.ts`, `access.ts`, `configured-runs.ts`, and `work.ts`. Scheduling leases and cancellation APIs below remain design guidance.
 
 ## Connection and authority
 
@@ -22,11 +22,11 @@ Sequence reports per assignment. Publish a terminal outcome only when referenced
 
 ## Claims and recovery
 
-Reserve an assignment before launch. Repeating a claim request retrieves its assignment. A runner exclusively owns its state directory and reconciles outstanding assignments after restart. Count reservations as well as active processes against capacity.
+Reserve an assignment before launch. Repeating a claim request retrieves its assignment. Execution exclusively owns its state directory and reconciles outstanding assignments after restart. Capability status and probing use separate state ownership and remain available. Attempts execute sequentially.
 
 Do not relaunch uncertain work under its old attempt ID. If automatic recovery is absent, expose the uncertainty rather than implying that recovery succeeded.
 
-Claims reserve capacity transactionally. An assigned runtime continues execution and local collection during dashboard disconnection or credential rejection. Delivery waits for authorization and connectivity without discarding saved results.
+Claims reserve one whole run transactionally. Dashboard disconnection preserves the assignment and local journal. Revoking or replacing a credential abandons unfinished assigned runs and prevents further reports.
 
 Re-execution creates a new attempt and preserves prior diagnostics. There is no lease-expiry behavior that stops assigned work when the API is unavailable.
 
@@ -56,10 +56,12 @@ Record executable version, requested settings, observed model metadata where ava
 
 Check installed CLI behavior and official documentation when changing an adapter. Fixture evidence proves behavior for captured shapes. Actual harness/model access requires a separate live check.
 
-## Implemented onboarding
+## Implemented pairing and capabilities
 
-Protocol-1 `RuntimeRegistration` in `packages/contracts/src/runtime.ts` is supported independently of job scheduling. `POST /api/worker/registrations` accepts machine facts, declared slots, tool availability, and explicit harness readiness. `GET /api/runtimes` requires dashboard authority when the app password is enabled. Authentication readiness does not establish model entitlement. Models remain provider-discovered at execution.
+The CLI exposes `pair TOKEN`, `pair status`, `pair probe`, `pair revoke`, `run`, and `run-once`. Global `--state-dir`, help, and version commands work for source checkouts and the standalone executable. Pairing succeeds after an acknowledged capability report. Reusable enrollment tokens retain one server-issued identity until expiry. Failed pairing clears the selected local state directory. Revocation attempts the remote operation, then clears local state and reports whether dashboard abandonment was confirmed.
 
-A stable runtime UUID and durable monotonic observation sequence identify each immutable registration. Replaying identical content returns the original server receipt; conflicting content under the same identity and sequence returns 409. Late observations retain their receipts without replacing a newer sequence in the inspection view. The runtime retains an undelivered observation and retries it before creating another. Its state directory has one kernel-enforced owner.
+Protocol-1 observations contain machine facts, installed tool versions, explicit harness authentication readiness, and the embedded runner version. They contain no slots or capacity field. Readiness does not prove model entitlement. Discovery and execution select the same executable from `PATH`.
 
-The optional worker listener admits registration and configured-run work requests and rejects browser requests. Its remote HTTPS termination and network restriction are deployment responsibilities. Individual revocable credentials authorize both listeners. A capability corpus and heartbeats remain deferred. [Configured runs](configured-runs.md) define implemented claiming, preparation, execution, and result delivery. The existing bearer-authenticated text report endpoint and text runner behavior are unchanged.
+A stable runtime UUID and monotonic observation sequence identify each immutable registration. Identical replay returns its saved receipt; conflicting content under the same sequence returns 409. Late observations cannot replace newer observations. Pairing recovers the dashboard sequence floor after local state erasure. Cached status never rescans. Failed probe delivery never replaces the last acknowledged snapshot.
+
+The optional worker listener accepts only worker requests and rejects browser requests. Individual runtime credentials authorize both listeners. [Configured runs](configured-runs.md) defines sequential claiming, interruption recovery, preparation, and result delivery. `run-once` waits for one assignment and all its acknowledgements, including when the queue starts empty.

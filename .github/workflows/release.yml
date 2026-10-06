@@ -42,7 +42,7 @@ jobs:
           name: runtime-linux-x64
           if-no-files-found: error
           path: |
-            dist/runtime/vibe-bench-runtime-*-linux-x64.tar.gz
+            dist/runtime/vibe-runner-*-linux-x64.tar.gz
             dist/runtime/SHA256SUMS
             dist/runtime/install-runtime.sh
       - uses: actions/upload-artifact@v4

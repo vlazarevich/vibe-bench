@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 import { execFile, spawn } from 'node:child_process';
-import { mkdir, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir } from 'node:fs/promises';
 import { createConnection } from 'node:net';
 import { dirname, join, resolve } from 'node:path';
 import { createRequire } from 'node:module';
@@ -19,31 +19,26 @@ async function alive(pid: number) {
   } catch { return false; }
 }
 
-test('stops PostgreSQL when the app is interrupted during fixture startup before readiness', async () => {
+test('stops PostgreSQL when the app is interrupted during database startup', async () => {
   await mkdir('.artifacts', { recursive: true });
   const root = await mkdtemp(resolve('.artifacts/database-startup-'));
   const directory = join(root, 'postgres');
-  const task = join(root, 'task.txt');
-  await writeFile(task, 'FIXTURE_WAIT');
-  const owner = spawn(process.execPath, ['--import', 'tsx', resolve('scripts/local.ts'), '--fixture'], { env: { ...process.env, VIBE_LOCAL_ROOT: root, VIBE_TASK_FILE: task }, stdio: ['ignore', 'pipe', 'pipe'] });
+  const owner = spawn(process.execPath, ['--import', 'tsx', resolve('scripts/local.ts')], { env: { ...process.env, VIBE_LOCAL_ROOT: root }, stdio: ['ignore', 'pipe', 'pipe'] });
   let output = '';
   let diagnostics = '';
   owner.stdout.on('data', (data) => { output += String(data); });
   owner.stderr.on('data', (data) => { diagnostics += String(data); });
   let pids: number[] = [];
   try {
-    let url = '';
     await expect.poll(async () => {
       if (owner.exitCode !== null) throw new Error(`App exited: ${diagnostics}`);
-      try { url = z.object({ url: z.url() }).parse(JSON.parse(await readFile(join(root, 'instance.json'), 'utf8'))).url; return true; } catch { return false; }
+      try { return Number((await readFile(join(directory, 'postmaster.pid'), 'utf8')).split('\n')[0]) > 0; } catch { return false; }
     }, { timeout: 90_000 }).toBe(true);
-    expect((await fetch(url + '/api/health')).status).toBe(503);
-    expect(output).not.toContain('Vibe bench ready');
     const pidFile = (await readFile(join(directory, 'postmaster.pid'), 'utf8')).split('\n');
     const postmaster = Number(pidFile[0]);
     const port = Number(pidFile[3]);
     pids = [postmaster, ...await descendants(postmaster)];
-    expect(pids.length).toBeGreaterThan(1);
+    expect(output).not.toContain('Vibe bench ready');
     owner.kill('SIGTERM');
     await expect.poll(async () => { const states = await Promise.all(pids.map(alive)); return pids.filter((_, index) => states[index]); }, { timeout: 10_000 }).toEqual([]);
     await expect.poll(() => listening(port), { timeout: 10_000 }).toBe(false);

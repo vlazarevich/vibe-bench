@@ -12,7 +12,7 @@ import { seedArtifactRun } from '../artifact-fixtures.ts';
 test('protected dashboard login, rich result access, enrollment and revocation work in Chromium', async ({ browser }) => {
   await mkdir('.artifacts', { recursive: true }); const root = await mkdtemp(resolve('.artifacts/access-browser-'));
   const database = await startDatabase(join(root, 'postgres')); const pool = await connectDatabase(database.url);
-  const app = await createApp({ pool, token: 'test', password: 'browser password', webRoot: resolve('dist/web') });
+  const app = await createApp({ pool, password: 'browser password', webRoot: resolve('dist/web') });
   const url = await app.listen({ host: '127.0.0.1', port: 0 });
   const context = await browser.newContext(); const page = await context.newPage();
   try {

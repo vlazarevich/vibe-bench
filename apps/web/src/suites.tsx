@@ -86,15 +86,8 @@ export function Suites() {
   function updateCriterion(index: number, criterion: z.infer<typeof Criterion>) {
     if (draft) setDraft({ ...draft, evaluation: { ...draft.evaluation, criteria: draft.evaluation.criteria.map((value, i) => i === index ? criterion : value) } });
   }
-  function exportTask(taskId: z.infer<typeof TaskId>) {
-    if (!saved) return;
-    const blob = new Blob([JSON.stringify({ content: saved.content, taskId }, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob), anchor = document.createElement('a');
-    anchor.href = url; anchor.download = `suite-${saved.content.ordinal}-${taskId}.json`; anchor.click(); URL.revokeObjectURL(url);
-  }
   const parsed = draft ? Definition.safeParse(draft) : null;
   const assessment = parsed?.success ? assessDefinition(parsed.data) : null;
-  const unsaved = saved && JSON.stringify(draft) !== JSON.stringify(saved.content.definition);
   return <section aria-label="Suite authoring">
     <h1>Suites</h1><p className="intro">Author tasks and evaluation guidance. Every save preserves earlier content and run inputs.</p>
     {!draft ? <>
@@ -152,10 +145,6 @@ export function Suites() {
         {parsed && !parsed.success && <><p>Correct these values before saving.</p><ul>{parsed.error.issues.map((issue, i) => <li key={i}>{fieldName(issue.path)}: {issue.message}</li>)}</ul></>}
       </section>
       <div className="editor-actions">{saved ? <><button disabled={busy} onClick={() => void save('minor')}>Save minor change</button><button disabled={busy} onClick={() => void save('revision')}>Save new revision</button></> : <button disabled={busy} onClick={() => void save()}>Create suite</button>}</div>
-      {saved && <section aria-label="Saved execution inputs"><h2>Export saved task</h2><p>Downloads content {saved.content.ordinal}, revision {saved.content.revision}, including its evaluation guidance. Use the file with VIBE_SUITE_FILE in the local runner. Only text generation without repository materials can execute.</p>
-        {unsaved && <p>Save your edits before exporting.</p>}
-        {saved.assessment.kind === 'ready' && saved.content.definition.materials.kind === 'none' && saved.content.definition.categories.flatMap((category) => category.tasks).filter((task) => task.kind === 'text-generation').map((task) => <button disabled={Boolean(unsaved) || busy} className="secondary" key={task.id} onClick={() => exportTask(task.id)}>Export {task.title}</button>)}
-      </section>}
       {history.length > 0 && <section aria-label="Suite history"><h2>History</h2><div className="editor-actions">{history.map((item) => <button className="secondary" key={item.contentId} onClick={() => setHistorical(item)}>Revision {item.revision} · Content {item.ordinal}</button>)}</div>
         {historical && <ContentDetails content={historical}/>}
       </section>}

@@ -1,75 +1,68 @@
 # Architecture
 
-The app authors versioned suites and compares two text answers from Codex. React and Vite build the dashboard. Fastify serves it and the HTTP API. PostgreSQL 18 stores accepted runs and evaluation sessions. The runner is a separate local command that initiates report uploads.
+Vibe bench authors immutable suite versions, executes configured matrices, and grades results anonymously. React and Vite build the dashboard. Fastify serves the dashboard and worker APIs. PostgreSQL 18 stores execution snapshots, outcomes, artifacts, and grading sessions. The standalone `vibe-runner` initiates all execution traffic. The dashboard defaults to configured Runs.
 
-The application, PostgreSQL, and execution runtime support Linux only. CI uses the self-hosted Linux x64 runner.
+The application, PostgreSQL, and runner require Linux. CI uses the self-hosted Linux x64 runner.
 
 ```mermaid
 flowchart LR
-  Browser[React comparison] --> Server[Fastify on loopback]
+  Browser[React dashboard and grading] --> Server[Fastify]
   Server --> DB[(PostgreSQL 18)]
-  Runner[Local runner] -->|report upload| Server
-  Runner --> CLI[Native Codex executable]
-  Runner --> Spool[Durable local progress and reports]
+  Runner[vibe-runner] -->|pair, claim, report| Server
+  Runner --> Harness[Codex, Claude, OpenCode]
+  Runner --> Journal[Private durable state]
 ```
 
 ## Implemented ownership
 
 | Path | Responsibility |
 | --- | --- |
-| `packages/contracts/src/runner.ts` | Immutable task, two entrant outcomes, report and receipt schemas |
-| `packages/contracts/src/suites.ts` | Suite aggregates, draft readiness, rating conversion and authoring DTOs |
-| `apps/server/src/features/suites.ts` | Append-only suite content, exact-version saves and historical reads |
-| `packages/contracts/src/evaluation.ts` | Explicit blind and revealed browser schemas |
-| `apps/server/src/features/runs.ts` | Idempotent report acceptance and public run summaries |
-| `apps/server/src/features/evaluation.ts` | Session authority, persisted card mapping, atomic final choice and reveal |
-| `packages/contracts/src/blind-grading.ts` | Neutral run navigation, anonymous task results, original rating selections, and versioned judgments |
-| `apps/server/src/features/blind-grading.ts` | Immutable grading mappings, per-criterion writes, authority, and result-only artifact projection |
-| `apps/web/src/blind-grading.tsx`, `grading-controls.tsx` | Task navigation and independent rating editors without management fetches |
-| `apps/server/src/db.ts` | Pool and transactionally ordered migrations |
-| `apps/server/src/app.ts` | HTTP validation, runner authorization, cookies, same-origin checks, static files |
-| `apps/runner/src/runner.ts` | Codex adapter, immutable run construction, outcome collection and report delivery |
-| `apps/runner/src/spool.ts` | Progress schema and flushed atomic JSON writes |
-| `apps/runner/src/processes/` | Deadlines, bounded logs and Linux process groups |
-| `apps/web/src/` | Suite editor and history, run list, blind text cards, choice and reveal |
-| `scripts/local.ts`, `scripts/local-lock.ts` | Per-worktree app lifecycle and kernel-owned state-directory lock |
-| `scripts/local-database.ts`, `scripts/database-worker.ts` | Database owner lifetime and graceful shutdown |
+| `packages/contracts/src/suites.ts` | Suite content, draft readiness, ratings, authoring schemas |
+| `packages/contracts/src/access.ts` | Pairing enrollment, credentials, private configuration |
+| `packages/contracts/src/runtime.ts` | Tool discovery observations and receipts without capacity |
+| `packages/contracts/src/configured-runs.ts`, `work.ts`, `task-io.ts` | Immutable run inputs, lifecycle, assignments, outcomes, repository declarations |
+| `packages/contracts/src/blind-grading.ts` | Anonymous navigation, result cards, criterion judgments |
+| `apps/server/src/features/suites.ts` | Append-only content, exact-base saves, historical reads |
+| `apps/server/src/features/access.ts` | Browser sessions, reusable enrollment, revocation, abandonment |
+| `apps/server/src/features/runtimes.ts` | Immutable observations, sequence ordering, stable receipts |
+| `apps/server/src/features/configured-runs.ts` | Matrix creation, claims, preparation, outcomes, artifacts |
+| `apps/server/src/features/blind-grading.ts` | Immutable mappings, cell judgments, scoped authority |
+| `apps/server/src/app.ts`, `worker-routes.ts` | HTTP validation, dashboard and runtime authority, cookies, Origin policy |
+| `apps/server/src/db.ts` | Pool and ordered transactional migrations |
+| `apps/runner/src/cli.ts`, `configuration.ts` | Commander interface, pairing, cached status, private state |
+| `apps/runner/src/onboarding.ts` | Shared executable resolution, bounded discovery, acknowledged capabilities |
+| `apps/runner/src/execution.ts` | Sequential configured execution and durable report recovery |
+| `apps/runner/src/materials.ts`, `adapters.ts`, `artifacts.ts`, `browser-scenario.ts` | Attempt checkout, harness protocols, collection, browser recording |
+| `apps/runner/src/spool.ts`, `processes/` | Flushed atomic writes, bounded subprocess lifetime and Linux process groups |
+| `apps/web/src/` | Runs, suite editor, runtime pairing, grading, result viewers |
+| `scripts/local.ts`, `local-lock.ts` | Per-worktree dashboard lifecycle and state lock |
+| `scripts/local-database.ts`, `database-worker.ts` | Database owner lifetime and shutdown |
 
-Feature queries stay with their owner. The server stores one report aggregate and one session row per evaluation. PostgreSQL uniqueness serializes duplicate reports. A transaction locks a session while saving its final choice. SQL rows never reach the browser. The browser imports explicit evaluation, grading, suite, runtime, and configured-run management schemas. `pnpm boundaries` enforces application import restrictions.
+Feature queries stay with the owner of their invariants. Schemas validate external boundaries and derive application types. Framework objects and SQL rows stay in their modules. Browser code imports explicit management or anonymous schemas. `pnpm boundaries` enforces application ownership.
 
-## Local execution
+## Dashboard lifecycle and persistence
 
-`pnpm demo` builds the UI, starts a pinned embedded PostgreSQL 18 binary, starts Fastify on loopback, and runs one fixture comparison. `pnpm local` starts without fixture execution. Database files and runner state live in `.local/`, or `VIBE_LOCAL_ROOT` when configured. Tests allocate their own directories and TCP ports.
+`pnpm local` builds assets, starts pinned embedded PostgreSQL 18, and serves Fastify on loopback. It creates no fixture runs or runner connection files. Dashboard data lives under `.local/` or `VIBE_LOCAL_ROOT`. Tests allocate separate directories and ports.
 
-An abstract Unix socket keyed by the canonical state-directory path excludes concurrent local app owners. The kernel releases the lock on process death. The app holds the lock until shutdown finishes.
+An abstract Unix socket keyed by the canonical state path excludes concurrent dashboard owners. The lock remains until shutdown completes and is released on process death. A dedicated worker owns PostgreSQL, verifies its SQL connection before readiness, and shuts down on owner-pipe closure. Startup and shutdown timeouts terminate its process group. Early shutdown handlers cover interruption during database startup. Saved files remain intact; incomplete first initialization is not automatically repaired.
 
-A dedicated worker owns PostgreSQL from initialization through shutdown. Owner-pipe closure asks the worker to stop PostgreSQL. Startup and shutdown timeouts terminate the owned process group. The app registers shutdown handlers before database startup completes. Saved database files are preserved. Interruption during the first `initdb` can leave an incomplete directory; startup does not delete that directory or claim to repair it automatically.
+Suite edits append complete immutable definitions and move the current pointer with an exact base content ID. Configured runs pin saved suite content and entrants before assigning work. The server derives progress from immutable preparation and attempt records, plus durable abandonment records. Migrations remove legacy pairwise tables while preserving the shared immutability function and configured history.
 
-Suite edits append immutable whole definitions and move a current pointer. Every edit requires an explicit minor or new-revision choice and an exact base content ID. The [suite contract](contracts/suites.md) defines readiness, rating conversions and pinned input export.
+## Pairing and capabilities
 
-Each attempt has a separate workspace and diagnostic directory. The prompt, model IDs, source, run ID, and attempt IDs are saved before launch. A completed report is saved before upload. Started or incomplete attempts are retained as uncertain after interruption and are never relaunched under the same IDs.
+`vibe-runner pair TOKEN` replaces existing authority, discovers tools, enrolls, and uploads capabilities. Pairing succeeds only after acknowledgement. A reusable ten-minute token binds one runtime identity. Credential replacement and revocation abandon unfinished assignments, preserve accepted outcomes, and leave completed history intact. Connectivity loss alone preserves assignments.
 
-The runner uses a separate Linux process group and kills the group after completion, timeout, or handled termination. SIGKILL cannot execute its signal handlers; inspect and stop an orphaned group before retrying after an ungraceful host interruption.
+The runner uses a private standard state directory or global `--state-dir`. It loads no runner `.env` or executable/state/slots overrides. Discovery and execution resolve the same tools on `PATH`. Harness login directories, provider authentication, proxies, certificates, and SSH-agent settings retain normal operating-system behavior. Dashboard credentials and raw authentication output remain outside task workspaces and child environments.
 
-Credentials remain outside workspaces. The runner uses an environment allowlist and removes the server credential from the child boundary. Codex ignores user configuration and repository rules. Text renders with React escaping and no Markdown or HTML execution.
-
-## Scope and design guidance
-
-The local app has a loopback and same-origin boundary. An optional shared app password protects dashboard data and actions. Runner bearer authority and browser session authority are separate. Management run and attempt IDs are absent from blind evaluation responses; public review IDs and session-scoped card handles are distinct random identifiers.
-
-The [text comparison contract](contracts/text-comparison.md) describes the executable subset. [ADR 0001](decisions/0001-architecture.md) and the broader design contracts remain guidance for later work. Remote scheduling, leases, artifact bundles, S3 storage, richer reporting, React Router, TanStack Query, and Drizzle are not required by this text loop and are not installed. Schema-derived types and explicit SQL implement the current invariants.
-
-## Runtime registration
-
-`packages/contracts/src/runtime.ts` owns protocol-1 runtime observations and receipts. `apps/runner/src/onboarding.ts` owns bounded tool discovery, separate harness readiness, a server-issued runtime identity and durable observation sequence, and outbound delivery. `apps/server/src/features/runtimes.ts` owns immutable observations and stable duplicate receipts. Latest runtime inspection selects the greatest observation sequence rather than trusting machine clocks or arrival order.
-
-The existing text runner remains separate. Runtime onboarding initiates all network traffic and opens no worker-side listener. An optional worker-only Fastify listener in `apps/server/src/worker-app.ts` shares the local database lifecycle. It accepts registration, claims, preparation, and attempt reports, with browser requests rejected. HTTPS termination belongs to a trusted remote proxy. Both listeners require individually revocable runtime credentials. A capability corpus is deferred to KV-48. Registration itself does not execute jobs.
+Status reads the last acknowledged capability snapshot and checks authority without discovery. Probe can refresh capabilities during execution without restarting it. Monotonic observation sequences recover the dashboard sequence floor when local state was erased. Older deliveries cannot replace newer observations. Pairing and revocation refuse while execution owns state.
 
 ## Configured execution
 
-`packages/contracts/src/configured-runs.ts` owns the management snapshot and result descriptors. `task-io.ts` owns pinned repository declarations and browser plans. `work.ts` owns the outbound claim and report protocol. `apps/server/src/features/configured-runs.ts` owns matrix creation, claims, immutable preparation, attempt outcomes, artifact bytes, and durable receipts. These records use separate tables from the original pairwise evaluator.
+One runtime claims an entire run and executes attempts sequentially. It saves assignments, preparation, starts, terminal outcomes, and artifacts before transport. Delivery validates receipt identities and replays stable IDs. A started attempt with no durable outcome is uncertain and never executes again under its old ID. Recovery records interruption truthfully.
 
-`apps/runner/src/execution.ts` owns the durable worker loop. Materials, adapters, artifact collection, and browser recording stay in runner-owned modules. One runtime claims a whole run and executes attempts in order. Every attempt has an independent checkout. The server derives run progress from immutable per-attempt records. The [configured-run contract](contracts/configured-runs.md) defines the supported lifecycle and artifact shapes.
+`run` recovers pending delivery, refreshes capabilities, waits for assignments, and continues across runs. `run-once` waits through an empty queue and exits only after the entire first run is acknowledged. Every attempt owns an independent workspace, diagnostic directory, and browser context. The process module stops Linux descendant groups after completion, timeout, and handled interruption.
+
+The optional worker-only listener shares authority and database lifecycle, rejects browser requests, and exposes no dashboard API. HTTPS termination and remote routing belong to deployment configuration. The [configured-run contract](contracts/configured-runs.md) defines lifecycle and artifact shapes; [access](contracts/access.md) defines pairing and revocation.
 
 ## Result viewing
 
@@ -78,7 +71,7 @@ The existing text runner remains separate. Runtime onboarding initiates all netw
 `html-preview.ts` owns two bounded interactive sessions and exact manifest asset serving. `isolated-chromium.ts` owns Bubblewrap runtime mounts, network isolation, process deadlines, and teardown. `apps/web/src/result-viewer.tsx` renders the same presentation for any authorized caller. Run management loads a result only when its viewer is expanded. Grading and blind session authority belong to their existing owners.
 ## Configured-run grading
 
-The grading feature reads immutable configured-run inputs and outcomes. It stores one immutable session mapping and one mutable row per completed card and assigned criterion. Each cell has its own version and transaction lock. Session authority uses a separate cookie from the pairwise demo. The browser selects **Grading** without mounting management views or requesting their records.
+The grading feature reads immutable configured-run inputs and outcomes. It stores one immutable session mapping and one mutable row per completed card and assigned criterion. Each cell has its own version and transaction lock. Session authority uses its own grading cookie. The browser selects **Grading** without mounting management views or requesting their records.
 
 The [blind-grading contract](contracts/blind-grading.md) defines task-sized reads, pinned criterion snapshots, stable card order, exact retries, and anonymous artifact access. Execution failures and skips remain visible with neutral status. This feature does not reveal identities or calculate aggregate scores.
 
