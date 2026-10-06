@@ -74,5 +74,5 @@ test('passwordless dashboard creates enrollment through Runtimes', async ({ page
   await expect(page.getByRole('heading', { name: 'Runtimes', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Log out' })).toHaveCount(0);
   await page.getByRole('button', { name: 'Add new' }).click();
-  await expect(page.getByLabel('Enrollment command')).toHaveValue(/^vibe-runtime config /);
+  await expect(page.getByLabel('Enrollment command')).toHaveValue(/^vibe-runner pair /);
 });

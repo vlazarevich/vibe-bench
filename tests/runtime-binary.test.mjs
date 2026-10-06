@@ -14,6 +14,7 @@ const version = (await execute(binary, ['--version'])).stdout.trim();
 assert.match(version, /^v\d+\.\d+\.\d+/);
 
 test('standalone CLI exposes command help and actionable errors with consistent exit codes', async () => {
+  assert.equal((await execute(binary, ['--version'], { env: { ...process.env, VIBE_RUNTIME_VERSION: 'forged-version' } })).stdout.trim(), version);
   const help = (await execute(binary, ['--help'])).stdout;
   assert.match(help, /vibe-runner/);
   for (const command of ['pair', 'run', 'run-once']) assert.match(help, new RegExp(command));
@@ -55,7 +56,7 @@ test('standalone CLI pairs, persists a private credential, checks cached status,
   try {
     const address = server.address();
     const state = join(directory, 'state');
-    const env = { HOME: directory, PATH: join(directory, 'no-tools') };
+    const env = { HOME: directory, PATH: join(directory, 'no-tools'), TMPDIR: tmpdir() };
     const command = Buffer.from(JSON.stringify({ apiUrl: `http://127.0.0.1:${address.port}`, key: 'a'.repeat(64), expiresAt: new Date(Date.now() + 60_000).toISOString() })).toString('base64url');
     const configured = await execute(standalone, ['--state-dir', state, 'pair', command], { cwd: directory, env });
     assert.match(configured.stdout, /paired/i);
@@ -94,7 +95,7 @@ test('standalone fixture subprocesses execute all three adapter protocols', asyn
   try {
     for (const harness of ['codex', 'claude', 'opencode']) {
       const output = join(directory, `${harness}.txt`);
-      const child = execFile(binary, ['--internal-configured-fixture', harness, '--output-last-message', output], { cwd: directory, env: { PATH: '/nonexistent' } });
+      const child = execFile(binary, ['--internal-configured-fixture', harness, '--output-last-message', output], { cwd: directory, env: { PATH: '/nonexistent', TMPDIR: tmpdir() } });
       child.stdin.end('Task kind: text-generation\n');
       const result = await new Promise((resolve, reject) => {
         let stdout = ''; let stderr = '';

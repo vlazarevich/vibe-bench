@@ -8,11 +8,13 @@ import { configureRuntime, readConfiguration, runtimeRoot, reconnectDelay, state
 import { onboard, AcknowledgedCapabilities, Status } from './onboarding.ts';
 import { runWorkerOnce } from './execution.ts';
 
+declare const __VIBE_RUNNER_VERSION__: string;
+
 export { reconnectDelay } from './configuration.ts';
 async function remoteRevoke(stateRoot: string) {
   try {
     const configuration = await readConfiguration(stateRoot);
-    await workerPost(configuration, '/api/worker/revoke', {});
+    z.object({ ok: z.literal(true) }).strict().parse(await workerPost(configuration, '/api/worker/revoke', {}));
     process.stdout.write('Dashboard revocation confirmed. Unfinished assigned runs were abandoned.\n');
   } catch (error) {
     if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return;
@@ -88,7 +90,7 @@ async function run(stateRoot: string, once: boolean) {
   } finally { await stop?.(); }
 }
 export async function main(args: string[]) {
-  const program = new Command().name('vibe-runner').description('Pair with a dashboard and execute assigned runs sequentially.').version(process.env.VIBE_RUNTIME_VERSION ?? 'development').option('--state-dir <path>', 'Private runner state directory', join(homedir(), '.local', 'state', 'vibe-runner')).exitOverride();
+  const program = new Command().name('vibe-runner').description('Pair with a dashboard and execute assigned runs sequentially.').version(typeof __VIBE_RUNNER_VERSION__ === 'string' ? __VIBE_RUNNER_VERSION__ : 'development').option('--state-dir <path>', 'Private runner state directory', join(homedir(), '.local', 'state', 'vibe-runner')).exitOverride();
   const root = () => resolve(program.opts<{ stateDir: string }>().stateDir);
   const pairing = program.command('pair').description('Manage dashboard pairing.');
   pairing.command('status').description('Show pairing authority and cached acknowledged capabilities.').action(() => status(root()));

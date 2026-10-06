@@ -52,10 +52,7 @@ export async function runWorkerOnce(options: WorkerOptions) {
     const executablesPath = join(root, 'executables.json');
     if (await exists(currentPath) && await exists(executablesPath)) options = { ...options, executables: z.object({codex:z.string().optional(),claude:z.string().optional(),opencode:z.string().optional()}).strict().parse(JSON.parse(await readFile(executablesPath,'utf8'))) };
     else {
-      const selected: Executables = {};
-      for (const harness of ['codex','claude','opencode'] as const) { try { selected[harness] = await checkExecutable(options.executables[harness] ?? harness); } catch {} }
-      options = { ...options, executables: selected };
-      await durableWrite(executablesPath, selected);
+      await durableWrite(executablesPath, options.executables);
     }
     if (await exists(currentPath)) assignment = await readAssignment(currentPath);
     else {

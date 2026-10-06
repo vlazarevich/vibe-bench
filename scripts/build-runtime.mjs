@@ -23,7 +23,7 @@ export async function buildRuntime({ version, entry = join(root, 'apps/runner/sr
   await mkdir(staging, { recursive: true });
   const bundled = await build({
     entryPoints: [entry], bundle: true, platform: 'node', format: 'cjs', target: 'node24', write: false,
-    define: { 'import.meta.url': '__importMetaUrl', 'process.env.VIBE_RUNTIME_VERSION': JSON.stringify(version) },
+    define: { 'import.meta.url': '__importMetaUrl', __VIBE_RUNNER_VERSION__: JSON.stringify(version) },
     banner: { js: 'const __importMetaUrl = require("node:url").pathToFileURL(__filename).href;' },
     plugins: [{ name: 'runtime-browser', setup(builder) {
       builder.onResolve({ filter: /^@playwright\/test$/ }, () => ({ path: 'playwright-core', external: true }));

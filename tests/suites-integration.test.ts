@@ -112,7 +112,7 @@ test('persisted text rejects NUL and lone surrogates while preserving valid Unic
   expect(created.content.definition.title).toBe(title);
 });
 
-test('legacy cleanup preserves configured history and the shared immutability function', async () => {
+test('pairing and legacy migrations preserve enrollment identities, accepted history, and immutability', async () => {
   const previous = await startDatabase(join(root, 'upgrade-postgres'));
   const client = new pg.Client({ connectionString: previous.url });
   try {
@@ -120,10 +120,35 @@ test('legacy cleanup preserves configured history and the shared immutability fu
     for (const name of ['001-text-comparison.sql', '002-suites.sql', '003-runtimes.sql', '004-configured-runs.sql', '005-blind-grading.sql', '006-access.sql']) {
       await client.query(await readFile(new URL(`../db/migrations/${name}`, import.meta.url), 'utf8'));
     }
-    const oldRun = randomUUID(), configuredRun = randomUUID();
+    const oldRun = randomUUID(), configuredRun = randomUUID(), configuredOwner=randomUUID();
     await client.query('INSERT INTO runs(id,report_id,review_id,digest,report) VALUES($1,$2,$3,$4,$5)', [oldRun, randomUUID(), randomUUID(), 'legacy', { legacy: true }]);
     await client.query('INSERT INTO evaluation_sessions(id,run_id,authority_hash,mapping) VALUES($1,$2,$3,$4)', [randomUUID(), oldRun, 'authority', {}]);
-    await client.query('INSERT INTO configured_runs(id,request_id,request,runtime_id,snapshot) VALUES($1,$2,$3,$4,$5)', [configuredRun, randomUUID(), { preserved: true }, randomUUID(), { preserved: true }]);
+    await client.query('INSERT INTO configured_runs(id,request_id,request,runtime_id,snapshot) VALUES($1,$2,$3,$4,$5)', [configuredRun, randomUUID(), { preserved: true }, configuredOwner, { preserved: true }]);
+    const runtimeId=randomUUID(), requestId=randomUUID();
+    const receipts=['first-key','second-key'].map(key=>({key,receipt:{runtimeId,requestId,credentialId:randomUUID(),installationId:randomUUID()}}));
+    for(const {key,receipt} of receipts) await client.query("INSERT INTO runtime_enrollments(key_hash,expires_at,exchange_hash,receipt) VALUES($1,now()+interval '10 minutes',$2,$3)",[key,key+'-exchange',receipt]);
+    await client.query('INSERT INTO runtime_observations(runtime_id,observation,registration) VALUES($1,1,$2)',[runtimeId,{preserved:true,capacity:{slots:4}}]);
+    const runCases=[{id:configuredRun,active:false,complete:false},{id:randomUUID(),active:false,complete:true},{id:randomUUID(),active:true,complete:false}];
+    const accepted:string[]=[];
+    for(const item of runCases){
+      const owner=item.id===configuredRun?configuredOwner:randomUUID();
+      await client.query('INSERT INTO runtime_credentials(credential_id,runtime_id,secret_hash,revoked_at) VALUES($1,$2,$3,$4)',[randomUUID(),owner,'saved-hash',item.active?null:new Date()]);
+      if(item.id!==configuredRun) await client.query('INSERT INTO configured_runs(id,request_id,request,runtime_id,snapshot) VALUES($1,$2,$3,$4,$5)',[item.id,randomUUID(),{},owner,{preserved:true}]);
+      await client.query('INSERT INTO work_claims(request_id,runtime_id,assignment_id,run_id,request,receipt) VALUES($1,$2,$3,$4,$5,$6)',[randomUUID(),owner,randomUUID(),item.id,{},{}]);
+      for(let ordinal=0;ordinal<2;ordinal++){
+        const attempt=randomUUID();
+        await client.query('INSERT INTO configured_attempts(id,run_id,task_id,entrant_id,ordinal) VALUES($1,$2,$3,$4,$5)',[attempt,item.id,randomUUID(),randomUUID(),ordinal]);
+        if(ordinal===0||item.complete){accepted.push(attempt);await client.query('INSERT INTO attempt_outcomes(attempt_id,outcome,observed) VALUES($1,$2,$3)',[attempt,{kind:'completed',summary:'accepted history'},{}]);}
+      }
+    }
+    await client.query(await readFile(new URL('../db/migrations/007-runner-pairing.sql', import.meta.url), 'utf8'));
+    expect((await client.query('SELECT run_id FROM run_abandonments')).rows).toEqual([{run_id:configuredRun}]);
+    expect((await client.query('SELECT registration FROM runtime_observations WHERE runtime_id=$1',[runtimeId])).rows).toEqual([{registration:{preserved:true}}]);
+    expect((await client.query('SELECT target_runtime_id FROM runtime_enrollments ORDER BY key_hash')).rows).toEqual(receipts.map(()=>({target_runtime_id:runtimeId})));
+    expect((await client.query('SELECT receipt FROM enrollment_exchanges ORDER BY key_hash')).rows).toEqual(receipts.map(({receipt})=>({receipt})));
+    expect((await client.query('SELECT outcome FROM attempt_outcomes WHERE attempt_id=ANY($1)',[accepted])).rows).toEqual(accepted.map(()=>({outcome:{kind:'completed',summary:'accepted history'}})));
+    await expect(client.query('DELETE FROM run_abandonments')).rejects.toThrow('Immutable');
+    await expect(client.query('UPDATE runtime_observations SET observation=2')).rejects.toThrow('Immutable');
     await client.query(await readFile(new URL('../db/migrations/008-remove-legacy-demo.sql', import.meta.url), 'utf8'));
     expect((await client.query("SELECT to_regclass('runs') AS runs, to_regclass('evaluation_sessions') AS sessions")).rows).toEqual([{ runs: null, sessions: null }]);
     expect((await client.query('SELECT request,snapshot FROM configured_runs WHERE id=$1', [configuredRun])).rows).toEqual([{ request: { preserved: true }, snapshot: { preserved: true } }]);

@@ -54,8 +54,8 @@ async function setup() {
     async close() { await worker.close(); await app.close(); await pool.end(); await database.stop(); },
   };
 }
-const workScript = "import {readConfiguration} from './apps/runner/src/configuration.ts'; import {runWorkerOnce} from './apps/runner/src/execution.ts'; const stateRoot=process.env.VIBE_RUNTIME_STATE; console.log(JSON.stringify(await runWorkerOnce({configuration:await readConfiguration(stateRoot),stateRoot,executables:{}})));";
-const work = (stateRoot: string) => exec(process.execPath, ['--import', 'tsx', '--input-type=module', '-e', workScript], { env: { ...process.env, VIBE_RUNTIME_STATE: stateRoot }, maxBuffer: 100_000 });
+const workScript = "import {readConfiguration} from './apps/runner/src/configuration.ts'; import {runWorkerOnce} from './apps/runner/src/execution.ts'; const stateRoot=process.argv[1]; console.log(JSON.stringify(await runWorkerOnce({configuration:await readConfiguration(stateRoot),stateRoot,executables:{}})));";
+const work = (stateRoot: string) => exec(process.execPath, ['--import', 'tsx', '--input-type=module', '-e', workScript, stateRoot], { env: process.env, maxBuffer: 100_000 });
 
 test('connectivity loss and lost committed acknowledgement recover across runtime and server restarts', async () => {
   const system = await setup(); const stateRoot = join(system.root, 'runtime');
@@ -115,6 +115,7 @@ test('SIGTERM exits the continuous worker after stopping the active child instea
     const { durableWrite } = await import('../apps/runner/src/spool.ts');
     await durableWrite(join(runtimeRoot(stateRoot, configuration), 'work', 'assignment.json'), assignment);
     await writeFile(executable, `#!${process.execPath}\nconst fs=await import('node:fs'); if(process.argv.includes('--version')) { console.log('fixture 1.0.0'); process.exit(); } if(process.env.VIBE_APP_PASSWORD || process.env.VIBE_RUNTIME_CREDENTIAL) throw new Error('Runtime secret reached harness'); fs.appendFileSync(${JSON.stringify(marker)},'started\\n'); setTimeout(()=>{},15000);\n`, { mode: 0o700 });
+    await durableWrite(join(runtimeRoot(stateRoot, configuration), 'executables.json'), { codex: executable });
     child = spawn(process.execPath, ['--import', 'tsx', 'apps/runner/src/cli-main.ts', '--state-dir', stateRoot, 'run'], { env: { ...process.env, PATH: `${system.root}:${process.env.PATH}`,  VIBE_APP_PASSWORD: 'app-password-canary', VIBE_RUNTIME_CREDENTIAL: 'runtime-credential-canary' }, stdio: ['ignore', 'pipe', 'pipe'] });
     const exited = new Promise<number | null>((done) => child?.once('exit', done));
     await expect.poll(async () => { try { return await readFile(marker, 'utf8'); } catch { return ''; } }, { timeout: 5000 }).toBe('started\n');
