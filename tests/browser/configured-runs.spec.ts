@@ -100,8 +100,8 @@ test('preview full and selected tasks, preserve saved inputs across suite edits 
   await expect(page.getByRole('combobox', { name: 'Saved version' })).toHaveValue(latest.content.contentId);
   await page.getByRole('combobox', { name: 'Saved version' }).selectOption(suite.content.contentId);
   await expect(page.getByRole('combobox', { name: 'Saved version' })).toHaveValue(suite.content.contentId);
-  await page.getByRole('link', { name: 'Comparisons', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Available runs', exact: true })).toBeVisible();
+  await page.getByRole('link', { name: 'Runs', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'Run management', exact: true })).toBeVisible();
 });
 
 test('missing models and invalid time limits cannot produce a plan or create a run', async ({ page, request, baseURL }) => {
