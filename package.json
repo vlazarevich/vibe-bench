@@ -3,7 +3,9 @@
   "private": true,
   "type": "module",
   "packageManager": "pnpm@11.22.0",
-  "engines": { "node": ">=24.0.0 <25" },
+  "engines": {
+    "node": ">=24.0.0 <25"
+  },
   "scripts": {
     "build": "vite build --config apps/web/vite.config.ts",
     "typecheck": "tsc --noEmit",
@@ -12,15 +14,9 @@
     "test:browser": "playwright test",
     "check": "pnpm typecheck && pnpm boundaries && pnpm test && pnpm build && pnpm test:browser",
     "local": "pnpm build && node --env-file-if-exists=.env --import tsx scripts/local.ts",
-    "demo": "pnpm build && node --env-file-if-exists=.env --import tsx scripts/local.ts --fixture",
-    "run:fixture": "node --env-file-if-exists=.env --import tsx apps/runner/src/main.ts fixture",
-    "run:live": "node --env-file-if-exists=.env --import tsx apps/runner/src/main.ts live",
-    "report:retry": "node --env-file-if-exists=.env --import tsx apps/runner/src/main.ts retry",
-    "runtime:config": "node --env-file-if-exists=.env --import tsx apps/runner/src/cli-main.ts config",
-    "runtime:onboard": "node --env-file-if-exists=.env --import tsx apps/runner/src/onboard-main.ts",
-    "runtime:work": "node --env-file-if-exists=.env --import tsx apps/runner/src/worker-main.ts",
     "build:runtime": "node scripts/build-runtime.mjs",
-    "test:binary": "node --test tests/runtime-binary.test.mjs && VIBE_RUNTIME_BINARY=\"$PWD/dist/runtime/vibe-runtime\" pnpm exec vitest run tests/configured-loop.test.ts"
+    "test:binary": "node --test tests/runtime-binary.test.mjs && VIBE_RUNTIME_BINARY=\"$PWD/dist/runtime/vibe-runner\" pnpm exec vitest run tests/configured-loop.test.ts",
+    "runner": "node --import tsx apps/runner/src/cli-main.ts"
   },
   "dependencies": {
     "@fastify/cookie": "11.0.2",
@@ -30,7 +26,8 @@
     "pg": "8.16.3",
     "react": "19.2.0",
     "react-dom": "19.2.0",
-    "zod": "4.1.12"
+    "zod": "4.1.12",
+    "commander": "14.0.1"
   },
   "devDependencies": {
     "@playwright/test": "1.56.1",
@@ -44,5 +41,6 @@
     "typescript": "5.9.3",
     "vite": "7.1.12",
     "vitest": "3.2.4"
-  }
+  },
+  "version": "0.0.0-dev"
 }
