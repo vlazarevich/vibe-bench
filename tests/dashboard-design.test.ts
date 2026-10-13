@@ -152,6 +152,20 @@ test('cancelled work retains accepted outcomes and admits partial grading while 
   expect((await get(`/api/blind-grading/${session.id}/tasks/${tasks[0]!.handle}`, cookie)).cards).toHaveLength(1);
 });
 
+test('an empty canceled run remains ineligible and cannot break another run invitation', async () => {
+  const empty = await gradingFixture(url);
+  await post(`/api/configured-runs/${empty.run.runId}/cancel`, {});
+  const completed = await gradingFixture(url);
+  await completed.finish();
+  const runs = DashboardRuns.parse(await get('/api/dashboard/runs'));
+  const emptyRun = runs.find((r) => r.id === empty.run.runId)!,
+    ready = runs.find((r) => r.id === completed.run.runId)!;
+  expect(await get(`/api/grading-invitations/${emptyRun.reviewId}`)).toMatchObject({ ready: false });
+  expect(await get(`/api/grading-invitations/${ready.reviewId}`)).toMatchObject({ ready: true });
+  const listed = await get('/api/blind-grading/runs');
+  expect(listed.find((r: { reviewId: string }) => r.reviewId === emptyRun.reviewId).ready).toBe(false);
+});
+
 test('heartbeat presence expires, deletion revokes credentials and removes the runtime without deleting saved history', async () => {
   const configuration = await enrollRuntime(url);
   const authorization = runtimeAuthorization(configuration);

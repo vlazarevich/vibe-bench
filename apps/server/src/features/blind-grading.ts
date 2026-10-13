@@ -122,11 +122,13 @@ function resultAssets(outcome: AttemptOutcome): z.infer<typeof AssetMapping>[] {
     ];
   });
 }
-export async function listGradingRuns(pool: pg.Pool) {
-  const rows =
-    await pool.query(`SELECT r.review_id AS "reviewId", r.snapshot->'content'->'definition'->>'title' AS title,
-    r.snapshot->>'source' AS source, (bool_and(o.attempt_id IS NOT NULL) OR (EXISTS(SELECT 1 FROM run_abandonments b WHERE b.run_id=r.id) AND bool_or(o.outcome->>'kind'='completed'))) AS ready
-    FROM configured_runs r JOIN configured_attempts a ON a.run_id=r.id LEFT JOIN attempt_outcomes o ON o.attempt_id=a.id GROUP BY r.id ORDER BY r.created_at DESC`);
+export async function listGradingRuns(pool: pg.Pool, reviewId?: string) {
+  const rows = await pool.query(
+    `SELECT r.review_id AS "reviewId", r.snapshot->'content'->'definition'->>'title' AS title,
+    r.snapshot->>'source' AS source, (bool_and(o.attempt_id IS NOT NULL) OR (EXISTS(SELECT 1 FROM run_abandonments b WHERE b.run_id=r.id) AND COALESCE(bool_or(o.outcome->>'kind'='completed'),false))) AS ready
+    FROM configured_runs r JOIN configured_attempts a ON a.run_id=r.id LEFT JOIN attempt_outcomes o ON o.attempt_id=a.id WHERE ($1::uuid IS NULL OR r.review_id=$1) GROUP BY r.id ORDER BY r.created_at DESC`,
+    [reviewId ?? null],
+  );
   return BlindGradingRuns.parse(rows.rows);
 }
 export async function createGrading(
@@ -445,7 +447,7 @@ export async function readGradingCard(
 }
 
 export async function gradingInvitation(pool: pg.Pool, reviewId: string) {
-  const runs = await listGradingRuns(pool);
+  const runs = await listGradingRuns(pool, reviewId);
   const run = runs.find((run) => run.reviewId === reviewId);
   if (!run) throw new NotFound();
   return GradingInvitation.parse(run);
