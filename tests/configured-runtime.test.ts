@@ -12,132 +12,710 @@ import { runtimeRoot } from '../apps/runner/src/configuration.ts';
 import { RuntimeConfiguration } from '../packages/contracts/src/access.ts';
 import { RuntimeId } from '../packages/contracts/src/runtime.ts';
 import { contentDigest } from '../packages/contracts/src/canonical.ts';
-import { createWorkspace, prepareMaterials, safeFile, git, executionEnvironment } from '../apps/runner/src/materials.ts';
+import {
+  createWorkspace,
+  prepareMaterials,
+  safeFile,
+  git,
+  executionEnvironment,
+} from '../apps/runner/src/materials.ts';
 import { collectResults } from '../apps/runner/src/artifacts.ts';
 import { executeAdapter } from '../apps/runner/src/adapters.ts';
 import { runWorkerOnce } from '../apps/runner/src/execution.ts';
 const roots: string[] = [];
-async function root() { const path = await mkdtemp(join(tmpdir(),'configured-runtime-')); roots.push(path); return path; }
-afterEach(async () => { await Promise.all(roots.splice(0).map((path) => rm(path,{recursive:true,force:true}))); });
+async function root() {
+  const path = await mkdtemp(join(tmpdir(), 'configured-runtime-'));
+  roots.push(path);
+  return path;
+}
+afterEach(async () => {
+  await Promise.all(roots.splice(0).map((path) => rm(path, { recursive: true, force: true })));
+});
 async function repository(directory: string) {
-  const source = join(directory,'repo'); await mkdir(source); await git(['init','-b','main'],source,directory);
-  await writeFile(join(source,'index.html'),'<button onclick="document.querySelector(\'#count\').textContent=\'1\'">Go</button><span id="count">0</span>');
-  await writeFile(join(source,'old.txt'),'original');
-  await git(['add','.'],source,directory); await git(['-c','user.email=test@example.com','-c','user.name=Test','commit','-m','initial'],source,directory);
+  const source = join(directory, 'repo');
+  await mkdir(source);
+  await git(['init', '-b', 'main'], source, directory);
+  await writeFile(
+    join(source, 'index.html'),
+    '<button onclick="document.querySelector(\'#count\').textContent=\'1\'">Go</button><span id="count">0</span>',
+  );
+  await writeFile(join(source, 'old.txt'), 'original');
+  await git(['add', '.'], source, directory);
+  await git(
+    ['-c', 'user.email=test@example.com', '-c', 'user.name=Test', 'commit', '-m', 'initial'],
+    source,
+    directory,
+  );
   return source;
 }
-test('pins one commit and gives each attempt independent files while refusing escaping artifacts',async () => {
-  const directory = await root(); const source = await repository(directory);
-  const materials = await prepareMaterials({kind:'repository',url:source,requestedRef:'main'},join(directory,'materials'));
-  await writeFile(join(source,'old.txt'),'new source'); await git(['-c','user.email=test@example.com','-c','user.name=Test','commit','-am','moved'],source,directory);
-  const first = join(directory,'first'); const second = join(directory,'second');
-  await createWorkspace(materials,first,directory); await writeFile(join(first,'old.txt'),'attempt mutation'); await createWorkspace(materials,second,directory);
-  expect((await readFile(join(second,'old.txt'),'utf8'))).toBe('original');
-  await symlink(source,join(second,'escape')); await expect(safeFile(second,'escape/old.txt')).rejects.toThrow('Symbolic');
-  await expect(safeFile(second,'../old.txt')).rejects.toThrow(); await expect(safeFile(second,'.git/config')).rejects.toThrow(); await expect(safeFile(second,'.env')).rejects.toThrow();
-  const env = executionEnvironment(); expect(env.VIBE_RUNNER_TOKEN).toBeUndefined(); expect(env.VIBE_API_URL).toBeUndefined();
+test('pins one commit and gives each attempt independent files while refusing escaping artifacts', async () => {
+  const directory = await root();
+  const source = await repository(directory);
+  const materials = await prepareMaterials(
+    { kind: 'repository', url: source, requestedRef: 'main' },
+    join(directory, 'materials'),
+  );
+  await writeFile(join(source, 'old.txt'), 'new source');
+  await git(['-c', 'user.email=test@example.com', '-c', 'user.name=Test', 'commit', '-am', 'moved'], source, directory);
+  const first = join(directory, 'first');
+  const second = join(directory, 'second');
+  await createWorkspace(materials, first, directory);
+  await writeFile(join(first, 'old.txt'), 'attempt mutation');
+  await createWorkspace(materials, second, directory);
+  expect(await readFile(join(second, 'old.txt'), 'utf8')).toBe('original');
+  await symlink(source, join(second, 'escape'));
+  await expect(safeFile(second, 'escape/old.txt')).rejects.toThrow('Symbolic');
+  await expect(safeFile(second, '../old.txt')).rejects.toThrow();
+  await expect(safeFile(second, '.git/config')).rejects.toThrow();
+  await expect(safeFile(second, '.env')).rejects.toThrow();
+  const env = executionEnvironment();
+  expect(env.VIBE_RUNNER_TOKEN).toBeUndefined();
+  expect(env.VIBE_API_URL).toBeUndefined();
 });
-for (const harness of ['codex','claude','opencode'] as const) test(`parses real fixture subprocess final output for ${harness}`,async () => {
-  const directory = await root(); const workspace = join(directory,'workspace'); await mkdir(workspace);
-  const entrant = Entrant.parse({id:randomUUID(),harness,model:'exact-model',settings:{timeoutMs:5000,...(harness === 'codex' ? {reasoningEffort:'high'} : harness === 'claude' ? {effort:'high'} : {variant:'high'})}});
-  const result = await executeAdapter({entrant,executable:process.execPath,prefix:[fileURLToPath(new URL('./fixtures/configured-harness.mjs',import.meta.url)),harness],workspace,directory,prompt:`ASSERT_ARGS: ${JSON.stringify(['exact-model',harness === 'codex' ? 'model_reasoning_effort="high"' : 'high'])}`,writable:false});
-  expect(result.text).toBe('Fixture final answer'); expect(await readFile(join(directory,'stdout.log'),'utf8')).toContain(harness === 'claude' ? 'modelUsage' : harness === 'codex' ? 'turn.completed' : 'step_finish');
-});
-test('all ten task kinds produce real bounded artifacts including Chromium video and code changes',async () => {
-  const directory = await root(); const source = await repository(directory); const materials = await prepareMaterials({kind:'repository',url:source,requestedRef:'main'},join(directory,'materials'));
+for (const harness of ['codex', 'claude', 'opencode'] as const)
+  test(`parses real fixture subprocess final output for ${harness}`, async () => {
+    const directory = await root();
+    const workspace = join(directory, 'workspace');
+    await mkdir(workspace);
+    const entrant = Entrant.parse({
+      id: randomUUID(),
+      harness,
+      model: 'exact-model',
+      settings: {
+        timeoutMs: 5000,
+        ...(harness === 'codex'
+          ? { reasoningEffort: 'high' }
+          : harness === 'claude'
+            ? { effort: 'high' }
+            : { variant: 'high' }),
+      },
+    });
+    const result = await executeAdapter({
+      entrant,
+      executable: process.execPath,
+      prefix: [fileURLToPath(new URL('./fixtures/configured-harness.mjs', import.meta.url)), harness],
+      workspace,
+      directory,
+      prompt: `ASSERT_ARGS: ${JSON.stringify(['exact-model', harness === 'codex' ? 'model_reasoning_effort="high"' : 'high'])}`,
+      writable: false,
+    });
+    expect(result.text).toBe('Fixture final answer');
+    expect(await readFile(join(directory, 'stdout.log'), 'utf8')).toContain(
+      harness === 'claude' ? 'modelUsage' : harness === 'codex' ? 'turn.completed' : 'step_finish',
+    );
+  });
+test('all ten task kinds produce real bounded artifacts including Chromium video and code changes', async () => {
+  const directory = await root();
+  const source = await repository(directory);
+  const materials = await prepareMaterials(
+    { kind: 'repository', url: source, requestedRef: 'main' },
+    join(directory, 'materials'),
+  );
   for (const kind of TaskKind.options) {
-    const task = TaskDefinition.parse({id:randomUUID(),title:kind,kind,prompt:'Fixture',criterionIds:[]});
-    const attempt = join(directory,kind); await mkdir(attempt); const workspace = join(attempt,'workspace'); await createWorkspace(materials,workspace,attempt);
-    if (kind === 'image-understanding' || kind === 'image-editing') await writeFile(join(workspace,'input.png'),Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6dWQAAAAASUVORK5CYII=','base64'));
-    const io = TaskIO.parse({inputs:kind === 'image-understanding' || kind === 'image-editing' ? ['input.png'] : [],outputs:kind.startsWith('image-') && kind !== 'image-understanding' ? [{path:'output.png',kind:'image'}] : kind.startsWith('html-') ? [{path:'output.html',kind:'html'}] : kind.startsWith('coding-') ? [{path:'new.ts',kind:'code'}] : [],browser:kind === 'browser-scenario' ? {kind:'local',entry:'index.html',instructions:'Click Go and see 1'} : null});
-    const entrant = Entrant.parse({id:randomUUID(),harness:'codex',model:'fixture',settings:{timeoutMs:10000}});
-    const adapter = await executeAdapter({entrant,executable:process.execPath,prefix:[fileURLToPath(new URL('./fixtures/configured-harness.mjs',import.meta.url)),'codex'],workspace,directory:attempt,images:io.inputs.map((path) => join(workspace,path)),prompt:`Task kind: ${kind}\nTask IO: ${JSON.stringify(io)}`,writable:true});
-    if (kind.startsWith('coding-')) { await rm(join(workspace,'old.txt')); await writeFile(join(workspace,'index.html'),'modified'); }
-    const output = await collectResults({task,io,workspace,directory:attempt,materials,text:adapter.text,timeoutMs:10000});
+    const task = TaskDefinition.parse({ id: randomUUID(), title: kind, kind, prompt: 'Fixture', criterionIds: [] });
+    const attempt = join(directory, kind);
+    await mkdir(attempt);
+    const workspace = join(attempt, 'workspace');
+    await createWorkspace(materials, workspace, attempt);
+    if (kind === 'image-understanding' || kind === 'image-editing')
+      await writeFile(
+        join(workspace, 'input.png'),
+        Buffer.from(
+          'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6dWQAAAAASUVORK5CYII=',
+          'base64',
+        ),
+      );
+    const io = TaskIO.parse({
+      inputs: kind === 'image-understanding' || kind === 'image-editing' ? ['input.png'] : [],
+      outputs:
+        kind.startsWith('image-') && kind !== 'image-understanding'
+          ? [{ path: 'output.png', kind: 'image' }]
+          : kind.startsWith('html-')
+            ? [{ path: 'output.html', kind: 'html' }]
+            : kind.startsWith('coding-')
+              ? [{ path: 'new.ts', kind: 'code' }]
+              : [],
+      browser:
+        kind === 'browser-scenario' ? { kind: 'local', entry: 'index.html', instructions: 'Click Go and see 1' } : null,
+    });
+    const entrant = Entrant.parse({
+      id: randomUUID(),
+      harness: 'codex',
+      model: 'fixture',
+      settings: { timeoutMs: 10000 },
+    });
+    const adapter = await executeAdapter({
+      entrant,
+      executable: process.execPath,
+      prefix: [fileURLToPath(new URL('./fixtures/configured-harness.mjs', import.meta.url)), 'codex'],
+      workspace,
+      directory: attempt,
+      images: io.inputs.map((path) => join(workspace, path)),
+      prompt: `Task kind: ${kind}\nTask IO: ${JSON.stringify(io)}`,
+      writable: true,
+    });
+    if (kind.startsWith('coding-')) {
+      await rm(join(workspace, 'old.txt'));
+      await writeFile(join(workspace, 'index.html'), 'modified');
+    }
+    const output = await collectResults({
+      task,
+      io,
+      workspace,
+      directory: attempt,
+      materials,
+      text: adapter.text,
+      timeoutMs: 10000,
+    });
     expect(output.artifacts.length).toBeGreaterThan(0);
-    if (output.result.kind === 'browser') { const recordingId = output.result.recordingArtifactId; expect(output.artifacts.find((item) => item.id === recordingId)?.mediaType).toBe('video/webm'); expect(output.artifacts.some((item) => item.name.endsWith('trace.zip'))).toBe(true); }
-    if (output.result.kind === 'code') expect(output.result.changedFiles).toEqual(expect.arrayContaining([{path:'old.txt',change:'deleted'},{path:'new.ts',change:'added'},{path:'index.html',change:'modified'}]));
+    if (output.result.kind === 'browser') {
+      const recordingId = output.result.recordingArtifactId;
+      expect(output.artifacts.find((item) => item.id === recordingId)?.mediaType).toBe('video/webm');
+      expect(output.artifacts.some((item) => item.name.endsWith('trace.zip'))).toBe(true);
+    }
+    if (output.result.kind === 'code')
+      expect(output.result.changedFiles).toEqual(
+        expect.arrayContaining([
+          { path: 'old.txt', change: 'deleted' },
+          { path: 'new.ts', change: 'added' },
+          { path: 'index.html', change: 'modified' },
+        ]),
+      );
   }
-},30000);
-test('worker durably retries a lost terminal response and does not launch the attempt twice',async () => {
-  const directory = await root(); const runtimeId = RuntimeId.parse(randomUUID()); const taskId = randomUUID(); const entrantId = randomUUID();
-  const definition = {title:'suite',description:'',categories:[{id:randomUUID(),title:'category',tasks:[{id:taskId,title:'text',kind:'text-generation',prompt:'Hello',criterionIds:[]}]}],evaluation:{conversion:'rating-control-v1',criteria:[],rankingRules:[]},materials:{kind:'none'}};
-  const content = {schemaVersion:1,suiteId:randomUUID(),contentId:randomUUID(),revision:1,ordinal:1,createdAt:new Date().toISOString(),definition,digest:contentDigest({schemaVersion:1,definition})};
-  const snapshot = {protocol:1,content,runtimeId,selectedTaskIds:[taskId],entrants:[{id:entrantId,harness:'codex',model:'fixture',settings:{timeoutMs:5000}}],source:'fixture'};
-  const assignment = RunAssignment.parse({kind:'assigned',requestId:randomUUID(),assignmentId:randomUUID(),runId:randomUUID(),snapshot:{...snapshot,digest:contentDigest(snapshot)},attempts:[{attemptId:randomUUID(),taskId,entrantId,ordinal:0}]});
-  let starts = 0; let terminals = 0; let lost = true;
-  const server = createServer((request,response) => { void (async () => { const chunks=[]; for await (const chunk of request) chunks.push(Buffer.from(chunk)); const body=JSON.parse(Buffer.concat(chunks).toString());
-    response.setHeader('content-type','application/json');
-    if (request.url === '/api/worker/claims') response.end(JSON.stringify({...assignment,requestId:body.requestId}));
-    else { if (body.kind === 'started') starts++; if (body.kind === 'terminal') {terminals++; if (lost) {request.socket.destroy(); return;} } response.end(JSON.stringify({reportId:body.reportId,runId:body.runId,acceptedAt:'2026-10-01T00:00:00.000Z'})); }
-  })(); });
-  await new Promise<void>((resolve) => server.listen(0,'127.0.0.1',resolve)); const address=server.address(); if (!address || typeof address === 'string') throw new Error('address');
+}, 30000);
+test('worker durably retries a lost terminal response and does not launch the attempt twice', async () => {
+  const directory = await root();
+  const runtimeId = RuntimeId.parse(randomUUID());
+  const taskId = randomUUID();
+  const entrantId = randomUUID();
+  const definition = {
+    title: 'suite',
+    description: '',
+    categories: [
+      {
+        id: randomUUID(),
+        title: 'category',
+        tasks: [{ id: taskId, title: 'text', kind: 'text-generation', prompt: 'Hello', criterionIds: [] }],
+      },
+    ],
+    evaluation: { conversion: 'rating-control-v1', criteria: [], rankingRules: [] },
+    materials: { kind: 'none' },
+  };
+  const content = {
+    schemaVersion: 1,
+    suiteId: randomUUID(),
+    contentId: randomUUID(),
+    revision: 1,
+    ordinal: 1,
+    createdAt: new Date().toISOString(),
+    definition,
+    digest: contentDigest({ schemaVersion: 1, definition }),
+  };
+  const snapshot = {
+    protocol: 1,
+    content,
+    runtimeId,
+    selectedTaskIds: [taskId],
+    entrants: [{ id: entrantId, harness: 'codex', model: 'fixture', settings: { timeoutMs: 5000 } }],
+    source: 'fixture',
+  };
+  const assignment = RunAssignment.parse({
+    kind: 'assigned',
+    requestId: randomUUID(),
+    assignmentId: randomUUID(),
+    runId: randomUUID(),
+    snapshot: { ...snapshot, digest: contentDigest(snapshot) },
+    attempts: [{ attemptId: randomUUID(), taskId, entrantId, ordinal: 0 }],
+  });
+  let starts = 0;
+  let terminals = 0;
+  let lost = true;
+  const server = createServer((request, response) => {
+    void (async () => {
+      const chunks = [];
+      for await (const chunk of request) chunks.push(Buffer.from(chunk));
+      const body = JSON.parse(Buffer.concat(chunks).toString());
+      response.setHeader('content-type', 'application/json');
+      if (request.url === '/api/worker/claims')
+        response.end(JSON.stringify({ ...assignment, requestId: body.requestId }));
+      else {
+        if (body.kind === 'started') starts++;
+        if (body.kind === 'terminal') {
+          terminals++;
+          if (lost) {
+            request.socket.destroy();
+            return;
+          }
+        }
+        response.end(
+          JSON.stringify({ reportId: body.reportId, runId: body.runId, acceptedAt: '2026-10-01T00:00:00.000Z' }),
+        );
+      }
+    })();
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  if (!address || typeof address === 'string') throw new Error('address');
   try {
-    const configuration = RuntimeConfiguration.parse({version:1,apiUrl:`http://127.0.0.1:${address.port}`,installationId:randomUUID(),runtimeId,credentialId:randomUUID(),secret:'a'.repeat(64)});
-    const options={configuration,stateRoot:directory,executables:{}};
+    const configuration = RuntimeConfiguration.parse({
+      version: 1,
+      apiUrl: `http://127.0.0.1:${address.port}`,
+      installationId: randomUUID(),
+      runtimeId,
+      credentialId: randomUUID(),
+      secret: 'a'.repeat(64),
+    });
+    const options = { configuration, stateRoot: directory, executables: {} };
     await expect(runWorkerOnce(options)).rejects.toThrow();
     lost = false;
-    expect(await runWorkerOnce(options)).toEqual({kind:'finished',runId:assignment.runId});
-    expect(starts).toBe(1); expect(terminals).toBeGreaterThanOrEqual(2);
+    expect(await runWorkerOnce(options)).toEqual({ kind: 'finished', runId: assignment.runId });
+    expect(starts).toBe(1);
+    expect(terminals).toBeGreaterThanOrEqual(2);
     const interruptedRoot = await root();
-    const workRoot = join(runtimeRoot(interruptedRoot,configuration),'work');
-    const slot = assignment.attempts[0]; if (!slot) throw new Error('attempt');
-    const attemptDirectory = join(workRoot,assignment.runId,slot.attemptId);
-    await mkdir(attemptDirectory,{recursive:true});
-    await writeFile(join(workRoot,'assignment.json'),JSON.stringify(assignment));
-    await writeFile(join(attemptDirectory,'started.json'),JSON.stringify({protocol:1,runtimeId,assignmentId:assignment.assignmentId,runId:assignment.runId,kind:'started',reportId:randomUUID(),attemptId:slot.attemptId,startedAt:new Date().toISOString()}));
-    await runWorkerOnce({...options,stateRoot:interruptedRoot});
-    const terminal = JSON.parse(await readFile(join(attemptDirectory,'terminal.json'),'utf8'));
-    expect(terminal.outcome.kind).toBe('failed'); expect(terminal.outcome.reason).toContain('not relaunched'); expect(starts).toBe(2);
-  } finally { await new Promise<void>((resolve) => server.close(() => resolve())); }
-
+    const workRoot = join(runtimeRoot(interruptedRoot, configuration), 'work');
+    const slot = assignment.attempts[0];
+    if (!slot) throw new Error('attempt');
+    const attemptDirectory = join(workRoot, assignment.runId, slot.attemptId);
+    await mkdir(attemptDirectory, { recursive: true });
+    await writeFile(join(workRoot, 'assignment.json'), JSON.stringify(assignment));
+    await writeFile(
+      join(attemptDirectory, 'started.json'),
+      JSON.stringify({
+        protocol: 1,
+        runtimeId,
+        assignmentId: assignment.assignmentId,
+        runId: assignment.runId,
+        kind: 'started',
+        reportId: randomUUID(),
+        attemptId: slot.attemptId,
+        startedAt: new Date().toISOString(),
+      }),
+    );
+    await runWorkerOnce({ ...options, stateRoot: interruptedRoot });
+    const terminal = JSON.parse(await readFile(join(attemptDirectory, 'terminal.json'), 'utf8'));
+    expect(terminal.outcome.kind).toBe('failed');
+    expect(terminal.outcome.reason).toContain('not relaunched');
+    expect(starts).toBe(2);
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
 });
-for (const harness of ['codex','claude','opencode'] as const) for (const failure of ['FIXTURE_FAIL','FIXTURE_MALFORMED','FIXTURE_NO_TERMINAL']) test(`${harness} rejects ${failure}`,async () => {
-  const directory = await root(); const entrant = Entrant.parse({id:randomUUID(),harness,model:'exact',settings:{timeoutMs:5000}});
-  await expect(executeAdapter({entrant,executable:process.execPath,prefix:[fileURLToPath(new URL('./fixtures/configured-harness.mjs',import.meta.url)),harness],workspace:directory,directory,prompt:failure,writable:false})).rejects.toThrow();
-  expect((await readFile(join(directory,'stdout.log'),'utf8')).length + (await readFile(join(directory,'stderr.log'),'utf8')).length).toBeGreaterThan(0);
-});
-test('required outputs reject absence, escaping symlinks, invalid raster data and failed browser assertions',async () => {
-  const directory=await root(); const workspace=join(directory,'workspace'); await mkdir(workspace);
-  const task=TaskDefinition.parse({id:randomUUID(),title:'image',kind:'image-generation',prompt:'image',criterionIds:[]});
-  const io=TaskIO.parse({inputs:[],outputs:[{path:'output.png',kind:'image'}],browser:null});
-  const args={task,io,workspace,directory,materials:{kind:'none'} as const,text:'done',timeoutMs:5000};
+for (const harness of ['codex', 'claude', 'opencode'] as const)
+  for (const failure of ['FIXTURE_FAIL', 'FIXTURE_MALFORMED', 'FIXTURE_NO_TERMINAL'])
+    test(`${harness} rejects ${failure}`, async () => {
+      const directory = await root();
+      const entrant = Entrant.parse({ id: randomUUID(), harness, model: 'exact', settings: { timeoutMs: 5000 } });
+      await expect(
+        executeAdapter({
+          entrant,
+          executable: process.execPath,
+          prefix: [fileURLToPath(new URL('./fixtures/configured-harness.mjs', import.meta.url)), harness],
+          workspace: directory,
+          directory,
+          prompt: failure,
+          writable: false,
+        }),
+      ).rejects.toThrow();
+      expect(
+        (await readFile(join(directory, 'stdout.log'), 'utf8')).length +
+          (await readFile(join(directory, 'stderr.log'), 'utf8')).length,
+      ).toBeGreaterThan(0);
+    });
+test('required outputs reject absence, escaping symlinks, invalid raster data and failed browser assertions', async () => {
+  const directory = await root();
+  const workspace = join(directory, 'workspace');
+  await mkdir(workspace);
+  const task = TaskDefinition.parse({
+    id: randomUUID(),
+    title: 'image',
+    kind: 'image-generation',
+    prompt: 'image',
+    criterionIds: [],
+  });
+  const io = TaskIO.parse({ inputs: [], outputs: [{ path: 'output.png', kind: 'image' }], browser: null });
+  const args = { task, io, workspace, directory, materials: { kind: 'none' } as const, text: 'done', timeoutMs: 5000 };
   await expect(collectResults(args)).rejects.toThrow();
-  await writeFile(join(workspace,'output.png'),'not an image'); await expect(collectResults(args)).rejects.toThrow('raster');
-  await rm(join(workspace,'output.png')); await symlink('/etc/passwd',join(workspace,'output.png')); await expect(collectResults(args)).rejects.toThrow('Symbolic');
-  await writeFile(join(workspace,'index.html'),'<h1>Actual</h1>');
-  await expect(collectResults({...args,task:{...task,kind:'browser-scenario'},io:{inputs:[],outputs:[],browser:{kind:'local',entry:'index.html',instructions:'check text'}},text:JSON.stringify({steps:[{kind:'expect-text',selector:'h1',text:'Wrong'}]})})).rejects.toThrow('assertion');
+  await writeFile(join(workspace, 'output.png'), 'not an image');
+  await expect(collectResults(args)).rejects.toThrow('raster');
+  await rm(join(workspace, 'output.png'));
+  await symlink('/etc/passwd', join(workspace, 'output.png'));
+  await expect(collectResults(args)).rejects.toThrow('Symbolic');
+  await writeFile(join(workspace, 'index.html'), '<h1>Actual</h1>');
+  await expect(
+    collectResults({
+      ...args,
+      task: { ...task, kind: 'browser-scenario' },
+      io: { inputs: [], outputs: [], browser: { kind: 'local', entry: 'index.html', instructions: 'check text' } },
+      text: JSON.stringify({ steps: [{ kind: 'expect-text', selector: 'h1', text: 'Wrong' }] }),
+    }),
+  ).rejects.toThrow('assertion');
 });
-test('HTML bundle includes referenced local assets and refuses broken references',async () => {
-  const directory=await root(); await writeFile(join(directory,'index.html'),'<html><link href="style.css"><script src="app.js"></script></html>'); await writeFile(join(directory,'style.css'),'body { color: red; }'); await writeFile(join(directory,'app.js'),'document.title = "ready";');
-  const task=TaskDefinition.parse({id:randomUUID(),title:'HTML',kind:'html-interactive',prompt:'page',criterionIds:[]}); const io=TaskIO.parse({inputs:[],outputs:[{path:'index.html',kind:'html'}],browser:null});
-  const options={task,io,workspace:directory,directory,materials:{kind:'none'} as const,text:'done',timeoutMs:5000};
-  const result=await collectResults(options); expect(result.artifacts.map((item) => item.name).sort()).toEqual(['app.js','index.html','style.css']);
-  await rm(join(directory,'app.js')); await expect(collectResults(options)).rejects.toThrow();
+test('HTML bundle includes referenced local assets and refuses broken references', async () => {
+  const directory = await root();
+  await writeFile(join(directory, 'index.html'), '<html><link href="style.css"><script src="app.js"></script></html>');
+  await writeFile(join(directory, 'style.css'), 'body { color: red; }');
+  await writeFile(join(directory, 'app.js'), 'document.title = "ready";');
+  const task = TaskDefinition.parse({
+    id: randomUUID(),
+    title: 'HTML',
+    kind: 'html-interactive',
+    prompt: 'page',
+    criterionIds: [],
+  });
+  const io = TaskIO.parse({ inputs: [], outputs: [{ path: 'index.html', kind: 'html' }], browser: null });
+  const options = {
+    task,
+    io,
+    workspace: directory,
+    directory,
+    materials: { kind: 'none' } as const,
+    text: 'done',
+    timeoutMs: 5000,
+  };
+  const result = await collectResults(options);
+  expect(result.artifacts.map((item) => item.name).sort()).toEqual(['app.js', 'index.html', 'style.css']);
+  await rm(join(directory, 'app.js'));
+  await expect(collectResults(options)).rejects.toThrow();
 });
 
 test('browser collection accepts a JSON code fence from the harness and still executes the validated plan', async () => {
-  const directory = await root(); const workspace = await repository(directory);
-  const task = TaskDefinition.parse({id:randomUUID(),title:'Browser',kind:'browser-scenario',prompt:'Click Go',criterionIds:[]});
-  const io = TaskIO.parse({inputs:[],outputs:[],browser:{kind:'local',entry:'index.html',instructions:'Click Go'}});
-  const text = '```json\n{"steps":[{"kind":"click","selector":"button"},{"kind":"expect-text","selector":"#count","text":"1"}]}\n```';
-  const collected = await collectResults({task,io,workspace,directory,materials:{kind:'none'},text,timeoutMs:10000});
+  const directory = await root();
+  const workspace = await repository(directory);
+  const task = TaskDefinition.parse({
+    id: randomUUID(),
+    title: 'Browser',
+    kind: 'browser-scenario',
+    prompt: 'Click Go',
+    criterionIds: [],
+  });
+  const io = TaskIO.parse({
+    inputs: [],
+    outputs: [],
+    browser: { kind: 'local', entry: 'index.html', instructions: 'Click Go' },
+  });
+  const text =
+    '```json\n{"steps":[{"kind":"click","selector":"button"},{"kind":"expect-text","selector":"#count","text":"1"}]}\n```';
+  const collected = await collectResults({
+    task,
+    io,
+    workspace,
+    directory,
+    materials: { kind: 'none' },
+    text,
+    timeoutMs: 10000,
+  });
   expect(collected.result.kind).toBe('browser');
-  expect(collected.artifacts.some(artifact=>artifact.mediaType==='video/webm')).toBe(true);
-  await expect(collectResults({task,io,workspace,directory,materials:{kind:'none'},text:'```json\n{"steps":[{"kind":"execute","code":"arbitrary"}]}\n```',timeoutMs:10000})).rejects.toThrow();
+  expect(collected.artifacts.some((artifact) => artifact.mediaType === 'video/webm')).toBe(true);
+  await expect(
+    collectResults({
+      task,
+      io,
+      workspace,
+      directory,
+      materials: { kind: 'none' },
+      text: '```json\n{"steps":[{"kind":"execute","code":"arbitrary"}]}\n```',
+      timeoutMs: 10000,
+    }),
+  ).rejects.toThrow();
 });
 
 test('coding collection preserves Unicode filenames and classifies staged additions', async () => {
-  const directory = await root(); const source = await repository(directory);
-  await writeFile(join(source,'café.txt'),'before');
-  await git(['add','café.txt'],source,directory);
-  await git(['-c','user.name=Test','-c','user.email=test@example.com','commit','-m','Unicode material'],source,directory);
-  const materials = await prepareMaterials({kind:'repository',url:source,requestedRef:'main'},join(directory,'materials'));
-  const workspace = join(directory,'workspace'); await createWorkspace(materials,workspace,directory);
-  await writeFile(join(workspace,'café.txt'),'after'); await writeFile(join(workspace,'added.txt'),'new');
-  await git(['add','added.txt'],workspace,directory);
-  const task=TaskDefinition.parse({id:randomUUID(),title:'Coding',kind:'coding-feature',prompt:'Edit files',criterionIds:[]});
-  const output=await collectResults({task,io:TaskIO.parse({inputs:[],outputs:[],browser:null}),workspace,directory,materials,text:'Done',timeoutMs:10000});
-  expect(output.result).toMatchObject({kind:'code',changedFiles:expect.arrayContaining([{path:'café.txt',change:'modified'},{path:'added.txt',change:'added'}])});
-  expect(output.artifacts.find(artifact=>artifact.name==='café.txt')?.base64).toBe(Buffer.from('after').toString('base64'));
+  const directory = await root();
+  const source = await repository(directory);
+  await writeFile(join(source, 'café.txt'), 'before');
+  await git(['add', 'café.txt'], source, directory);
+  await git(
+    ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', 'commit', '-m', 'Unicode material'],
+    source,
+    directory,
+  );
+  const materials = await prepareMaterials(
+    { kind: 'repository', url: source, requestedRef: 'main' },
+    join(directory, 'materials'),
+  );
+  const workspace = join(directory, 'workspace');
+  await createWorkspace(materials, workspace, directory);
+  await writeFile(join(workspace, 'café.txt'), 'after');
+  await writeFile(join(workspace, 'added.txt'), 'new');
+  await git(['add', 'added.txt'], workspace, directory);
+  const task = TaskDefinition.parse({
+    id: randomUUID(),
+    title: 'Coding',
+    kind: 'coding-feature',
+    prompt: 'Edit files',
+    criterionIds: [],
+  });
+  const output = await collectResults({
+    task,
+    io: TaskIO.parse({ inputs: [], outputs: [], browser: null }),
+    workspace,
+    directory,
+    materials,
+    text: 'Done',
+    timeoutMs: 10000,
+  });
+  expect(output.result).toMatchObject({
+    kind: 'code',
+    changedFiles: expect.arrayContaining([
+      { path: 'café.txt', change: 'modified' },
+      { path: 'added.txt', change: 'added' },
+    ]),
+  });
+  expect(output.artifacts.find((artifact) => artifact.name === 'café.txt')?.base64).toBe(
+    Buffer.from('after').toString('base64'),
+  );
+});
+
+test('task directories remain contained, original inputs survive edits, code checks and browser replay contain observed evidence', async () => {
+  const { taskWorkspace } = await import('../apps/runner/src/materials.ts');
+  const { captureInputs } = await import('../apps/runner/src/artifacts.ts');
+  const directory = await root(),
+    source = await repository(directory);
+  await mkdir(join(source, 'tasks'));
+  await writeFile(join(source, 'tasks', 'before.txt'), 'Original source');
+  await git(['add', '.'], source, directory);
+  await git(['-c', 'user.email=t@example.com', '-c', 'user.name=T', 'commit', '-m', 'task'], source, directory);
+  const materials = await prepareMaterials(
+    { kind: 'repository', url: source, requestedRef: 'main' },
+    join(directory, 'materials'),
+  );
+  const checkout = join(directory, 'checkout');
+  await createWorkspace(materials, checkout, directory);
+  const workspace = await taskWorkspace(checkout, 'tasks');
+  expect(workspace).toBe(join(checkout, 'tasks'));
+  await expect(taskWorkspace(checkout, '../escape')).rejects.toThrow();
+  await symlink(directory, join(checkout, 'escape'));
+  await expect(taskWorkspace(checkout, 'escape')).rejects.toThrow('directory');
+  const task = TaskDefinition.parse({
+      id: randomUUID(),
+      title: 'Edit',
+      kind: 'text-editing',
+      prompt: 'Edit the source',
+      criterionIds: [],
+      path: 'tasks',
+    }),
+    io = TaskIO.parse({ inputs: ['before.txt'], outputs: [], browser: null });
+  const original = await captureInputs(task, io, workspace);
+  await writeFile(join(workspace, 'before.txt'), 'Changed');
+  expect(Buffer.from(original[0]!.base64, 'base64').toString()).toBe('Original source');
+  const checked = await collectResults({
+    task: { ...task, kind: 'coding-feature' },
+    io: {
+      ...io,
+      checks: [
+        { name: 'passing', command: process.execPath, args: ['-e', 'process.exit(0)'] },
+        { name: 'failing', command: process.execPath, args: ['-e', 'process.exit(1)'] },
+      ],
+    },
+    workspace,
+    directory,
+    materials,
+    text: 'Changed file',
+    timeoutMs: 5000,
+  });
+  expect(checked.result).toMatchObject({
+    kind: 'code',
+    checks: { passed: 1, total: 2 },
+    changedFiles: [{ path: 'before.txt', change: 'modified' }],
+  });
+  const browserTask = { ...task, kind: 'browser-scenario' as const };
+  const browserResult = await collectResults({
+    task: browserTask,
+    io: { inputs: [], outputs: [], browser: { kind: 'local', entry: 'index.html', instructions: 'Click Go' } },
+    workspace: checkout,
+    directory,
+    materials,
+    text: JSON.stringify({
+      steps: [
+        { kind: 'click', selector: 'button' },
+        { kind: 'expect-text', selector: '#count', text: '1' },
+      ],
+    }),
+    timeoutMs: 5000,
+  });
+  expect(browserResult.result).toMatchObject({
+    kind: 'browser',
+    steps: [
+      { action: 'click', target: 'button', url: '/index.html' },
+      { action: 'expect-text', target: '#count', url: '/index.html' },
+    ],
+  });
+  const previous = process.env.ARTIFICIAL_ANALYSIS_API_KEY;
+  try {
+    process.env.ARTIFICIAL_ANALYSIS_API_KEY = 'dashboard-secret';
+    expect(executionEnvironment().ARTIFICIAL_ANALYSIS_API_KEY).toBeUndefined();
+  } finally {
+    if (previous === undefined) delete process.env.ARTIFICIAL_ANALYSIS_API_KEY;
+    else process.env.ARTIFICIAL_ANALYSIS_API_KEY = previous;
+  }
+});
+
+test('cancellation heartbeat stops a live subprocess and retires its assignment without inventing terminal results', async () => {
+  const directory = await root(),
+    executable = join(directory, 'waiting-codex'),
+    pidFile = join(directory, 'pid');
+  await writeFile(
+    executable,
+    `#!${process.execPath}\nconst fs=await import('node:fs');if(process.argv.includes('--version')){console.log('codex 1.0.0');process.exit();}fs.writeFileSync(${JSON.stringify(pidFile)},String(process.pid));setInterval(()=>{},1000);`,
+    { mode: 0o700 },
+  );
+  const runtimeId = randomUUID(),
+    taskId = randomUUID(),
+    entrantId = randomUUID();
+  const definition = {
+    title: 'Cancel',
+    description: '',
+    categories: [
+      {
+        id: randomUUID(),
+        title: 'Tasks',
+        tasks: [{ id: taskId, title: 'Wait', kind: 'text-generation', prompt: 'Wait', criterionIds: [] }],
+      },
+    ],
+    evaluation: { conversion: 'rating-control-v1', criteria: [], rankingRules: [] },
+    materials: { kind: 'none' },
+  };
+  const content = {
+    schemaVersion: 1,
+    suiteId: randomUUID(),
+    contentId: randomUUID(),
+    revision: 1,
+    ordinal: 1,
+    createdAt: new Date().toISOString(),
+    definition,
+    digest: contentDigest({ schemaVersion: 1, definition }),
+  };
+  const snapshot = {
+    protocol: 1,
+    content,
+    runtimeId,
+    selectedTaskIds: [taskId],
+    entrants: [{ id: entrantId, harness: 'codex', model: 'waiting', settings: { timeoutMs: 20000 } }],
+    source: 'live',
+  };
+  const assignment = RunAssignment.parse({
+    kind: 'assigned',
+    requestId: randomUUID(),
+    assignmentId: randomUUID(),
+    runId: randomUUID(),
+    snapshot: { ...snapshot, digest: contentDigest(snapshot) },
+    attempts: [{ attemptId: randomUUID(), taskId, entrantId, ordinal: 0 }],
+  });
+  let offline = false;
+  let cancel = false,
+    terminals = 0;
+  const server = createServer((request, response) => {
+    void (async () => {
+      const chunks = [];
+      for await (const c of request) chunks.push(Buffer.from(c));
+      const body = JSON.parse(Buffer.concat(chunks).toString());
+      if (request.url === '/api/worker/claims')
+        response.end(JSON.stringify({ ...assignment, requestId: body.requestId }));
+      else if (request.url === '/api/worker/heartbeat') {
+        if (offline) {
+          response.statusCode = 503;
+          response.end('{}');
+        } else response.end(JSON.stringify({ cancelled: cancel }));
+      } else {
+        if (body.kind === 'terminal') terminals++;
+        response.end(
+          JSON.stringify({ reportId: body.reportId, runId: assignment.runId, acceptedAt: new Date().toISOString() }),
+        );
+      }
+    })();
+  });
+  await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
+  const address = server.address();
+  if (!address || typeof address === 'string') throw new Error();
+  const configuration = RuntimeConfiguration.parse({
+    version: 1,
+    apiUrl: `http://127.0.0.1:${address.port}`,
+    installationId: randomUUID(),
+    runtimeId,
+    credentialId: randomUUID(),
+    secret: 'a'.repeat(64),
+  });
+  try {
+    const running = runWorkerOnce({ configuration, stateRoot: directory, executables: { codex: executable } });
+    await expect
+      .poll(
+        async () => {
+          try {
+            return Number(await readFile(pidFile, 'utf8'));
+          } catch {
+            return 0;
+          }
+        },
+        { timeout: 5000 },
+      )
+      .toBeGreaterThan(0);
+    cancel = true;
+    expect(await running).toEqual({ kind: 'finished', runId: assignment.runId, cancelled: true });
+    expect(terminals).toBe(0);
+    const pid = Number(await readFile(pidFile, 'utf8'));
+    expect(() => process.kill(pid, 0)).toThrow();
+    const work = join(runtimeRoot(directory, configuration), 'work');
+    await expect(readFile(join(work, 'assignment.json'))).rejects.toThrow();
+    const marker = await readFile(join(work, assignment.runId, 'cancelled.json'), 'utf8');
+    await writeFile(join(work, 'assignment.json'), JSON.stringify(assignment));
+    offline = true;
+    expect(
+      await runWorkerOnce({ configuration, stateRoot: directory, executables: { codex: executable } }),
+    ).toMatchObject({ cancelled: true });
+    expect(await readFile(join(work, assignment.runId, 'cancelled.json'), 'utf8')).toBe(marker);
+    await expect(readFile(join(work, 'assignment.json'))).rejects.toThrow();
+  } finally {
+    await new Promise<void>((done) => server.close(() => done()));
+  }
+});
+
+test('optional browser thumbnails respect bundle limits and long navigation targets remain valid', async () => {
+  const directory = await root(),
+    workspace = await repository(directory),
+    task = TaskDefinition.parse({
+      id: randomUUID(),
+      title: 'Replay budget',
+      kind: 'browser-scenario',
+      prompt: 'Screenshots',
+      criterionIds: [],
+    });
+  const output = await collectResults({
+    task,
+    io: { inputs: [], outputs: [], browser: { kind: 'local', entry: 'index.html', instructions: 'Capture' } },
+    workspace,
+    directory,
+    materials: { kind: 'none' },
+    text: JSON.stringify({
+      steps: Array.from({ length: 15 }, (_, i) => ({ kind: 'screenshot', path: `screen-${i}.png` })),
+    }),
+    timeoutMs: 20000,
+  });
+  expect(output.result.kind).toBe('browser');
+  expect(output.artifacts.length).toBeLessThanOrEqual(30);
+  expect(output.artifacts.filter((a) => a.name.match(/screen-\d+\.png/))).toHaveLength(15);
+  if (output.result.kind === 'browser') expect(output.result.steps!.length).toBeGreaterThan(0);
+  const server = createServer((_request, response) => {
+    response.setHeader('content-type', 'text/html');
+    response.end('<main>Ready</main>');
+  });
+  await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
+  const address = server.address();
+  if (!address || typeof address === 'string') throw new Error();
+  const url = `http://127.0.0.1:${address.port}/`;
+  try {
+    const second = await collectResults({
+      task,
+      io: { inputs: [], outputs: [], browser: { kind: 'remote', startUrl: url, instructions: 'Navigate' } },
+      workspace,
+      directory: join(directory, 'long'),
+      materials: { kind: 'none' },
+      text: JSON.stringify({ steps: [{ kind: 'goto', url: url + '?query=' + 'a'.repeat(600) }] }),
+      timeoutMs: 10000,
+    });
+    const { ResultDescriptor } = await import('../packages/contracts/src/configured-runs.ts');
+    expect(() => ResultDescriptor.parse(second.result)).not.toThrow();
+    if (second.result.kind === 'browser') expect(second.result.steps![0]!.target).toHaveLength(500);
+  } finally {
+    await new Promise<void>((done) => server.close(() => done()));
+  }
 });

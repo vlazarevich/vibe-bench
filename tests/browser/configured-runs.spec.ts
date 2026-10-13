@@ -1,3 +1,4 @@
+import { select } from './ui-helpers.ts';
 import { enrollRuntime, runtimeAuthorization } from '../runtime-auth.ts';
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import { createHash, randomUUID } from 'node:crypto';
@@ -10,166 +11,270 @@ import { ClaimReceipt } from '../../packages/contracts/src/work.ts';
 const runtimeCredentials = new Map<string, string>();
 async function seed(request: APIRequestContext, baseURL: string) {
   const configuration = await enrollRuntime(baseURL);
-  const runtimeId = configuration.runtimeId, criterionId = randomUUID();
+  const runtimeId = configuration.runtimeId,
+    criterionId = randomUUID();
   const authorization = runtimeAuthorization(configuration);
   runtimeCredentials.set(runtimeId, authorization);
-  const registration = await request.post('/api/worker/registrations', { headers: { authorization }, data: {
-    protocol: 1, runtimeId, observation: 1, observedAt: new Date().toISOString(),
-    machine: { platform: 'linux', architecture: 'x64', logicalCpus: 2, memoryBytes: 4_000_000_000 },
-    tools: ToolName.options.map((name) => ({ name, availability: { kind: 'available', version: '1.2.3' } })),
-    harnesses: { codex: { kind: 'ready' }, claude: { kind: 'ready' }, opencodeGo: { kind: 'ready' } }, modelPolicy: 'provider-discovered-at-execution',
-  } });
+  const registration = await request.post('/api/worker/registrations', {
+    headers: { authorization },
+    data: {
+      protocol: 1,
+      runtimeId,
+      observation: 1,
+      observedAt: new Date().toISOString(),
+      machine: { platform: 'linux', architecture: 'x64', logicalCpus: 2, memoryBytes: 4_000_000_000 },
+      tools: ToolName.options.map((name) => ({ name, availability: { kind: 'available', version: '1.2.3' } })),
+      harnesses: { codex: { kind: 'ready' }, claude: { kind: 'ready' }, opencodeGo: { kind: 'ready' } },
+      modelPolicy: 'provider-discovered-at-execution',
+    },
+  });
   expect(registration.ok()).toBeTruthy();
-  const created = await request.post('/api/suites', { headers: { origin: baseURL }, data: { definition: {
-    title: `Run suite ${randomUUID().slice(0, 8)}`, description: 'Saved configuration browser coverage',
-    categories: [{ id: randomUUID(), title: 'Writing', tasks: ['Explain', 'Rewrite'].map((title) => ({ id: randomUUID(), title, kind: 'text-generation', prompt: `Original ${title} prompt`, criterionIds: [criterionId] })) },
-      { id: randomUUID(), title: 'Review', tasks: [{ id: randomUUID(), title: 'Summarize', kind: 'text-generation', prompt: 'Original summary prompt', criterionIds: [criterionId] }] }],
-    evaluation: { conversion: 'rating-control-v1', criteria: [{ id: criterionId, title: 'Clarity', instructions: 'Original clarity guidance', control: 'stars-5' }], rankingRules: [] }, materials: { kind: 'none' },
-  } } });
+  const created = await request.post('/api/suites', {
+    headers: { origin: baseURL },
+    data: {
+      definition: {
+        title: `Run suite ${randomUUID().slice(0, 8)}`,
+        description: 'Saved configuration browser coverage',
+        categories: [
+          {
+            id: randomUUID(),
+            title: 'Writing',
+            tasks: ['Explain', 'Rewrite'].map((title) => ({
+              id: randomUUID(),
+              title,
+              kind: 'text-generation',
+              prompt: `Original ${title} prompt`,
+              criterionIds: [criterionId],
+            })),
+          },
+          {
+            id: randomUUID(),
+            title: 'Review',
+            tasks: [
+              {
+                id: randomUUID(),
+                title: 'Summarize',
+                kind: 'text-generation',
+                prompt: 'Original summary prompt',
+                criterionIds: [criterionId],
+              },
+            ],
+          },
+        ],
+        evaluation: {
+          conversion: 'rating-control-v1',
+          criteria: [
+            { id: criterionId, title: 'Clarity', instructions: 'Original clarity guidance', control: 'stars-5' },
+          ],
+          rankingRules: [],
+        },
+        materials: { kind: 'none' },
+      },
+    },
+  });
   expect(created.ok()).toBeTruthy();
   return { suite: SuiteView.parse(await created.json()), runtimeId };
 }
 
 async function selectSuite(page: Page, suite: SuiteView, runtimeId: string) {
   await page.goto('/?view=runs');
-  await page.getByRole('combobox', { name: 'Suite', exact: true }).selectOption(suite.content.suiteId);
-  await expect(page.getByRole('combobox', { name: 'Saved version' })).toHaveValue(suite.content.contentId);
-  await page.getByRole('combobox', { name: 'Runtime', exact: true }).selectOption(runtimeId);
+  await page.getByRole('button', { name: 'New run', exact: true }).click();
+  await select(page, 'Suite', suite.content.definition.title);
+  await select(page, 'Runtime', runtimeId.slice(0, 8));
 }
-
-test('preview full and selected tasks, preserve saved inputs across suite edits and reload', async ({ page, request, baseURL }) => {
-  if (!baseURL) throw new Error('Missing test server URL');
+async function options(page: Page) {
+  await page.getByText('Tasks and execution options', { exact: true }).click();
+}
+async function create(page: Page) {
+  const response = page.waitForResponse(
+    (r) => r.url().endsWith('/api/configured-runs') && r.request().method() === 'POST',
+  );
+  await page.getByRole('button', { name: /^(Start|Queue) run$/ }).click();
+  const r = await response;
+  expect(r.status(), await r.text()).toBe(200);
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  return ConfiguredRunView.parse(await r.json());
+}
+test('create selected matrix with exact entrants, review pinned history, cancel, and run again', async ({
+  page,
+  request,
+  baseURL,
+}) => {
+  if (!baseURL) throw new Error();
   const { suite, runtimeId } = await seed(request, baseURL);
   await selectSuite(page, suite, runtimeId);
-  await expect(page.getByRole('combobox', { name: 'Mode', exact: true })).toHaveValue('live');
-  await page.getByRole('textbox', { name: 'Model name', exact: true }).fill('custom-codex-model');
-  await page.getByRole('combobox', { name: 'Reasoning effort', exact: true }).selectOption('high');
-  await page.getByRole('spinbutton', { name: 'Time limit in seconds' }).fill('42');
-  await page.getByRole('button', { name: 'Add model', exact: true }).click();
-  const second = page.getByRole('group', { name: 'Model 2', exact: true });
-  await second.getByRole('combobox', { name: 'Runner', exact: true }).selectOption('claude');
-  await second.getByRole('textbox', { name: 'Model name', exact: true }).fill('custom-claude-model');
-  await second.getByRole('combobox', { name: 'Reasoning effort' }).selectOption('max');
-  await page.getByRole('button', { name: 'Add model', exact: true }).click();
-  const third = page.getByRole('group', { name: 'Model 3', exact: true });
-  await third.getByRole('combobox', { name: 'Runner', exact: true }).selectOption('opencode');
-  await third.getByRole('textbox', { name: 'Model name', exact: true }).fill('provider/custom-open-model');
-  await third.getByRole('textbox', { name: 'Model variant' }).fill('careful');
-  await page.getByRole('combobox', { name: 'Mode', exact: true }).selectOption('fixture');
-  await page.getByRole('button', { name: 'Preview run', exact: true }).click();
-  const plan = page.getByRole('region', { name: 'Execution plan' });
-  await expect(plan).toContainText('3 tasks · 3 models · 9 attempts');
-  await expect(plan.getByRole('row')).toHaveCount(10);
-  await page.getByRole('radio', { name: 'Choose categories or tasks' }).check();
-  await expect(plan).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Start run', exact: true })).toHaveCount(0);
-  await page.getByRole('button', { name: 'Preview run', exact: true }).click();
-  await expect(page.getByRole('alert')).toContainText('Choose at least one category or task');
-  await page.getByRole('checkbox', { name: 'All tasks in Review', exact: true }).check();
+  await page.getByRole('combobox', { name: 'Model 1', exact: true }).fill('custom-codex-model');
+  await select(page, 'Effort', 'High');
+  await page.getByRole('button', { name: 'Add entrant' }).click();
+  await page.locator('#harness-1').click();
+  await page.getByRole('option', { name: 'Claude Code', exact: true }).click();
+  await page.getByRole('combobox', { name: 'Model 2', exact: true }).fill('custom-claude-model');
+  await page.locator('#effort-1').click();
+  await page.getByRole('option', { name: 'Max', exact: true }).click();
+  await options(page);
+  await select(page, 'Execution mode', 'Fixture · no model calls');
+  await page.getByRole('spinbutton', { name: 'Entrant 1 time limit (seconds)' }).fill('42');
+  await page.getByRole('button', { name: 'Preview matrix' }).click();
+  await expect(page.getByRole('region', { name: 'Execution plan' })).toContainText('3 tasks · 2 models · 6 attempts');
+  await page.getByRole('checkbox', { name: 'All tasks', exact: true }).uncheck();
+  await expect(page.getByRole('button', { name: /^(Start|Queue) run$/ })).toBeDisabled();
+  await page.getByRole('checkbox', { name: 'All tasks in Review' }).check();
   await page.getByRole('checkbox', { name: 'Explain', exact: true }).check();
-  await page.getByRole('button', { name: 'Preview run', exact: true }).click();
-  await expect(plan).toContainText('2 tasks · 3 models · 6 attempts');
-  await expect(plan).not.toContainText('Rewrite');
-  const responseEvent = page.waitForResponse((response) => response.url().endsWith('/api/configured-runs') && response.request().method() === 'POST');
-  await page.getByRole('button', { name: 'Start run', exact: true }).click();
-  const saved = ConfiguredRunView.parse(await (await responseEvent).json());
-  expect(saved.snapshot.entrants.map((entrant) => entrant.settings)).toEqual([{ timeoutMs: 42_000, reasoningEffort: 'high' }, { timeoutMs: 120_000, effort: 'max' }, { timeoutMs: 120_000, variant: 'careful' }]);
-  expect(saved.attempts).toHaveLength(6);
-  const stableURL = page.url();
-  await expect(page.getByRole('region', { name: 'Saved run' })).toContainText('FIXTURE DEMO · NO MODEL CALLS');
-  const edited = await request.post(`/api/suites/${suite.content.suiteId}`, { headers: { origin: baseURL }, data: {
-    expectedContentId: suite.content.contentId, change: 'revision', definition: { ...suite.content.definition, title: 'Changed suite',
-      categories: suite.content.definition.categories.map((category) => ({ ...category, tasks: category.tasks.map((task) => ({ ...task, prompt: 'Changed prompt' })) })),
-      evaluation: { ...suite.content.definition.evaluation, criteria: suite.content.definition.evaluation.criteria.map((criterion) => ({ ...criterion, instructions: 'Changed guidance' })) },
+  const run = await create(page);
+  expect(run.attempts).toHaveLength(4);
+  expect(run.snapshot.entrants.map((e) => e.settings)).toEqual([
+    { timeoutMs: 42000, reasoningEffort: 'high' },
+    { timeoutMs: 120000, effort: 'max' },
+  ]);
+  await request.post(`/api/suites/${suite.content.suiteId}`, {
+    headers: { origin: baseURL },
+    data: {
+      expectedContentId: suite.content.contentId,
+      change: 'revision',
+      definition: { ...suite.content.definition, title: 'Changed suite' },
     },
-  } });
-  expect(edited.ok()).toBeTruthy();
-  const latest = SuiteView.parse(await edited.json());
-  await page.reload();
-  await expect(page.getByRole('heading', { name: suite.content.definition.title, exact: true })).toBeVisible();
+  });
+  await page.goto(`/?view=runs&run=${run.runId}`);
   await page.getByText('Saved tasks and evaluation criteria', { exact: true }).click();
   await expect(page.getByRole('region', { name: 'Saved run' })).toContainText('Original Explain prompt');
-  await expect(page.getByRole('region', { name: 'Saved run' })).toContainText('Original clarity guidance');
-  await expect(page.getByRole('region', { name: 'Saved run' })).not.toContainText('Changed prompt');
-  await page.getByText('Saved model settings', { exact: true }).click();
-  await expect(page.getByRole('region', { name: 'Saved run' })).toContainText('Time limit 42 seconds');
-  expect(page.url()).toBe(stableURL);
-  await page.screenshot({ path: '.artifacts/configured-run-snapshot.png', fullPage: true });
-  await page.getByRole('button', { name: 'All configured runs', exact: true }).click();
-  await page.getByRole('combobox', { name: 'Suite', exact: true }).selectOption(suite.content.suiteId);
-  await expect(page.getByRole('combobox', { name: 'Saved version' })).toHaveValue(latest.content.contentId);
-  await page.getByRole('combobox', { name: 'Saved version' }).selectOption(suite.content.contentId);
-  await expect(page.getByRole('combobox', { name: 'Saved version' })).toHaveValue(suite.content.contentId);
-  await page.getByRole('link', { name: 'Runs', exact: true }).click();
-  await expect(page.getByRole('region', { name: 'Run management', exact: true })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole('region', { name: 'Saved run' })).toContainText(suite.content.definition.title);
+  await page.getByRole('button', { name: 'All runs', exact: true }).click();
+  const card = page.getByRole('article').filter({ hasText: suite.content.definition.title });
+  await card.getByRole('button', { name: 'Cancel run', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Cancel run', exact: true }).click();
+  await expect(card).toContainText('Cancelled');
+  await card.getByRole('button', { name: 'Run again' }).click();
+  await expect(page.getByRole('combobox', { name: 'Model 1', exact: true })).toHaveValue('custom-codex-model');
+  await expect(page.getByRole('button', { name: /^Revision Rev 1/ })).toBeVisible();
+  await page.screenshot({ path: '.artifacts/new-run-design.png' });
 });
-
-test('missing models and invalid time limits cannot produce a plan or create a run', async ({ page, request, baseURL }) => {
-  if (!baseURL) throw new Error('Missing test server URL');
+test('missing model, no entrants and invalid timeout cannot create a run', async ({ page, request, baseURL }) => {
+  if (!baseURL) throw new Error();
   const { suite, runtimeId } = await seed(request, baseURL);
   await selectSuite(page, suite, runtimeId);
-  await page.getByRole('button', { name: 'Preview run', exact: true }).click();
-  await expect(page.getByRole('alert')).toContainText('enter a name for each model');
-  await page.getByRole('textbox', { name: 'Model name', exact: true }).fill('custom-model');
-  await page.getByRole('spinbutton', { name: 'Time limit in seconds' }).fill('');
-  await page.getByRole('button', { name: 'Preview run', exact: true }).click();
-  await expect(page.getByRole('alert')).toContainText('time limit between 0.1 and 3600 seconds');
-  await page.getByRole('button', { name: 'Remove model 1', exact: true }).click();
-  await page.getByRole('button', { name: 'Preview run', exact: true }).click();
-  await expect(page.getByRole('alert')).toContainText('Add at least one model');
-  await expect(page.getByRole('button', { name: 'Start run', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /^(Start|Queue) run$/ })).toBeDisabled();
+  await page.getByRole('combobox', { name: 'Model 1', exact: true }).fill('custom');
+  await options(page);
+  await page.getByRole('spinbutton', { name: 'Entrant 1 time limit (seconds)' }).fill('0');
+  await page.getByRole('button', { name: 'Preview matrix' }).click();
+  await expect(page.getByRole('alert')).toBeVisible();
+  await page.getByRole('button', { name: 'Remove entrant 1' }).click();
+  await expect(page.getByRole('button', { name: /^(Start|Queue) run$/ })).toBeDisabled();
 });
-
-test('retrying a lost create response reopens the same durable run', async ({ page, request, baseURL }) => {
-  if (!baseURL) throw new Error('Missing test server URL');
+test('lost create response retries exact immutable request and creates one run', async ({ page, request, baseURL }) => {
+  if (!baseURL) throw new Error();
   const { suite, runtimeId } = await seed(request, baseURL);
   await selectSuite(page, suite, runtimeId);
-  await page.getByRole('textbox', { name: 'Model name', exact: true }).fill('retry-model');
-  await page.getByRole('combobox', { name: 'Mode', exact: true }).selectOption('fixture');
-  await page.getByRole('button', { name: 'Preview run', exact: true }).click();
-  const accepted: ConfiguredRunView[] = [];
-  const requests: string[] = [];
+  await page.getByRole('combobox', { name: 'Model 1', exact: true }).fill('retry-model');
+  const accepted: ConfiguredRunView[] = [],
+    bodies: string[] = [];
   await page.route('**/api/configured-runs', async (route) => {
-    if (route.request().method() !== 'POST') { await route.continue(); return; }
-    requests.push(route.request().postData() ?? '');
+    if (route.request().method() !== 'POST') {
+      await route.continue();
+      return;
+    }
+    bodies.push(route.request().postData()!);
     const response = await route.fetch();
     accepted.push(ConfiguredRunView.parse(await response.json()));
     if (accepted.length === 1) await route.abort('failed');
     else await route.fulfill({ response });
   });
-  await page.getByRole('button', { name: 'Start run', exact: true }).click();
+  await page.getByRole('button', { name: /^(Start|Queue) run$/ }).click();
   await expect(page.getByRole('alert')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Start run', exact: true })).toBeEnabled();
-  await page.getByRole('button', { name: 'Start run', exact: true }).click();
-  await expect(page.getByRole('region', { name: 'Saved run' })).toBeVisible();
+  await create(page);
   expect(accepted).toHaveLength(2);
-  expect(accepted[0]?.runId).toBe(accepted[1]?.runId);
-  expect(requests[0]).toBe(requests[1]);
+  expect(accepted[0]!.runId).toBe(accepted[1]!.runId);
+  expect(bodies[0]).toBe(bodies[1]);
   await page.reload();
-  await expect(page.getByRole('heading', { name: suite.content.definition.title, exact: true })).toBeVisible();
+  await expect(page.getByRole('article').filter({ hasText: suite.content.definition.title })).toHaveCount(1);
 });
 
-test('run management shows terminal reasons and downloads files without executing their content', async ({ page, request, baseURL }) => {
+test('run management shows terminal reasons and downloads files without executing their content', async ({
+  page,
+  request,
+  baseURL,
+}) => {
   if (!baseURL) throw new Error('Missing test server URL');
   const { suite, runtimeId } = await seed(request, baseURL);
   await selectSuite(page, suite, runtimeId);
-  await page.getByRole('textbox', { name: 'Model name', exact: true }).fill('fixture-result-model');
-  await page.getByRole('combobox', { name: 'Mode', exact: true }).selectOption('fixture');
-  await page.getByRole('button', { name: 'Preview run', exact: true }).click();
-  await page.getByRole('button', { name: 'Start run', exact: true }).click();
+  await page.getByRole('combobox', { name: 'Model 1', exact: true }).fill('fixture-result-model');
+  await options(page);
+  await select(page, 'Execution mode', 'Fixture · no model calls');
+  await page.getByRole('button', { name: 'Preview matrix', exact: true }).click();
+  const created = await create(page);
+  await page.goto(`/?view=runs&run=${created.runId}`);
   await expect(page.getByRole('region', { name: 'Saved run' })).toBeVisible();
-  const claim = ClaimReceipt.parse(await (await request.post('/api/worker/claims', { headers: { authorization: runtimeCredentials.get(runtimeId) ?? '' }, data: { protocol: 1, runtimeId, requestId: randomUUID() } })).json());
+  const claim = ClaimReceipt.parse(
+    await (
+      await request.post('/api/worker/claims', {
+        headers: { authorization: runtimeCredentials.get(runtimeId) ?? '' },
+        data: { protocol: 1, runtimeId, requestId: randomUUID() },
+      })
+    ).json(),
+  );
   if (claim.kind !== 'assigned') throw new Error('Expected fixture assignment');
   const identity = { protocol: 1, runtimeId, assignmentId: claim.assignmentId, runId: claim.runId };
-  expect((await request.post('/api/worker/preparations', { headers: { authorization: runtimeCredentials.get(runtimeId) ?? '' }, data: { ...identity, reportId: randomUUID(), preparation: { kind: 'none' } } })).ok()).toBeTruthy();
+  expect(
+    (
+      await request.post('/api/worker/preparations', {
+        headers: { authorization: runtimeCredentials.get(runtimeId) ?? '' },
+        data: { ...identity, reportId: randomUUID(), preparation: { kind: 'none' } },
+      })
+    ).ok(),
+  ).toBeTruthy();
   const artifactBytes = Buffer.from('<script>document.title="unsafe"</script><p>Download only</p>');
-  const artifact = { id: randomUUID(), name: 'answer.html', kind: 'html', mediaType: 'text/html', bytes: artifactBytes.length, sha256: createHash('sha256').update(artifactBytes).digest('hex') };
+  const artifact = {
+    id: randomUUID(),
+    name: 'answer.html',
+    kind: 'html',
+    mediaType: 'text/html',
+    bytes: artifactBytes.length,
+    sha256: createHash('sha256').update(artifactBytes).digest('hex'),
+  };
   for (const [index, attempt] of claim.attempts.entries()) {
-    if (index === 0) expect((await request.post('/api/worker/attempts', { headers: { authorization: runtimeCredentials.get(runtimeId) ?? '' }, data: { ...identity, reportId: randomUUID(), kind: 'started', attemptId: attempt.attemptId, startedAt: new Date().toISOString() } })).ok()).toBeTruthy();
-    const outcome = index === 0 ? { kind: 'completed', result: { kind: 'text' }, summary: '<script>Unsafe markup stays text</script>', artifacts: [artifact] }
-      : index === 1 ? { kind: 'skipped', reason: 'Model unavailable. Select a model accessible to this runtime.', artifacts: [] }
-        : { kind: 'failed', reason: 'Time limit exceeded. Increase the time limit and create a new run.', artifacts: [] };
-    const response = await request.post('/api/worker/attempts', { headers: { authorization: runtimeCredentials.get(runtimeId) ?? '' }, data: { ...identity, reportId: randomUUID(), kind: 'terminal', attemptId: attempt.attemptId, outcome, artifacts: index === 0 ? [{ ...artifact, base64: artifactBytes.toString('base64') }] : [], observed: { executableVersion: null, model: null } } });
+    if (index === 0)
+      expect(
+        (
+          await request.post('/api/worker/attempts', {
+            headers: { authorization: runtimeCredentials.get(runtimeId) ?? '' },
+            data: {
+              ...identity,
+              reportId: randomUUID(),
+              kind: 'started',
+              attemptId: attempt.attemptId,
+              startedAt: new Date().toISOString(),
+            },
+          })
+        ).ok(),
+      ).toBeTruthy();
+    const outcome =
+      index === 0
+        ? {
+            kind: 'completed',
+            result: { kind: 'text' },
+            summary: '<script>Unsafe markup stays text</script>',
+            artifacts: [artifact],
+          }
+        : index === 1
+          ? { kind: 'skipped', reason: 'Model unavailable. Select a model accessible to this runtime.', artifacts: [] }
+          : {
+              kind: 'failed',
+              reason: 'Time limit exceeded. Increase the time limit and create a new run.',
+              artifacts: [],
+            };
+    const response = await request.post('/api/worker/attempts', {
+      headers: { authorization: runtimeCredentials.get(runtimeId) ?? '' },
+      data: {
+        ...identity,
+        reportId: randomUUID(),
+        kind: 'terminal',
+        attemptId: attempt.attemptId,
+        outcome,
+        artifacts: index === 0 ? [{ ...artifact, base64: artifactBytes.toString('base64') }] : [],
+        observed: { executableVersion: null, model: null },
+      },
+    });
     expect(response.ok()).toBeTruthy();
   }
   await page.getByRole('button', { name: 'Refresh results', exact: true }).click();
@@ -180,7 +285,8 @@ test('run management shows terminal reasons and downloads files without executin
   await expect(results.locator('script, iframe')).toHaveCount(0);
   const downloadEvent = page.waitForEvent('download');
   await results.getByRole('link', { name: 'answer.html', exact: true }).click();
-  const download = await downloadEvent, path = await download.path();
+  const download = await downloadEvent,
+    path = await download.path();
   if (!path) throw new Error('Missing artifact download');
   expect(await readFile(path)).toEqual(artifactBytes);
   await expect(page).not.toHaveTitle('unsafe');

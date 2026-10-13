@@ -1,0 +1,13 @@
+# Results and model catalog
+
+`packages/contracts/src/results.ts` owns strict grade facts and category-equal aggregation. `features/results.ts` joins only submitted grading cells to immutable execution snapshots. UTC date filtering uses submission timestamps. Ungraded and skipped cells are omitted; zero is retained. Fixture evidence is separate from live evidence and live is the default. Queries cap at 100,000 grade facts and return an explicit truncation notice.
+
+The browser filters family (creator), size class, license, harness, effort, suite and task type. Pivots group by model, suite or task. A displayed aggregate first averages graded cells within each suite/category, then averages category means equally. Statistics and details derive from the same filtered facts. A cell needs at least 20 grades to qualify for best-score highlighting. Trends divide the selected UTC period into up to 12 equal bins and compare the first and last populated bins. A single populated bin has no change indicator; missing data is not zero. Submitted scores never mutate when a suite changes.
+
+`features/model-catalog.ts` fetches Artificial Analysis server-side with `ARTIFICIAL_ANALYSIS_API_KEY`, caches the validated catalog in PostgreSQL for one day, shares concurrent refreshes, and backs off after failure. A failed refresh retains the last good catalog and labels it stale. 403 on the Pro endpoint falls back to the paginated Free endpoint. Without a key, catalog metadata is unavailable while run creation and grading continue.
+
+Names, slugs and explicit aliases match exactly, case-insensitively. A provider-qualified runtime ID may match its unqualified suffix only when unique. No fuzzy name guessing maps models. Requested IDs remain authoritative for execution; catalog suggestions do not prove harness availability or entitlement.
+
+Pro fields populate disclosed parameter count, open-weights status, input modalities and context window. Size classes are derived from disclosed parameter billions: XS <4, S <12, M <40, L <100, XL <400, XXL ≥400. These thresholds are product categorization, not an Artificial Analysis classification. Missing counts, licenses or modalities remain unknown. Free data supplies names and creators but omits these richer fields. The interface attributes the source and exposes catalog status.
+
+The installed Codex model list and OpenCode Go IDs supplement catalog suggestions on the selected runtime. Claude readiness is shown without an invented model list. Provider-specific IDs may be entered manually. Authentication readiness, discovery and successful live execution are distinct evidence.

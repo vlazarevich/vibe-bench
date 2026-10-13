@@ -22,7 +22,7 @@ Set `VIBE_WORKER_HOST` and `VIBE_WORKER_PORT` for an optional worker-only listen
 
 ## Pair and run
 
-Install the standalone executable using the [release guide](docs/releases.md). In **Runtimes**, select **Add new**, copy the pairing command, and execute it on the runner machine. Install and authenticate the harnesses separately. Pairing discovers Codex, Claude Code, OpenCode, and supporting tools on `PATH`, connects to the dashboard, and succeeds after its capability report is acknowledged.
+Install the standalone executable using the [release guide](docs/releases.md). In **Runtimes**, select **Connect runtime**, copy the pairing command, and execute it on the runner machine. Install and authenticate the harnesses separately. Pairing discovers Codex, Claude Code, OpenCode, and supporting tools on `PATH`, connects to the dashboard, and succeeds after its capability report is acknowledged.
 
 ```sh
 vibe-runner pair TOKEN
@@ -35,7 +35,7 @@ vibe-runner pair revoke
 
 For a source checkout, replace `vibe-runner` with `pnpm runner`. The same commands support global `--state-dir PATH`, `--help`, and `--version`. The runner uses a standard private state directory and loads no `.env` file. Preserve standard harness login directories, provider credentials, proxies, certificates, `PATH`, and SSH-agent settings.
 
-Enrollment tokens remain reusable until their ten-minute expiry. Reusing a token preserves its runtime identity and replaces its previous credential. Failed pairing clears all local state in the selected directory. Dashboard history is preserved. An expired token requires a new token.
+Enrollment tokens are single-use and expire after 15 minutes. Exact retries reuse a private durable exchange after a lost response. Failed pairing retains only that pending exchange for retry; a different token replaces it. Successful pairing removes the pending secret. Use a fresh replacement token to rotate credentials for an existing runtime. Dashboard history is preserved. An expired token requires a new token.
 
 `pair status` displays the last acknowledged capabilities and timestamp without rescanning. It distinguishes unpaired state, rejected or revoked credentials, and an unreachable dashboard. `pair probe` rescans and uploads; failed delivery preserves the last acknowledged observation. Status and probe remain available during execution. Pairing and revocation require stopping execution first.
 
@@ -57,15 +57,21 @@ Expand **View result** to inspect text, raster images, HTML bundles, changed fil
 
 ## Grade results
 
-Open **Grading**, select a finished run, and navigate its categories and tasks. Inspect each anonymous result and grade it against pinned criteria. Stars, the 0–10 slider, and thumbs preserve the original selection and convert it to a 0–100 grade. Equal grades are allowed. Skip and clear differ from a zero grade. Failed and execution-skipped attempts remain visible without grading controls.
+In **Runs**, select **Start grading** on a finished run or a stopped run with accepted results. Create a named grading or share its neutral invitation link. Navigate categories and tasks, with one result at a time or two distinct results side by side. Inspect each anonymous result and grade it against pinned criteria. Stars, the 0–100 slider, and thumbs preserve the original selection and convert it to a 0–100 grade. Equal grades are allowed. Skip and clear differ from a zero grade. Failed and execution-skipped attempts remain visible without grading controls.
 
-Saved judgments and card order survive reloads and restarts. A grading cookie authorizes that session; its URL alone grants no access. Conflicting changes require reloading. Submitted content can identify its author. The [blind-grading contract](docs/contracts/blind-grading.md) defines anonymous transport and persistence.
+Selections autosave. Saved judgments and shuffled card order survive reloads and restarts. Submit a complete or partial grading to freeze it and reveal the entrants. Multiple gradings per run remain independent; others can view submitted gradings read-only. A grading cookie authorizes a session; its URL alone grants no access. A shared invitation permits a new blind grading without dashboard management access. Conflicting changes require reloading. Submitted content can identify its author. The [blind-grading contract](docs/contracts/blind-grading.md) defines anonymous transport and persistence.
+
+## Results and model metadata
+
+**Results** aggregates submitted grades with UTC date presets, family, class, license, harness, effort, suite, task-type, and evidence filters. Pivot by model, suite, or task. Scores normalize to 0–100, average within each category, then weight categories equally. Skips and missing judgments contribute no score; zero grades do. Cells with fewer than 20 grades show low confidence. Fixture and live evidence are separate.
+
+Set `ARTIFICIAL_ANALYSIS_API_KEY` on the dashboard for the daily cached Artificial Analysis catalog. Pro metadata provides license, size, context, and modalities when disclosed. The Free endpoint supplies names and creators but omits much of that metadata; unknown values stay unknown. See the [Results contract](docs/contracts/results.md) for matching and size-class derivation. The key never enters runner subprocesses.
 
 ## Recovery and preview prerequisites
 
 The runner saves immutable assignments, preparation, attempt starts, terminal reports, and artifacts before upload. Saved delivery retries retain original IDs. Identical replay has one effect; changed accepted content conflicts. A started attempt without a saved terminal result is uncertain and never executes again under its old ID. Recovery reports interruption truthfully.
 
-The server needs Bubblewrap at `/usr/bin/bwrap`, unprivileged user and network namespaces, Playwright Chromium, and browser system libraries and fonts for isolated HTML and media previews. Missing prerequisites show unavailable previews while original downloads remain available. HTML previews render 960 by 640 frames, accept clicks, keyboard input, and text, and allow two concurrent sessions. They expire after 30 seconds idle or two minutes total.
+The server needs Bubblewrap at `/usr/bin/bwrap`, unprivileged user and network namespaces, Playwright Chromium, and browser system libraries and fonts for isolated HTML and media previews. Missing prerequisites show unavailable previews while original downloads remain available. HTML previews start at 960 by 640 and support desktop (1280×800), tablet (768×900), and mobile (390×844) viewports, clicks, keyboard input, and text. Two concurrent sessions are allowed. They expire after 30 seconds idle or two minutes total.
 
 Authentication does not establish deployment readiness. Backups, artifact storage, HTTPS, upload limits, and Chromium isolation need infrastructure verification.
 
@@ -87,6 +93,7 @@ Checks exercise schemas, import boundaries, PostgreSQL, HTTP, subprocesses, Chro
 - [Dashboard and runner access](docs/contracts/access.md)
 - [Configured execution](docs/contracts/configured-runs.md)
 - [Blind grading](docs/contracts/blind-grading.md)
+- [Results and model catalog](docs/contracts/results.md)
 - [Runner protocol](docs/contracts/runner-protocol.md)
 - [Result viewing](docs/contracts/artifacts-evaluation.md)
 - [Development workflow](docs/agent-workflow.md)

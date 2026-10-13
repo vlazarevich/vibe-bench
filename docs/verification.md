@@ -50,9 +50,9 @@ Fixtures prove runner mechanics, not provider account access, model entitlement,
 
 ## Limits
 
-Tests cover empty-database migration, upgrading an existing database, concurrent migration startup, and reopening suite and configured-run state. The app does not implement scheduler leases, cancellation APIs, or arbitrary untrusted code execution. Shared-password access is distinct from infrastructure deployment verification. Those broader contracts need their own tests as code arrives.
+Tests cover empty-database migration, upgrading an existing database, concurrent migration startup, and reopening suite and configured-run state. The app does not implement scheduler leases or general-purpose sandboxing of arbitrary runner code. Shared-password access is distinct from infrastructure deployment verification. Those broader contracts need their own tests as code arrives.
 
-`tests/onboarding.test.ts` and pairing tests use real subprocesses, HTTP, and PostgreSQL for missing tools, bounded authentication probes, cached status, reusable token retries, credential replacement, sequence recovery, failed-pair cleanup, concurrent probe, state ownership, remote-revoke failure, and abandonment. `run-once` waits through an initially empty queue and the configured matrix is repeated through `vibe-runner`. These fixtures establish mechanics, not live model access.
+`tests/onboarding.test.ts` and pairing tests use real subprocesses, HTTP, and PostgreSQL for missing tools, bounded authentication probes, cached status, single-use tokens and durable exact enrollment retries, credential replacement, sequence recovery, failed-pair cleanup, concurrent probe, state ownership, remote-revoke failure, and abandonment. `run-once` waits through an initially empty queue and the configured matrix is repeated through `vibe-runner`. These fixtures establish mechanics, not live model access.
 
 ## Result viewer checks
 
@@ -65,3 +65,9 @@ Result checks require Bubblewrap at `/usr/bin/bwrap`, enabled unprivileged user/
 ## Access and recovery
 
 `tests/access.test.ts` uses PostgreSQL and both real HTTP listeners to verify dashboard gating, session expiry, rotation, passwordless transitions, CSRF, bounded guessing, secure cookies, enrollment concurrency and expiry, runtime identity isolation, and immediate revocation. `tests/browser/access.spec.ts` drives protected login, runtime enrollment and revocation, grading navigation, logout, and passwordless enrollment in Chromium. Existing rich-viewer fixtures now enroll authenticated runtimes.
+
+## Designed dashboard coverage
+
+`dashboard-design.test.ts` covers named grading replay, partial submission and immutable freeze, read grants, canceled partial results, runtime heartbeat/deletion, Artificial Analysis Pro/Free pagination/cache/failure behavior and category-equal normalization using PostgreSQL and HTTP. Runtime collection tests cover contained task directories, original inputs, real verification commands, replay budget, long navigation targets, process cancellation and crash-window recovery. Pairing tests lose a committed exchange response and retry the durable identity.
+
+Browser suites cover all authoring controls and task kinds, exact run retries and settings, connection/revocation, blind autosave/conflicts, distinct single/compare transitions, all result formats, partial submit/reveal/read-only viewing, Results filters, pivots, dates, confidence/details, and theme/sidebar persistence. Tests use deterministic fixtures unless explicitly recorded as live provider evidence.

@@ -20,7 +20,7 @@ Content stores a schema version and SHA-256 digest of canonical JSON containing 
 
 ## Rating controls and ranking guidance
 
-The `rating-control-v1` conversion maps integer stars 1 through 5 to 20, 40, 60, 80, and 100. Integer slider values 0 through 10 map to ten times the selected value. Thumbs down maps to 0 and thumbs up to 100. The absence of a selection is ungraded.
+The `rating-control-v1` conversion maps integer stars 1 through 5 to 20, 40, 60, 80, and 100. Integer slider values 0 through 100 map directly to that grade. Legacy slider-10 values map to ten times the selection. Thumbs down maps to 0 and thumbs up to 100. The absence of a selection is ungraded.
 
 The editor previews each conversion. Ranking rules are written guidance only. There is no aggregation formula or persisted rubric judgment in this feature.
 
@@ -28,7 +28,7 @@ The editor previews each conversion. Ranking rules are written guidance only. Th
 
 | Operation | Response |
 | --- | --- |
-| `GET /api/suites` | Current title, suite ID, revision and ordinal for each suite |
+| `GET /api/suites` | Current title, suite ID, revision, ordinal, category/task counts and latest run |
 | `POST /api/suites` | New content and readiness from `{ definition }` |
 | `GET /api/suites/:id` | Current content and readiness |
 | `POST /api/suites/:id` | Appended content and readiness from `{ expectedContentId, change, definition }` |
@@ -40,3 +40,7 @@ Malformed requests return 400 with field issues. Unknown suites or versions retu
 ## Pinned execution
 
 Configured Runs select an exact saved content version and one or more tasks. The server stores the complete suite definition, evaluation configuration, selected task IDs, entrants, and a canonical digest before issuing assignments. Later suite edits cannot alter that snapshot. The runner executes dashboard assignments without task export files or runner-specific environment configuration. See [configured runs](configured-runs.md).
+
+## Designed authoring interface
+
+Suites use a master-detail table with revision, category/task counts and latest run. Info, Criteria and Tasks tabs share minor/new-revision saves and conflict recovery. Criteria support five stars, a 0–100 slider and thumbs; legacy 0–10 sliders remain readable. Category/task trees and criterion chips preserve immutable IDs. Optional task paths must be contained relative directories and require a Sources repository. Deletions and discarded drafts require confirmation; history remains immutable.

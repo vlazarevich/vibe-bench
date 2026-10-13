@@ -72,3 +72,13 @@ Each artifact records its name, kind, media type, byte count, and SHA-256 digest
 ## Evidence
 
 Fixture runs exercise the same persistence and worker protocol through deterministic subprocesses. Their source label is preserved in the snapshot and dashboard. They do not prove model access. Live runs invoke the selected harness and requested model without substituting another model. Verification records these two evidence categories separately.
+
+## Dashboard and runtime evidence
+
+Dashboard run numbers are stable, increasing labels. Cards expose requested entrants, observed progress, task checks and grading counts. Offline and busy runtimes can queue runs. Cancel atomically stops server acceptance while preserving previously accepted outcomes; disconnected process termination waits for a heartbeat. Run again creates a fresh request from the immutable original snapshot.
+
+Task `path` selects a contained directory beneath the pinned repository checkout; symlinks, traversal and Git internals are rejected. Manifest input/output paths are relative to that directory. The editor exposes each task’s manifest key in task details. Code diffs use paths relative to this working directory.
+
+An optional manifest `checks` array contains `{name, command, args}` (at most 20). Coding collection executes these commands under the remaining check deadline and reports the number whose exit status is zero. Commands are omitted from the model prompt, but the repository itself is visible, so these are verification commands, not secret hidden tests. Test-case-level totals are not inferred from stdout.
+
+Original text-editing and image input files are captured before the adapter runs and published with the result. Browser scenarios collect bounded JPEG thumbnails for up to the first 20 actions, with action/target/URL metadata. Mandatory screenshots, the full WebM and trace take priority within the bundle budget; optional thumbnails may be fewer. Long target labels are truncated to 500 characters. Diagnostics remain separate from primary result evidence.

@@ -1,23 +1,49 @@
+import { z } from 'zod';
+import { ConfiguredRunId } from '../../../packages/contracts/src/configured-runs.ts';
 import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import { RuntimeRegistration } from '../../../packages/contracts/src/runtime.ts';
 import { EnrollmentExchange } from '../../../packages/contracts/src/access.ts';
-import { AttemptReport, ClaimRequest, PreparationReport, WORK_BODY_LIMIT } from '../../../packages/contracts/src/work.ts';
-import { registerRuntime } from './features/runtimes.ts';
+import {
+  AttemptReport,
+  ClaimRequest,
+  PreparationReport,
+  WORK_BODY_LIMIT,
+} from '../../../packages/contracts/src/work.ts';
+import { registerRuntime, touchRuntime } from './features/runtimes.ts';
 import { claimRun, acceptPreparation, acceptAttemptReport } from './features/configured-runs.ts';
 import { authenticateRuntime, redeemEnrollment, revokeRuntime, Unauthorized } from './features/access.ts';
 
 export function registerWorkerRoutes(app: FastifyInstance, pool: pg.Pool) {
+  app.post('/api/worker/heartbeat', async (request) => {
+    const runtimeId = await authenticateRuntime(pool, request.headers.authorization);
+    const { runId } = z.object({ runId: ConfiguredRunId.optional() }).strict().parse(request.body);
+    await touchRuntime(pool, runtimeId);
+    const cancelled = runId
+      ? !!(
+          await pool.query(
+            'SELECT 1 FROM run_abandonments b JOIN configured_runs r ON r.id=b.run_id WHERE r.id=$1 AND r.runtime_id=$2',
+            [runId, runtimeId],
+          )
+        ).rowCount
+      : false;
+    return { cancelled };
+  });
   app.get('/api/worker/status', async (request) => {
     const runtimeId = await authenticateRuntime(pool, request.headers.authorization);
-    const latest = await pool.query('SELECT registration, received_at FROM runtime_observations WHERE runtime_id=$1 ORDER BY observation DESC LIMIT 1', [runtimeId]);
+    const latest = await pool.query(
+      'SELECT registration, received_at FROM runtime_observations WHERE runtime_id=$1 ORDER BY observation DESC LIMIT 1',
+      [runtimeId],
+    );
     return { runtimeId, observation: latest.rows[0]?.registration.observation ?? 0 };
   });
   app.post('/api/worker/revoke', async (request) => {
     const runtimeId = await authenticateRuntime(pool, request.headers.authorization);
     return revokeRuntime(pool, runtimeId, request.headers.authorization);
   });
-  app.post('/api/worker/enrollments', async (request) => redeemEnrollment(pool, EnrollmentExchange.parse(request.body)));
+  app.post('/api/worker/enrollments', async (request) =>
+    redeemEnrollment(pool, EnrollmentExchange.parse(request.body)),
+  );
   app.post('/api/worker/registrations', async (request) => {
     const runtimeId = await authenticateRuntime(pool, request.headers.authorization);
     const input = RuntimeRegistration.parse(request.body);
@@ -26,6 +52,7 @@ export function registerWorkerRoutes(app: FastifyInstance, pool: pg.Pool) {
   });
   app.post('/api/worker/claims', async (request) => {
     const runtimeId = await authenticateRuntime(pool, request.headers.authorization);
+    await touchRuntime(pool, runtimeId);
     const input = ClaimRequest.parse(request.body);
     if (input.runtimeId !== runtimeId) throw new Unauthorized();
     return claimRun(pool, input, request.headers.authorization);

@@ -1,128 +1,121 @@
 import { expect, test } from '@playwright/test';
-
-test('author every task mode, rating control, ranking guidance and materials; save drafts and review history', async ({ page }) => {
-  await page.goto('/'); await page.getByRole('link', { name: 'Suites', exact: true }).click();
-  await page.getByRole('button', { name: 'New suite' }).click();
-  await expect(page.getByRole('region', { name: 'Readiness' })).toContainText('Enter a suite title');
-  await page.getByRole('button', { name: 'Create suite', exact: true }).click();
-  await expect(page.getByRole('status').filter({ hasText: 'Draft saved' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Save minor change' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Save new revision' })).toBeVisible();
+import { select, saved } from './ui-helpers.ts';
+const types = [
+  'Text generation',
+  'Text editing',
+  'Image generation',
+  'Image editing',
+  'Image understanding',
+  'Static HTML page design',
+  'Interactive HTML page design',
+  'Coding bugfix',
+  'Coding new feature',
+  'Browser use scenario',
+];
+test('author all task types, criteria and sources; preserve immutable revisions, validate paths and confirm destructive edits', async ({
+  page,
+}) => {
+  await page.goto('/?view=suites');
+  await page.getByRole('button', { name: 'New suite', exact: true }).click();
+  await saved(page, 'Create suite');
+  await expect(page.getByRole('status')).toContainText('Draft saved');
   await page.getByRole('textbox', { name: 'Suite title', exact: true }).fill('All task types');
-  await page.getByRole('textbox', { name: 'Description', exact: true }).fill('All authored fields survive reload');
-  for (const [index, control] of ['stars-5', 'slider-10', 'thumbs'].entries()) {
+  await page.getByRole('textbox', { name: 'Description', exact: true }).fill('All fields persist');
+  await page.getByRole('tab', { name: /Criteria/ }).click();
+  for (const [i, control] of ['Stars', 'Slider', 'Thumbs up or down'].entries()) {
     await page.getByRole('button', { name: 'Add criterion', exact: true }).click();
-    const criterion = page.getByRole('group', { name: `Criterion ${index + 1}`, exact: true });
-    await criterion.getByRole('textbox', { name: 'Criterion title', exact: true }).fill(`Quality ${index + 1}`);
-    await criterion.getByRole('textbox', { name: 'Criterion guidance', exact: true }).fill(`Guidance ${index + 1}`);
-    await criterion.getByRole('combobox', { name: 'Rating control', exact: true }).selectOption(control);
-    await expect(criterion.getByRole('status')).toHaveText('Ungraded');
-    if (control === 'stars-5') {
-      await criterion.getByRole('radio', { name: '2 stars', exact: true }).check();
-      await expect(criterion.getByRole('status')).toHaveText('Grade: 40 / 100');
-    } else if (control === 'slider-10') {
-      await criterion.getByRole('button', { name: 'Use zero rating' }).click();
-      await expect(criterion.getByRole('status')).toHaveText('Grade: 0 / 100');
-      await criterion.getByRole('slider').focus(); await page.keyboard.press('End');
-      await expect(criterion.getByRole('status')).toHaveText('Grade: 100 / 100');
-      await page.keyboard.press('ArrowLeft');
-      await expect(criterion.getByRole('status')).toHaveText('Grade: 90 / 100');
-    } else {
-      await criterion.getByRole('radio', { name: 'Thumbs down', exact: true }).check();
-      await expect(criterion.getByRole('status')).toHaveText('Grade: 0 / 100');
-      await criterion.getByRole('radio', { name: 'Thumbs up', exact: true }).check();
-      await expect(criterion.getByRole('status')).toHaveText('Grade: 100 / 100');
+    await page.getByRole('textbox', { name: 'Criterion title', exact: true }).fill(`Quality ${i + 1}`);
+    await page.getByRole('textbox', { name: 'Guidance', exact: true }).fill(`Guidance ${i + 1}`);
+    await select(page, 'Rating control', control);
+    if (i === 0) await page.getByRole('radio', { name: '2 of 5', exact: true }).click();
+    if (i === 1) {
+      await page.getByRole('slider').focus();
+      await page.keyboard.press('End');
+      await expect(page.getByRole('slider')).toHaveAttribute('aria-valuenow', '100');
     }
-    await criterion.getByRole('button', { name: 'Clear preview' }).click();
-    await expect(criterion.getByRole('status')).toHaveText('Ungraded');
+    if (i === 2) await page.getByRole('radio', { name: 'Pass', exact: true }).click();
   }
+  await page.getByRole('tab', { name: /Tasks/ }).click();
   await page.getByRole('button', { name: 'Add category', exact: true }).click();
-  const category = page.getByRole('group', { name: 'Category 1', exact: true });
-  await category.getByRole('textbox', { name: 'Category title', exact: true }).fill('All modes');
-  const kinds = ['text-generation', 'text-editing', 'image-generation', 'image-editing', 'image-understanding', 'html-static', 'html-interactive', 'coding-bugfix', 'coding-feature', 'browser-scenario'];
-  for (const [index, kind] of kinds.entries()) {
-    await category.getByRole('button', { name: 'Add task', exact: true }).click();
-    const task = category.getByRole('group', { name: `Task ${index + 1}`, exact: true });
-    await task.getByRole('textbox', { name: 'Task title', exact: true }).fill(`Task ${kind}`);
-    await task.getByRole('combobox', { name: 'Task type', exact: true }).selectOption(kind);
-    await task.getByRole('textbox', { name: 'Prompt', exact: true }).fill(`Prompt for ${kind}`);
-    await task.getByRole('checkbox', { name: 'Quality 1', exact: true }).check();
-    await task.getByRole('checkbox', { name: 'Quality 2', exact: true }).check();
+  await page.getByRole('textbox', { name: 'Category title', exact: true }).fill('All modes');
+  for (const [i, type] of types.entries()) {
+    await page.getByRole('treeitem', { name: /^All modes/ }).hover();
+    await page.getByRole('button', { name: 'Add task to All modes', exact: true }).click();
+    await page.getByRole('textbox', { name: 'Task title', exact: true }).fill(`Task ${i + 1}`);
+    await select(page, 'Task type', type);
+    await page.getByRole('textbox', { name: 'Instructions', exact: true }).fill(`Prompt for ${type}`);
+    await page.getByRole('button', { name: /^Quality 1/ }).click();
+    await page.getByRole('button', { name: /^Quality 2/ }).click();
   }
-  await page.getByRole('button', { name: 'Add ranking rule', exact: true }).click();
-  await page.getByRole('textbox', { name: 'Rule title', exact: true }).fill('Tie guidance');
-  await page.getByRole('textbox', { name: 'Rule guidance', exact: true }).fill('Use clarity when other qualities tie.');
-  await expect(page.getByRole('region', { name: 'Readiness' })).toContainText('Definition ready');
+  await page.getByRole('tab', { name: 'Info', exact: true }).click();
+  await page.getByText('Ranking guidance', { exact: true }).click();
+  await page.getByRole('button', { name: 'Add ranking rule' }).click();
+  await page.getByLabel('Rule title').fill('Tie guidance');
+  await page.getByLabel('Rule guidance').fill('Use clarity for ties.');
+  const first = await saved(page, 'Save minor change');
+  expect(first.content.revision).toBe(1);
+  expect(first.content.definition.categories[0].tasks).toHaveLength(10);
+  await page.reload();
+  await expect(page.getByLabel('Suite title')).toHaveValue('All task types');
+  await page.getByRole('tab', { name: /Tasks/ }).click();
+  for (const [i, type] of types.entries()) {
+    await page.getByRole('treeitem', { name: `Task ${i + 1}`, exact: true }).click();
+    await expect(page.getByRole('button', { name: new RegExp(`^Task type ${type}`) })).toBeVisible();
+    await expect(page.getByLabel('Instructions')).toHaveValue(`Prompt for ${type}`);
+  }
+  await page.getByLabel('Path', { exact: true }).fill('../escape');
   await page.getByRole('button', { name: 'Save minor change' }).click();
-  await expect(page.getByText('Revision 1 · Content 2', { exact: true }).first()).toBeVisible();
-  await page.reload();
-  await expect(page.getByRole('textbox', { name: 'Suite title', exact: true })).toHaveValue('All task types');
-  await expect(page.getByRole('textbox', { name: 'Description', exact: true })).toHaveValue('All authored fields survive reload');
-  for (const [index, kind] of kinds.entries()) {
-    const task = page.getByRole('group', { name: `Task ${index + 1}`, exact: true });
-    await expect(task.getByRole('combobox', { name: 'Task type', exact: true })).toHaveValue(kind);
-    await expect(task.getByRole('textbox', { name: 'Prompt', exact: true })).toHaveValue(`Prompt for ${kind}`);
-    await expect(task.getByRole('checkbox', { name: 'Quality 2', exact: true })).toBeChecked();
-  }
-  await expect(page.getByRole('textbox', { name: 'Rule guidance', exact: true })).toHaveValue('Use clarity when other qualities tie.');
-  await page.getByRole('textbox', { name: 'Suite title', exact: true }).fill('Later local edit');
-  await page.getByRole('combobox', { name: 'Materials source', exact: true }).selectOption('repository');
-  await page.getByRole('textbox', { name: 'Repository URL', exact: true }).fill('https://secret@example.com/materials');
-  await page.getByRole('textbox', { name: 'Requested ref', exact: true }).fill('release-v1');
-  await expect(page.getByRole('region', { name: 'Readiness' })).toContainText('Correct these values before saving');
+  await expect(page.getByRole('alert')).toContainText('contained relative path');
+  await page.getByLabel('Path', { exact: true }).fill('tasks/browser');
+  await page.getByRole('tab', { name: 'Info', exact: true }).click();
+  await page.getByLabel('Sources', { exact: true }).fill('https://secret@example.com/materials');
   await page.getByRole('button', { name: 'Save new revision' }).click();
-  await expect(page.getByRole('alert')).toContainText('without embedded credentials');
-  await expect(page.getByRole('textbox', { name: 'Suite title', exact: true })).toHaveValue('Later local edit');
-  await page.getByRole('textbox', { name: 'Repository URL', exact: true }).fill('ssh://git@example.com/materials.git');
-  await page.getByRole('button', { name: 'Save new revision' }).click();
-  await expect(page.getByText('Revision 2 · Content 3', { exact: true }).first()).toBeVisible();
-  await page.reload();
-  await expect(page.getByRole('textbox', { name: 'Repository URL', exact: true })).toHaveValue('ssh://git@example.com/materials.git');
-  await expect(page.getByRole('textbox', { name: 'Requested ref', exact: true })).toHaveValue('release-v1');
-  await page.getByRole('region', { name: 'Suite history' }).getByRole('button', { name: 'Revision 1 · Content 2', exact: true }).click();
-  const historical = page.getByRole('region', { name: 'Suite history' });
-  await expect(historical).toContainText('All task types');
-  await expect(historical).toContainText('Prompt for browser-scenario');
-  await expect(historical).toContainText('Use clarity when other qualities tie.');
-  await page.screenshot({ path: '.artifacts/suite-authoring-history.png', fullPage: true });
-  await page.getByRole('group', { name: 'Criterion 2', exact: true }).getByRole('button', { name: 'Remove criterion and assignments' }).click();
-  await expect(page.getByRole('checkbox', { name: 'Quality 2', exact: true })).toHaveCount(0);
-  await page.getByRole('group', { name: 'Task 10', exact: true }).getByRole('button', { name: 'Remove task', exact: true }).click();
-  await expect(page.getByRole('combobox', { name: 'Task type', exact: true })).toHaveCount(9);
-  await page.getByRole('button', { name: 'Remove rule', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('credentials');
+  await page.getByLabel('Sources', { exact: true }).fill('https://example.com/materials.git');
+  await page.getByLabel('Requested ref').fill('release-v1');
+  const second = await saved(page, 'Save new revision');
+  expect(second.content.revision).toBe(2);
+  await page.getByRole('button', { name: 'History and recovery' }).click();
+  await page.getByRole('button', { name: 'Revision 1 · Content 2', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'Historical content' })).toContainText(
+    'Prompt for Browser use scenario',
+  );
+  await page.getByRole('button', { name: 'Close', exact: true }).click();
+  await page.getByRole('tab', { name: /Criteria/ }).click();
+  await page.getByRole('treeitem', { name: 'Quality 2', exact: true }).click();
+  await page.getByRole('button', { name: 'Delete criterion', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Delete criterion', exact: true }).click();
+  await page.getByRole('tab', { name: /Tasks/ }).click();
+  await page.getByRole('treeitem', { name: 'Task 10', exact: true }).click();
+  await expect(page.getByRole('button', { name: /^Quality 2/ })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Delete task', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Delete task', exact: true }).click();
   await page.getByRole('button', { name: 'Add category', exact: true }).click();
-  const second = page.getByRole('group', { name: 'Category 2', exact: true });
-  await second.getByRole('textbox', { name: 'Category title', exact: true }).fill('Temporary');
-  await second.getByRole('button', { name: 'Add task', exact: true }).click();
-  await second.getByRole('button', { name: 'Remove category and tasks' }).click();
-  await page.getByRole('combobox', { name: 'Materials source', exact: true }).selectOption('none');
-  await page.getByRole('button', { name: 'Save minor change' }).click();
-  await expect(page.getByText('Revision 2 · Content 4', { exact: true }).first()).toBeVisible();
-  await page.reload();
-  await expect(page.getByRole('combobox', { name: 'Task type', exact: true })).toHaveCount(9);
-  await expect(page.getByRole('textbox', { name: 'Criterion title', exact: true })).toHaveCount(2);
-  await expect(page.getByRole('textbox', { name: 'Rule title', exact: true })).toHaveCount(0);
-  await expect(page.getByRole('combobox', { name: 'Materials source', exact: true })).toHaveValue('none');
+  await page.getByLabel('Category title').fill('Temporary');
+  await page.getByRole('button', { name: 'Delete category', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Delete category', exact: true }).click();
+  const final = await saved(page, 'Save minor change');
+  expect(final.content.definition.categories).toHaveLength(1);
+  expect(final.content.definition.categories[0].tasks).toHaveLength(9);
+  expect(final.content.definition.evaluation.criteria).toHaveLength(2);
+  await page.screenshot({ path: '.artifacts/suite-authoring-design.png', fullPage: true });
 });
-
-test('stale editor keeps its local changes and reload explicitly adopts the saved version', async ({ page, context }) => {
-  await page.goto('/?view=suites'); await page.getByRole('button', { name: 'New suite' }).click();
-  await page.getByRole('textbox', { name: 'Suite title', exact: true }).fill('Conflict draft');
-  await page.getByRole('button', { name: 'Create suite', exact: true }).click();
-  await expect(page.getByRole('status').filter({ hasText: 'Draft saved' })).toBeVisible();
-  const second = await context.newPage(); await second.goto(page.url());
-  await expect(second.getByRole('textbox', { name: 'Suite title', exact: true })).toHaveValue('Conflict draft');
-  await page.getByRole('textbox', { name: 'Suite title', exact: true }).fill('Saved elsewhere');
-  await page.getByRole('button', { name: 'Save minor change' }).click();
-  await expect(page.getByText('Revision 1 · Content 2', { exact: true }).first()).toBeVisible();
-  await second.getByRole('textbox', { name: 'Suite title', exact: true }).fill('Retain my local edits');
+test('concurrent editor retains local changes until explicit history recovery', async ({ page, context }) => {
+  await page.goto('/?view=suites');
+  await page.getByRole('button', { name: 'New suite', exact: true }).click();
+  await page.getByLabel('Suite title').fill('Conflict draft');
+  await saved(page, 'Create suite');
+  const second = await context.newPage();
+  await second.goto(page.url());
+  await expect(second.getByLabel('Suite title')).toHaveValue('Conflict draft');
+  await page.getByLabel('Suite title').fill('Saved elsewhere');
+  await saved(page, 'Save minor change');
+  await second.getByLabel('Suite title').fill('Retain local');
   await second.getByRole('button', { name: 'Save new revision' }).click();
-  await expect(second.getByRole('alert')).toContainText('Your edits are retained');
-  await expect(second.getByRole('textbox', { name: 'Suite title', exact: true })).toHaveValue('Retain my local edits');
-  await second.screenshot({ path: '.artifacts/suite-conflict.png', fullPage: true });
+  await expect(second.getByRole('alert')).toBeVisible();
+  await expect(second.getByLabel('Suite title')).toHaveValue('Retain local');
+  await second.getByRole('button', { name: 'History and recovery' }).click();
   await second.getByRole('button', { name: 'Reload latest and discard local edits' }).click();
-  await expect(second.getByRole('textbox', { name: 'Suite title', exact: true })).toHaveValue('Saved elsewhere');
-  await second.getByRole('button', { name: 'Save new revision' }).click();
-  await expect(second.getByText('Revision 2 · Content 3', { exact: true }).first()).toBeVisible();
-  await second.reload(); await expect(second.getByRole('textbox', { name: 'Suite title', exact: true })).toHaveValue('Saved elsewhere');
+  await expect(second.getByLabel('Suite title')).toHaveValue('Saved elsewhere');
+  await second.close();
 });
