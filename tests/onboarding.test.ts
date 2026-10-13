@@ -29,83 +29,164 @@ let runtimeId = RuntimeId.parse(randomUUID());
 let configuration: RuntimeConfiguration;
 const secret = 'NEVER-STORE-CREDENTIAL';
 beforeAll(async () => {
-  await mkdir('.artifacts', { recursive: true }); root = await mkdtemp(resolve('.artifacts/onboarding-'));
-  fixturePath = join(root, 'bin'); await mkdir(fixturePath);
+  await mkdir('.artifacts', { recursive: true });
+  root = await mkdtemp(resolve('.artifacts/onboarding-'));
+  fixturePath = join(root, 'bin');
+  await mkdir(fixturePath);
   for (const name of ['codex', 'claude', 'opencode', 'git']) {
-    const body = name === 'codex' ? `if (process.argv.includes('status')) process.stderr.write('Logged in using ChatGPT\\n${secret}'); else process.stdout.write('codex 1.2.3 ${secret}');`
-      : name === 'claude' ? `if (process.argv.includes('status')) { process.stdout.write(JSON.stringify({loggedIn:true,token:'${secret}'})); process.stderr.write('warning'); } else process.stdout.write('2.3.4');`
-      : name === 'opencode' ? `if (process.argv.includes('list')) process.stdout.write('│ OpenAI api\\n1 credential'); else process.stdout.write('3.4.5');`
-      : `process.stdout.write('git version 2.4.6 ${secret}');`;
+    const body =
+      name === 'codex'
+        ? `if (process.argv.includes('status')) process.stderr.write('Logged in using ChatGPT\\n${secret}'); else process.stdout.write('codex 1.2.3 ${secret}');`
+        : name === 'claude'
+          ? `if (process.argv.includes('status')) { process.stdout.write(JSON.stringify({loggedIn:true,token:'${secret}'})); process.stderr.write('warning'); } else process.stdout.write('2.3.4');`
+          : name === 'opencode'
+            ? `if (process.argv.includes('list')) process.stdout.write('│ OpenAI api\\n1 credential'); else process.stdout.write('3.4.5');`
+            : `process.stdout.write('git version 2.4.6 ${secret}');`;
     await writeFile(join(fixturePath, name), `#!${process.execPath}\n${body}\n`, { mode: 0o700 });
   }
-  database = await startDatabase(join(root, 'postgres')); pool = await connectDatabase(database.url);
-  app = await createApp({ pool}); url = await app.listen({ host: '127.0.0.1', port: 0 });
-  worker = createWorkerApp({ pool }); workerUrl = await worker.listen({ host: '127.0.0.1', port: 0 });
-  configuration = await enrollRuntime(url); runtimeId = configuration.runtimeId;
+  database = await startDatabase(join(root, 'postgres'));
+  pool = await connectDatabase(database.url);
+  app = await createApp({ pool });
+  url = await app.listen({ host: '127.0.0.1', port: 0 });
+  worker = createWorkerApp({ pool });
+  workerUrl = await worker.listen({ host: '127.0.0.1', port: 0 });
+  configuration = await enrollRuntime(url);
+  runtimeId = configuration.runtimeId;
 });
-afterAll(async () => { process.env.PATH = originalPath; await worker?.close(); await app?.close(); await pool?.end(); await database?.stop(); });
+afterAll(async () => {
+  process.env.PATH = originalPath;
+  await worker?.close();
+  await app?.close();
+  await pool?.end();
+  await database?.stop();
+});
 async function discover(observation = 1) {
   process.env.PATH = fixturePath;
-  try { return await discoverRuntime({ runtimeId, observation, timeoutMs: 300 }); }
-  finally { process.env.PATH = originalPath; }
+  try {
+    return await discoverRuntime({ runtimeId, observation, timeoutMs: 300 });
+  } finally {
+    process.env.PATH = originalPath;
+  }
 }
 async function post(registration: unknown, headers = {}, endpoint = workerUrl) {
-  return fetch(endpoint + '/api/worker/registrations', { method: 'POST', headers: { 'Content-Type': 'application/json', authorization: runtimeAuthorization(configuration), ...headers }, body: JSON.stringify(registration) });
+  return fetch(endpoint + '/api/worker/registrations', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', authorization: runtimeAuthorization(configuration), ...headers },
+    body: JSON.stringify(registration),
+  });
 }
 
 test('fixture subprocess discovery reports installation and auth independently without secrets or model allowlists', async () => {
   const registration = await discover();
-  expect(registration.harnesses).toEqual({ codex: { kind: 'ready' }, claude: { kind: 'ready' }, opencodeGo: { kind: 'not-ready' } });
-  expect(registration.tools.find((tool) => tool.name === 'codex')?.availability).toEqual({ kind: 'available', version: '1.2.3' });
-  expect(registration.tools.find((tool) => tool.name === 'dotnet')?.availability).toEqual({ kind: 'unavailable', reason: 'missing' });
+  expect(registration.harnesses).toEqual({
+    codex: { kind: 'ready', accountType: 'subscription' },
+    claude: { kind: 'ready' },
+    opencodeGo: { kind: 'not-ready' },
+  });
+  expect(registration.tools.find((tool) => tool.name === 'codex')?.availability).toEqual({
+    kind: 'available',
+    version: '1.2.3',
+  });
+  expect(registration.tools.find((tool) => tool.name === 'dotnet')?.availability).toEqual({
+    kind: 'unavailable',
+    reason: 'missing',
+  });
   expect(JSON.stringify(registration)).not.toContain(secret);
   expect(registration.modelPolicy).toBe('provider-discovered-at-execution');
   expect(() => RuntimeRegistration.parse({ ...registration, capacity: { slots: 0 } })).toThrow();
-  expect(() => RuntimeRegistration.parse({ ...registration, tools: registration.tools.map((tool) => ({ ...tool, availability: { kind: 'available', version: secret } })) })).toThrow();
+  expect(() =>
+    RuntimeRegistration.parse({
+      ...registration,
+      tools: registration.tools.map((tool) => ({ ...tool, availability: { kind: 'available', version: secret } })),
+    }),
+  ).toThrow();
 });
 
 test('malformed, unavailable, nonzero, bounded output and timed-out probes remain honest', async () => {
-  await writeFile(join(fixturePath, 'claude'), `#!${process.execPath}\nprocess.stdout.write('malformed ${secret}');\n`, { mode: 0o700 });
-  await writeFile(join(fixturePath, 'opencode'), `#!${process.execPath}\nprocess.stdout.write('│ OpenCode Go api\\n1 credential');\n`, { mode: 0o700 });
+  await writeFile(
+    join(fixturePath, 'claude'),
+    `#!${process.execPath}\nprocess.stdout.write('malformed ${secret}');\n`,
+    { mode: 0o700 },
+  );
+  await writeFile(
+    join(fixturePath, 'opencode'),
+    `#!${process.execPath}\nprocess.stdout.write('│ OpenCode Go api\\n1 credential');\n`,
+    { mode: 0o700 },
+  );
   await writeFile(join(fixturePath, 'node'), `#!${process.execPath}\nsetInterval(()=>{}, 1000);\n`, { mode: 0o700 });
-  await writeFile(join(fixturePath, 'make'), `#!${process.execPath}\nprocess.stdout.write('x'.repeat(100000));\n`, { mode: 0o700 });
+  await writeFile(join(fixturePath, 'make'), `#!${process.execPath}\nprocess.stdout.write('x'.repeat(100000));\n`, {
+    mode: 0o700,
+  });
   await writeFile(join(fixturePath, 'gcc'), `#!${process.execPath}\nprocess.exit(1);\n`, { mode: 0o700 });
   const registration = await discover();
   expect(registration.harnesses.claude).toEqual({ kind: 'unknown', reason: 'unrecognized' });
-  expect(registration.harnesses.opencodeGo).toEqual({ kind: 'ready' });
-  expect(registration.tools.find((tool) => tool.name === 'node')?.availability).toEqual({ kind: 'unavailable', reason: 'timeout' });
-  expect(registration.tools.find((tool) => tool.name === 'make')?.availability).toEqual({ kind: 'unavailable', reason: 'output-limit' });
-  expect(registration.tools.find((tool) => tool.name === 'gcc')?.availability).toEqual({ kind: 'unavailable', reason: 'failed' });
+  expect(registration.harnesses.opencodeGo).toEqual({ kind: 'ready', accountType: 'api-key' });
+  expect(registration.tools.find((tool) => tool.name === 'node')?.availability).toEqual({
+    kind: 'unavailable',
+    reason: 'timeout',
+  });
+  expect(registration.tools.find((tool) => tool.name === 'make')?.availability).toEqual({
+    kind: 'unavailable',
+    reason: 'output-limit',
+  });
+  expect(registration.tools.find((tool) => tool.name === 'gcc')?.availability).toEqual({
+    kind: 'unavailable',
+    reason: 'failed',
+  });
   expect(JSON.stringify(registration)).not.toContain(secret);
 });
 
 test('explicit unauthenticated statuses differ from failed status probes', async () => {
-  await writeFile(join(fixturePath, 'codex'), `#!${process.execPath}\nprocess.stderr.write('Not logged in'); process.exit(1);\n`, { mode: 0o700 });
-  await writeFile(join(fixturePath, 'claude'), `#!${process.execPath}\nprocess.stdout.write(JSON.stringify({loggedIn:false})); process.exit(1);\n`, { mode: 0o700 });
+  await writeFile(
+    join(fixturePath, 'codex'),
+    `#!${process.execPath}\nprocess.stderr.write('Not logged in'); process.exit(1);\n`,
+    { mode: 0o700 },
+  );
+  await writeFile(
+    join(fixturePath, 'claude'),
+    `#!${process.execPath}\nprocess.stdout.write(JSON.stringify({loggedIn:false})); process.exit(1);\n`,
+    { mode: 0o700 },
+  );
   const unauthenticated = await discover();
   expect(unauthenticated.harnesses.codex).toEqual({ kind: 'not-ready' });
   expect(unauthenticated.harnesses.claude).toEqual({ kind: 'not-ready' });
   await writeFile(join(fixturePath, 'codex'), `#!${process.execPath}\nprocess.exit(2);\n`, { mode: 0o700 });
-  await writeFile(join(fixturePath, 'claude'), `#!${process.execPath}\nprocess.stdout.write(JSON.stringify({loggedIn:true})); process.exit(2);\n`, { mode: 0o700 });
+  await writeFile(
+    join(fixturePath, 'claude'),
+    `#!${process.execPath}\nprocess.stdout.write(JSON.stringify({loggedIn:true})); process.exit(2);\n`,
+    { mode: 0o700 },
+  );
   const failed = await discover();
   expect(failed.harnesses.codex).toEqual({ kind: 'unknown', reason: 'failed' });
   expect(failed.harnesses.claude).toEqual({ kind: 'unknown', reason: 'failed' });
 });
 
 test('worker HTTP validates protocol, shape, JSON, content type and size before persistence', async () => {
-  configuration = await enrollRuntime(url); runtimeId = configuration.runtimeId;
+  configuration = await enrollRuntime(url);
+  runtimeId = configuration.runtimeId;
   const registration = await discover();
   const count = Number((await pool.query('SELECT count(*) FROM runtime_observations')).rows[0].count);
   expect((await post({ ...registration, protocol: 2 })).status).toBe(400);
   expect((await post({ ...registration, secret })).status).toBe(400);
-  for (const [body, contentType, status] of [['{', 'application/json', 400], ['{}', 'application/octet-stream', 415], ['x'.repeat(32_001), 'application/json', 413]] satisfies [string, string, number][]) {
-    const response = await fetch(workerUrl + '/api/worker/registrations', { method: 'POST', headers: { 'Content-Type': contentType, authorization: runtimeAuthorization(configuration) }, body });
+  for (const [body, contentType, status] of [
+    ['{', 'application/json', 400],
+    ['{}', 'application/octet-stream', 415],
+    ['x'.repeat(32_001), 'application/json', 413],
+  ] satisfies [string, string, number][]) {
+    const response = await fetch(workerUrl + '/api/worker/registrations', {
+      method: 'POST',
+      headers: { 'Content-Type': contentType, authorization: runtimeAuthorization(configuration) },
+      body,
+    });
     expect(response.status).toBe(status);
   }
   expect(Number((await pool.query('SELECT count(*) FROM runtime_observations')).rows[0].count)).toBe(count);
   for (const path of ['/api/runner/reports', '/api/evaluations', '/index.html']) {
     expect((await fetch(workerUrl + path)).status).toBe(404);
-    expect((await fetch(workerUrl + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).status).toBe(404);
+    expect(
+      (await fetch(workerUrl + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }))
+        .status,
+    ).toBe(404);
   }
 });
 
@@ -124,23 +205,45 @@ test('real HTTP persistence serializes duplicates, rejects conflicts, preserves 
   await expect(pool.query('DELETE FROM runtime_observations')).rejects.toThrow('Immutable');
   const latest = RegisteredRuntimes.parse(await (await fetch(url + '/api/runtimes')).json());
   expect(latest[0]?.registration).toEqual(newer);
-  await worker.close(); await app.close(); await pool.end(); await database.stop();
-  database = await startDatabase(join(root, 'postgres')); pool = await connectDatabase(database.url);
-  app = await createApp({ pool}); url = await app.listen({ host: '127.0.0.1', port: 0 });
-  worker = createWorkerApp({ pool }); workerUrl = await worker.listen({ host: '127.0.0.1', port: 0 });
+  await worker.close();
+  await app.close();
+  await pool.end();
+  await database.stop();
+  database = await startDatabase(join(root, 'postgres'));
+  pool = await connectDatabase(database.url);
+  app = await createApp({ pool });
+  url = await app.listen({ host: '127.0.0.1', port: 0 });
+  worker = createWorkerApp({ pool });
+  workerUrl = await worker.listen({ host: '127.0.0.1', port: 0 });
   expect(await (await fetch(url + '/api/runtimes')).json()).toEqual(latest);
   expect(await (await post(first)).json()).toEqual(receipts[0]);
 });
 
 function hostPost(endpoint: string, registration: RuntimeRegistration) {
   return new Promise<number | undefined>((resolve, reject) => {
-    const req = request(endpoint + '/api/worker/registrations', { method: 'POST', headers: { Host: 'public.example:443', 'Content-Type': 'application/json', authorization: runtimeAuthorization(configuration) } }, (response) => { response.resume(); response.on('end', () => resolve(response.statusCode)); });
-    req.on('error', reject); req.end(JSON.stringify(registration));
+    const req = request(
+      endpoint + '/api/worker/registrations',
+      {
+        method: 'POST',
+        headers: {
+          Host: 'public.example:443',
+          'Content-Type': 'application/json',
+          authorization: runtimeAuthorization(configuration),
+        },
+      },
+      (response) => {
+        response.resume();
+        response.on('end', () => resolve(response.statusCode));
+      },
+    );
+    req.on('error', reject);
+    req.end(JSON.stringify(registration));
   });
 }
 
 test('worker listener admits outbound workers and rejects browser authority, while local Host policies remain', async () => {
-  configuration = await enrollRuntime(url); runtimeId = configuration.runtimeId;
+  configuration = await enrollRuntime(url);
+  runtimeId = configuration.runtimeId;
   const registration = await discover();
   expect(await hostPost(workerUrl, registration)).toBe(200);
   expect((await post(registration, { Origin: 'https://public.example' })).status).toBe(403);
@@ -149,26 +252,34 @@ test('worker listener admits outbound workers and rejects browser authority, whi
   expect((await fetch(workerUrl + '/api/suites')).status).toBe(404);
   expect((await post(registration, {}, url)).status).toBe(200);
   expect(await hostPost(url, registration)).toBe(403);
-  expect((await fetch(url + '/api/suites', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).status).toBe(403);
+  expect(
+    (await fetch(url + '/api/suites', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }))
+      .status,
+  ).toBe(403);
 });
 
 test('probe uses acknowledged snapshots, fresh scans, and server sequence after local state loss', async () => {
   const stateRoot = join(root, 'cli');
-  const cliConfiguration = {...await enrollRuntime(url),apiUrl:workerUrl};
-  await durableWrite(join(stateRoot,'config.json'),cliConfiguration);
-  const observationRoot = runtimeRoot(stateRoot,cliConfiguration);
-  const cli = (...args: string[]) => promisify(execFile)(process.execPath, ['--import', 'tsx', 'apps/runner/src/cli-main.ts', '--state-dir', stateRoot, 'pair', ...args], { cwd: resolve('.'), env: { ...process.env, PATH: fixturePath } });
+  const cliConfiguration = { ...(await enrollRuntime(url)), apiUrl: workerUrl };
+  await durableWrite(join(stateRoot, 'config.json'), cliConfiguration);
+  const observationRoot = runtimeRoot(stateRoot, cliConfiguration);
+  const cli = (...args: string[]) =>
+    promisify(execFile)(
+      process.execPath,
+      ['--import', 'tsx', 'apps/runner/src/cli-main.ts', '--state-dir', stateRoot, 'pair', ...args],
+      { cwd: resolve('.'), env: { ...process.env, PATH: fixturePath } },
+    );
   await cli('probe');
   const first = JSON.parse(await readFile(join(observationRoot, 'capabilities.json'), 'utf8'));
   expect(first.receipt.observation).toBe(1);
   const cached = JSON.parse((await cli('status')).stdout);
   expect(cached.capabilities).toEqual(first);
-  await durableWrite(join(stateRoot,'config.json'),{...cliConfiguration,apiUrl:'http://127.0.0.1:1'});
+  await durableWrite(join(stateRoot, 'config.json'), { ...cliConfiguration, apiUrl: 'http://127.0.0.1:1' });
   await expect(onboard({ stateRoot })).rejects.toThrow();
   expect(JSON.parse(await readFile(join(observationRoot, 'capabilities.json'), 'utf8'))).toEqual(first);
   expect(JSON.parse((await cli('status')).stdout).status).toBe('dashboard unreachable');
-  await durableWrite(join(stateRoot,'config.json'),cliConfiguration);
-  await rm(observationRoot, {recursive:true,force:true});
+  await durableWrite(join(stateRoot, 'config.json'), cliConfiguration);
+  await rm(observationRoot, { recursive: true, force: true });
   await cli('probe');
   const latest = JSON.parse(await readFile(join(observationRoot, 'capabilities.json'), 'utf8'));
   expect(latest.receipt.observation).toBe(2);
@@ -178,5 +289,41 @@ test('probe uses acknowledged snapshots, fresh scans, and server sequence after 
 
 test('remote APIs require HTTPS and plain origin configuration', () => {
   expect(onboardingUrl('https://api.example').href).toBe('https://api.example/api/worker/registrations');
-  for (const value of ['http://api.example', 'ftp://127.0.0.1', 'https://user:secret@api.example', 'https://api.example/path', 'https://api.example/?token=secret']) expect(() => onboardingUrl(value)).toThrow();
+  for (const value of [
+    'http://api.example',
+    'ftp://127.0.0.1',
+    'https://user:secret@api.example',
+    'https://api.example/path',
+    'https://api.example/?token=secret',
+  ])
+    expect(() => onboardingUrl(value)).toThrow();
+});
+
+test('Codex app-server and OpenCode model probes publish only validated model metadata', async () => {
+  const bin = join(root, 'models-bin');
+  await mkdir(bin);
+  await writeFile(
+    join(bin, 'codex'),
+    `#!${process.execPath}\nif(process.argv.includes('--version'))console.log('codex 1.0.0');else if(process.argv.includes('status'))console.log('Logged in using ChatGPT');else {let input='';process.stdin.on('data',chunk=>{input+=chunk;if(input.includes('model/list')){console.log(JSON.stringify({id:2,result:{data:[{model:'model-a',displayName:'Model A',inputModalities:['text','image'],private:'credential-canary'}]}}));process.exit();}});}`,
+    { mode: 0o700 },
+  );
+  await writeFile(
+    join(bin, 'opencode'),
+    `#!${process.execPath}\nif(process.argv.includes('--version'))console.log('opencode 1.0.0');else if(process.argv.includes('models'))console.log('opencode-go/model-a\\nnoise secret');else console.log('OpenCode Go api\\n1 credential');`,
+    { mode: 0o700 },
+  );
+  process.env.PATH = bin;
+  try {
+    const registration = await discoverRuntime({ runtimeId, observation: 100, timeoutMs: 1000 });
+    expect(registration.harnesses.codex).toMatchObject({
+      kind: 'ready',
+      models: ['model-a'],
+      modelDetails: [{ id: 'model-a', name: 'Model A', modalities: ['text', 'image'] }],
+    });
+    expect(registration.harnesses.opencodeGo).toMatchObject({ kind: 'ready', models: ['opencode-go/model-a'] });
+    expect(JSON.stringify(registration)).not.toContain('credential-canary');
+    expect(JSON.stringify(registration)).not.toContain('noise secret');
+  } finally {
+    process.env.PATH = originalPath;
+  }
 });

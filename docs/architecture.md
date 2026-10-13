@@ -23,7 +23,7 @@ flowchart LR
 | `packages/contracts/src/configured-runs.ts`, `work.ts`, `task-io.ts` | Immutable run inputs, lifecycle, assignments, outcomes, repository declarations |
 | `packages/contracts/src/blind-grading.ts` | Anonymous navigation, result cards, criterion judgments |
 | `apps/server/src/features/suites.ts` | Append-only content, exact-base saves, historical reads |
-| `apps/server/src/features/access.ts` | Browser sessions, reusable enrollment, revocation, abandonment |
+| `apps/server/src/features/access.ts` | Browser sessions, single-use enrollment, revocation, abandonment |
 | `apps/server/src/features/runtimes.ts` | Immutable observations, sequence ordering, stable receipts |
 | `apps/server/src/features/configured-runs.ts` | Matrix creation, claims, preparation, outcomes, artifacts |
 | `apps/server/src/features/blind-grading.ts` | Immutable mappings, cell judgments, scoped authority |
@@ -34,7 +34,10 @@ flowchart LR
 | `apps/runner/src/execution.ts` | Sequential configured execution and durable report recovery |
 | `apps/runner/src/materials.ts`, `adapters.ts`, `artifacts.ts`, `browser-scenario.ts` | Attempt checkout, harness protocols, collection, browser recording |
 | `apps/runner/src/spool.ts`, `processes/` | Flushed atomic writes, bounded subprocess lifetime and Linux process groups |
-| `apps/web/src/` | Runs, suite editor, runtime pairing, grading, result viewers |
+| `apps/web/src/` | Runs, suite editor, runtime pairing, grading, result viewers, Results pivots |
+| `apps/web/src/design-system/` | Supplied design tokens, reusable components, local fonts and icon assets |
+| `packages/contracts/src/dashboard.ts`, `model-catalog.ts`, `results.ts` | Dashboard projections, catalog metadata and aggregation inputs |
+| `apps/server/src/features/results.ts`, `model-catalog.ts` | Submitted-grade queries and cached Artificial Analysis enrichment |
 | `scripts/local.ts`, `local-lock.ts` | Per-worktree dashboard lifecycle and state lock |
 | `scripts/local-database.ts`, `database-worker.ts` | Database owner lifetime and shutdown |
 
@@ -50,7 +53,7 @@ Suite edits append complete immutable definitions and move the current pointer w
 
 ## Pairing and capabilities
 
-`vibe-runner pair TOKEN` replaces existing authority, discovers tools, enrolls, and uploads capabilities. Pairing succeeds only after acknowledgement. A reusable ten-minute token binds one runtime identity. Credential replacement and revocation abandon unfinished assignments, preserve accepted outcomes, and leave completed history intact. Connectivity loss alone preserves assignments.
+`vibe-runner pair TOKEN` replaces existing authority, discovers tools, enrolls, and uploads capabilities. Pairing succeeds only after acknowledgement. A single-use 15-minute token binds one runtime identity. The private pairing exchange survives lost-response retries. Credential replacement and revocation abandon unfinished assignments, preserve accepted outcomes, and leave completed history intact. Connectivity loss alone preserves assignments.
 
 The runner uses a private standard state directory or global `--state-dir`. It loads no runner `.env` or executable/state/slots overrides. Discovery and execution resolve the same tools on `PATH`. Harness login directories, provider authentication, proxies, certificates, and SSH-agent settings retain normal operating-system behavior. Dashboard credentials and raw authentication output remain outside task workspaces and child environments.
 
@@ -71,9 +74,9 @@ The optional worker-only listener shares authority and database lifecycle, rejec
 `html-preview.ts` owns two bounded interactive sessions and exact manifest asset serving. `isolated-chromium.ts` owns Bubblewrap runtime mounts, network isolation, process deadlines, and teardown. `apps/web/src/result-viewer.tsx` renders the same presentation for any authorized caller. Run management loads a result only when its viewer is expanded. Grading and blind session authority belong to their existing owners.
 ## Configured-run grading
 
-The grading feature reads immutable configured-run inputs and outcomes. It stores one immutable session mapping and one mutable row per completed card and assigned criterion. Each cell has its own version and transaction lock. Session authority uses its own grading cookie. The browser selects **Grading** without mounting management views or requesting their records.
+The grading feature reads immutable configured-run inputs and outcomes. It stores one immutable session mapping and one mutable row per completed card and assigned criterion. Each cell has its own version and transaction lock. Session authority uses its own grading cookie. Runs opens the grading overview; shared invitations bypass dashboard management. Active grading mounts only scoped task/result reads.
 
-The [blind-grading contract](contracts/blind-grading.md) defines task-sized reads, pinned criterion snapshots, stable card order, exact retries, and anonymous artifact access. Execution failures and skips remain visible with neutral status. This feature does not reveal identities or calculate aggregate scores.
+The [blind-grading contract](contracts/blind-grading.md) defines task-sized reads, pinned criterion snapshots, stable card order, exact retries, and anonymous artifact access. Execution failures and skips remain visible with neutral status. Submitting freezes partial or complete judgments and reveals entrants; independent named gradings feed the Results aggregates.
 
 `grading-viewer-routes.ts` authorizes an existing session/card mapping before calling the shared result projection. Public file URLs use immutable outcome ordinals and neutral labels. The adapter changes no mapping or judgment storage. Both management and grading use the same bounded HTML preview service.
 

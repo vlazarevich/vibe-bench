@@ -10,31 +10,43 @@ test('all saved result viewers render, interact, download, and survive reload', 
   await expect(attempts.getByText('View result', { exact: true })).toHaveCount(5);
   for (const summary of await attempts.getByText('View result', { exact: true }).all()) await summary.click();
   await expect(attempts.getByRole('region', { name: 'Result preview', exact: true })).toHaveCount(5);
-  const text = attempts.locator('article').filter({ has: page.getByRole('heading', { name: 'text-generation completed' }) });
+  const text = attempts
+    .locator('article')
+    .filter({ has: page.getByRole('heading', { name: 'text-generation completed' }) });
   await expect(text).toContainText('Full answer <script>window.viewerEscaped=false</script>');
-  expect(await text.locator('pre').first().textContent()).toHaveLength(153056);
+  expect(await text.locator('.vb-txt').first().textContent()).toHaveLength(153056);
   expect(await page.evaluate(() => 'viewerEscaped' in window)).toBe(false);
-  const image = attempts.locator('article').filter({ has: page.getByRole('heading', { name: 'image-generation completed' }) });
+  const image = attempts
+    .locator('article')
+    .filter({ has: page.getByRole('heading', { name: 'image-generation completed' }) });
   await expect(image.getByRole('img')).toBeVisible();
   await expect.poll(() => image.getByRole('img').evaluate((element: HTMLImageElement) => element.naturalWidth)).toBe(1);
-  const code = attempts.locator('article').filter({ has: page.getByRole('heading', { name: 'coding-feature completed' }) });
-  await expect(code.getByRole('region', { name: 'Selected file' })).toContainText('export const result = "<b>escaped</b>";');
-  await expect(code.getByRole('region', { name: 'Unified diff' })).toContainText('-old');
+  const code = attempts
+    .locator('article')
+    .filter({ has: page.getByRole('heading', { name: 'coding-feature completed' }) });
+  await expect(code.getByRole('region', { name: 'Selected file' })).toContainText(
+    'export const result = "<b>escaped</b>";',
+  );
+  await expect(code.getByRole('region', { name: 'Unified diff' })).toContainText('old');
   await code.getByRole('button', { name: 'removed.txt · deleted' }).click();
   await expect(code.getByRole('region', { name: 'Selected file' })).toContainText('Deleted file.');
   await code.getByRole('button', { name: 'binary.dat · modified' }).click();
   await expect(code.getByRole('region', { name: 'Selected file' })).toContainText('cannot be previewed');
-  const browser = attempts.locator('article').filter({ has: page.getByRole('heading', { name: 'browser-scenario completed' }) });
+  const browser = attempts
+    .locator('article')
+    .filter({ has: page.getByRole('heading', { name: 'browser-scenario completed' }) });
   const video = browser.getByLabel('Browser recording');
   await expect.poll(() => video.evaluate((element: HTMLVideoElement) => element.videoWidth)).toBeGreaterThan(0);
   await video.evaluate((element: HTMLVideoElement) => element.play());
   await expect.poll(() => video.evaluate((element: HTMLVideoElement) => element.currentTime)).toBeGreaterThan(0);
   const html = attempts.getByRole('region', { name: 'Interactive HTML preview' });
   await html.getByRole('button', { name: 'Open interactive preview' }).click();
-  const frame = html.getByRole('application'); await expect(frame).toBeVisible();
+  const frame = html.getByRole('application');
+  await expect(frame).toBeVisible();
   const before = await frame.getAttribute('src');
-  const bounds = await frame.boundingBox(); if (!bounds) throw new Error();
-  await frame.click({ position: { x: 50 * bounds.width / 960, y: 40 * bounds.height / 640 } });
+  const bounds = await frame.boundingBox();
+  if (!bounds) throw new Error();
+  await frame.click({ position: { x: (50 * bounds.width) / 960, y: (40 * bounds.height) / 640 } });
   await expect.poll(() => frame.getAttribute('src')).not.toBe(before);
   await html.getByRole('button', { name: 'Next field' }).click();
   await html.getByRole('textbox', { name: 'Text for focused field' }).fill('Typed through preview');
@@ -42,7 +54,9 @@ test('all saved result viewers render, interact, download, and survive reload', 
   await expect(html.getByRole('button', { name: 'Refresh preview' })).toBeEnabled();
   const downloadEvent = page.waitForEvent('download');
   await text.getByRole('link', { name: 'extra.txt (32 bytes)' }).click();
-  const download = await downloadEvent; const path = await download.path(); if (!path) throw new Error();
+  const download = await downloadEvent;
+  const path = await download.path();
+  if (!path) throw new Error();
   expect(await readFile(path, 'utf8')).toBe('Declared extra <b>plain text</b>');
   await code.getByRole('button', { name: 'result.ts · added' }).click();
   await code.screenshot({ path: '.artifacts/artifact-code-viewer.png' });
@@ -62,15 +76,28 @@ test('closing a preview during an input request cannot restore a stale frame', a
   if (!baseURL) throw new Error();
   const fixture = await seedArtifactRun(baseURL);
   await page.goto(`/?view=runs&run=${fixture.run.runId}`);
-  await page.locator('article').filter({ has: page.getByRole('heading', { name: 'html-interactive completed' }) }).getByText('View result', { exact: true }).click();
+  await page
+    .locator('article')
+    .filter({ has: page.getByRole('heading', { name: 'html-interactive completed' }) })
+    .getByText('View result', { exact: true })
+    .click();
   const html = page.getByRole('region', { name: 'Interactive HTML preview' });
   await html.getByRole('button', { name: 'Open interactive preview' }).click();
   await expect(html.getByRole('application')).toBeVisible();
   let release: () => void = () => {};
-  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
   let intercepted: () => void = () => {};
-  const arrived = new Promise<void>((resolve) => { intercepted = resolve; });
-  await page.route('**/preview/*/input', async (route) => { const response = await route.fetch(); intercepted(); await gate; await route.fulfill({ response }); });
+  const arrived = new Promise<void>((resolve) => {
+    intercepted = resolve;
+  });
+  await page.route('**/preview/*/input', async (route) => {
+    const response = await route.fetch();
+    intercepted();
+    await gate;
+    await route.fulfill({ response });
+  });
   await html.getByRole('button', { name: 'Refresh preview' }).click();
   await arrived;
   await html.getByRole('button', { name: 'Close interactive preview' }).click();

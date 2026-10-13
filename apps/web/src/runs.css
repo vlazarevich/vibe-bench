@@ -1,0 +1,64 @@
+.new-run-body {
+  height: min(600px, 75vh);
+}
+.new-run-scroll {
+  overflow: auto;
+  min-height: 0;
+  flex: 1;
+  padding-right: 4px;
+}
+.new-run-footer {
+  flex: none;
+}
+.entrant-row {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr) 140px 36px;
+  gap: 8px;
+  align-items: end;
+}
+.entrant-row > datalist {
+  display: none;
+}
+.new-run-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 24px;
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 16px;
+  margin-top: auto;
+}
+.queue-hint {
+  height: 36px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--status-warning);
+  font-size: 13px;
+}
+.new-run-footer > .actions {
+  flex: none;
+}
+.new-run-body details > .stack {
+  padding-top: 12px;
+}
+.run-link {
+  color: var(--text-primary);
+  text-decoration: none;
+}
+.run-link:hover {
+  color: var(--text-accent);
+}
+@media (max-width: 720px) {
+  .entrant-row {
+    grid-template-columns: 110px minmax(0, 1fr);
+  }
+  .new-run-footer {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .queue-hint {
+    height: auto;
+    min-height: 36px;
+  }
+}

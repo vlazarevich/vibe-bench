@@ -1,0 +1,186 @@
+/* VibeBench — generated from tokens.json */
+:root,
+[data-theme='light'] {
+  --navy-50: #f4f6fa; /* Scale. Light canvas; dark primary text. */
+  --navy-100: #e7ecf4; /* Scale. Light hover, sunken wells, subtle dividers. */
+  --navy-200: #cfd8e7; /* Scale. Light default borders. */
+  --navy-300: #a6b5ce; /* Scale. Dark muted text. */
+  --navy-400: #7487a8; /* Scale. Light placeholder/disabled text; dark strong borders. */
+  --navy-500: #56698c; /* Scale. Light strong borders; dark placeholder/disabled text. */
+  --navy-600: #405274; /* Scale. Light muted text. */
+  --navy-700: #2c3d5f; /* Scale. Dark default borders. */
+  --navy-800: #1b2d50; /* Scale. Dark raised surfaces, hover, subtle dividers. */
+  --navy-900: #112345; /* Scale. Brand midnight. Light primary text and action fill; dark surface. */
+  --navy-950: #0a1630; /* Scale. Dark canvas and sunken wells. */
+  --pink-50: #fff0f5; /* Scale. Light selected rows. */
+  --pink-100: #ffdce9; /* Scale. Light accent tint (badges, highlights). */
+  --pink-200: #ffb9d2; /* Scale. Spare tint. */
+  --pink-300: #ff8db5; /* Scale. Dark accent text, links, active icons. */
+  --pink-400: #fc5590; /* Scale. Dark focus ring and selected outline. */
+  --pink-500: #fc4688; /* Scale. Brand pink. Glows, gradient borders, the cover, highlights; never text on light grounds. */
+  --pink-600: #e01e65; /* Scale. Accent fill under white text (4.6:1); light focus ring; light action hover; dark action fill. */
+  --pink-700: #bd1352; /* Scale. Light accent text and links (5.2:1+); dark action hover. */
+  --pink-800: #8f0f3e; /* Scale. Dark accent tint (badges). */
+  --pink-900: #4d0a24; /* Scale. Dark selected rows. */
+  --bg-canvas: var(--navy-50); /* App background behind panels and the tree. */
+  --bg-surface: #ffffff; /* Panels, cards, tables, the editor pane. */
+  --bg-raised: #ffffff; /* Menus, popovers, dialogs, dragged items (with shadow-lg). */
+  --bg-sunken: var(--navy-100); /* Wells inside a surface: code/output viewers, table headers, disabled inputs. */
+  --bg-hover: var(--navy-100); /* Hovered rows and menu items on bg-surface. */
+  --bg-hover-raised: var(
+    --navy-100
+  ); /* Hovered and keyboard-active items inside raised layers: menu items, select options (bg-hover vanishes on bg-raised in dark). */
+  --bg-selected: var(--pink-50); /* Selected tree node, row or entrant. Pair with border-selected. */
+  --bg-accent-soft: var(--pink-100); /* Accent badges and highlighted counts; text-primary on it. */
+  --bg-glass: rgba(255, 255, 255, 0.85); /* Sticky header and floating toolbars, always with backdrop blur. */
+  --text-primary: var(--navy-900); /* Names, values, headings. 12.6:1+ on every bg- token. */
+  --text-muted: var(--navy-600); /* Metadata, counts, helper text, tree guides labels. 6.5:1+ on every bg- token. */
+  --text-subtle: var(--navy-400); /* Placeholders and disabled labels only (not for information). */
+  --text-accent: var(--pink-700); /* Links, active nav, active tab, pink callouts. 5.2:1+ on every bg- token. */
+  --text-on-fill: #ffffff; /* Text and icons on fill-action, fill-action-hover and fill-accent. */
+  --fill-action: var(--navy-900); /* Primary button fill. Light: midnight; dark: pink (navy would vanish on navy). */
+  --fill-action-hover: var(--pink-600); /* Primary button hover. */
+  --fill-accent: var(--pink-600); /* Pink fills with white text: count bubbles, the active step, toggles on. */
+  --fill-chart: var(
+    --pink-400
+  ); /* Secondary pink for data: sparklines and trend charts. Lighter than fill-accent in light mode, darker in dark, like the secondary button against the primary, so trends sit back and pink scores stand out. */
+  --border-default: var(--navy-200); /* Panel and card outlines, table rules, tree guide lines. */
+  --border-subtle: var(
+    --navy-100
+  ); /* Dividers between rows inside a surface. Dark is translucent navy-50 so it reads the same on bg-surface and bg-raised. */
+  --border-strong: var(--navy-500); /* Input and control outlines, checkboxes (3:1+ on surfaces). */
+  --border-selected: var(--pink-600); /* Outline or 2px indicator of the selected node/row. */
+  --focus-ring: var(--pink-600); /* 2px solid focus outline, 2px offset, on every interactive element (4.2:1+). */
+  --status-success: #0f766e; /* Passed / graded / complete: text and icons. Always with an icon or word. */
+  --status-success-bg: #e3f6f3; /* Background of success badges and banners. */
+  --status-warning: #8a5a00; /* Queued, partial, needs review: text and icons. Always with an icon or word. */
+  --status-warning-bg: #fdf3dc; /* Background of warning badges and banners. */
+  --status-danger: #b4380a; /* Failed, error, destructive actions: text and icons. Orange, not red, to stay apart from the brand pink. */
+  --status-danger-bg: #fdece4; /* Background of danger badges and banners. */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05); /* Resting cards and inputs. */
+  --shadow-lg:
+    0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1); /* Raised menus, popovers, dialogs, hovered cards. */
+  --shadow-brand:
+    0 10px 15px -3px rgba(224, 30, 101, 0.2), 0 4px 6px -4px rgba(224, 30, 101, 0.2); /* Hovered primary button and the active glow card (pink-600 at 20%). */
+}
+[data-theme='dark'] {
+  --bg-canvas: var(--navy-950);
+  --bg-surface: var(--navy-900);
+  --bg-raised: var(--navy-800);
+  --bg-sunken: var(--navy-950);
+  --bg-hover: var(--navy-800);
+  --bg-hover-raised: var(--navy-700);
+  --bg-selected: var(--pink-900);
+  --bg-accent-soft: var(--pink-800);
+  --bg-glass: rgba(17, 35, 69, 0.85);
+  --text-primary: var(--navy-50);
+  --text-muted: var(--navy-300);
+  --text-subtle: var(--navy-500);
+  --text-accent: var(--pink-300);
+  --text-on-fill: #ffffff;
+  --fill-action: var(--pink-600);
+  --fill-action-hover: var(--pink-700);
+  --fill-accent: var(--pink-600);
+  --fill-chart: var(--pink-700);
+  --border-default: var(--navy-700);
+  --border-subtle: rgba(244, 246, 250, 0.1);
+  --border-strong: var(--navy-400);
+  --border-selected: var(--pink-400);
+  --focus-ring: var(--pink-400);
+  --status-success: #5fd4c4;
+  --status-success-bg: #0c3b3e;
+  --status-warning: #f5c451;
+  --status-warning-bg: #3b3014;
+  --status-danger: #fb8f5c;
+  --status-danger-bg: #46200f;
+}
+:root {
+  --space-half: 4px; /* Icon-to-label gaps, badge padding, tree indent tick. */
+  --space-base: 8px; /* Base unit; all spacing is a multiple of it. Icon-to-label gaps, tight stacks. */
+  --space-indent: 20px; /* Indent per level in the suite/task tree. */
+  --space-gap: 16px; /* Gap between cards in a grid and between form fields. */
+  --space-card: 24px; /* Inner padding of cards and panels. */
+  --space-section: 80px; /* Vertical padding between page sections. */
+  --radius-card: 8px; /* Default card and panel corners (the token spec). */
+  --radius-xl: 12px; /* Small interactive elements: inputs, chips, menu items. */
+  --radius-2xl: 16px; /* Larger interactive elements and media frames. */
+  --radius-3xl: 24px; /* Large structural containers and feature cards. */
+  --radius-panel: 40px; /* Hero and premium section containers (2.5rem). */
+  --radius-pill: 9999px; /* All buttons, badges and pills. */
+  --container-max: 1280px; /* Max content width (7xl); the fixed container lines sit on its edges. */
+  --font-display: Inter, system-ui, sans-serif;
+  --font-body: Manrope, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --text-display-lg: 500 64px/1.04 var(--font-display); /* Marketing and empty-state hero only; not inside the app. */
+  --text-title-lg: 500 24px/32px var(--font-display); /* Page title: the open suite, run or report. */
+  --text-heading-md: 600 18px/24px var(--font-display); /* Panel and section headings. */
+  --text-heading-sm: 600 15px/20px var(--font-display); /* Card titles, dialog titles, selected item name. */
+  --text-body-md: 400 16px/1.6 var(--font-body); /* Longer descriptions and task prompts. */
+  --text-body-sm: 400 14px/20px var(--font-body); /* Default UI text: tree nodes, table cells, form fields. */
+  --text-ui-label: 600 13px/16px var(--font-body); /* Buttons, tabs, field labels, nav. */
+  --text-label-md: 400 12px/1.2 var(--font-body); /* IDs, scores, counts, badges, pills, column eyebrows. Uppercase, tabular figures. */
+  --text-code-sm: 400 12px/18px var(--font-mono); /* Entrant output, prompts and logs in code/output viewers only. */
+}
+.display-lg {
+  font-family: var(--font-display);
+  font-size: 64px;
+  line-height: 1.04;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+.title-lg {
+  font-family: var(--font-display);
+  font-size: 24px;
+  line-height: 32px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+.heading-md {
+  font-family: var(--font-display);
+  font-size: 18px;
+  line-height: 24px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+.heading-sm {
+  font-family: var(--font-display);
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+.body-md {
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.6;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+.body-sm {
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+.ui-label {
+  font-family: var(--font-body);
+  font-size: 13px;
+  line-height: 16px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+.label-md {
+  font-family: var(--font-body);
+  font-size: 12px;
+  line-height: 1.2;
+  font-weight: 400;
+  letter-spacing: 0.03em;
+}
+.code-sm {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 400;
+  letter-spacing: 0;
+}

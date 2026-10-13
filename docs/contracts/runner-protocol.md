@@ -1,6 +1,6 @@
 # Runner protocol and process ownership
 
-The implemented CLI is `vibe-runner`. Executable schemas live in `runtime.ts`, `access.ts`, `configured-runs.ts`, and `work.ts`. Scheduling leases and cancellation APIs below remain design guidance.
+The implemented CLI is `vibe-runner`. Executable schemas live in `runtime.ts`, `access.ts`, `configured-runs.ts`, and `work.ts`. Scheduling leases and ownership generations remain design guidance. Protocol 1 implements whole-run claims, immutable reports and heartbeat cancellation.
 
 ## Connection and authority
 
@@ -30,7 +30,7 @@ Claims reserve one whole run transactionally. Dashboard disconnection preserves 
 
 Re-execution creates a new attempt and preserves prior diagnostics. There is no lease-expiry behavior that stops assigned work when the API is unavailable.
 
-Cancellation records intent and prevents new claims before signalling workers. Confirm a terminal cancellation only after process-tree termination is known. A disconnected worker remains cancellation-pending or receives a lost-worker outcome; do not claim a confirmed kill. Preserve completion already accepted before cancellation.
+Cancellation atomically records intent, abandons unfinished server work, retires the claim and preserves previously accepted outcomes. The dashboard’s Cancelled state means server acceptance has stopped; it does not certify termination on a disconnected machine. Authenticated heartbeats every two seconds convey the stop request. The runner aborts its current process group or browser context, persists an idempotent cancellation marker and retires the local assignment. A disconnected runner receives the stop request when connectivity returns; API unavailability alone does not abort it.
 
 ## Execution boundary
 
@@ -58,9 +58,9 @@ Check installed CLI behavior and official documentation when changing an adapter
 
 ## Implemented pairing and capabilities
 
-The CLI exposes `pair TOKEN`, `pair status`, `pair probe`, `pair revoke`, `run`, and `run-once`. Global `--state-dir` and command help work for source checkouts and the standalone executable. Source checkouts report `development`; standalone builds embed their release version. Pairing succeeds after an acknowledged capability report. Reusable enrollment tokens retain one server-issued identity until expiry. Failed pairing clears the selected local state directory. Revocation attempts the remote operation, then clears local state and reports whether dashboard abandonment was confirmed.
+The CLI exposes `pair TOKEN`, `pair status`, `pair probe`, `pair revoke`, `run`, and `run-once`. Global `--state-dir` and command help work for source checkouts and the standalone executable. Source checkouts report `development`; standalone builds embed their release version. Pairing succeeds after an acknowledged capability report. Single-use 15-minute enrollment tokens retain one server-issued identity. A private durable exchange enables exact lost-response retries. Failed pairing keeps only that exchange until retry or replacement. Revocation attempts the remote operation, then clears local state and reports whether dashboard abandonment was confirmed.
 
-Protocol-1 observations contain machine facts, installed tool versions, explicit harness authentication readiness. They contain no slots or capacity field. Readiness does not prove model entitlement. Discovery and execution select the same executable from `PATH`. A run retains its acknowledged executable paths for every attempt and recovery. A concurrent probe changes the selection for subsequent runs. A tool installed after discovery remains unavailable until a new observation is acknowledged.
+Protocol-1 observations contain hostname, OS, machine facts, installed tool versions and explicit harness authentication readiness. Known account types are reported without account identifiers. Codex app-server model/list supplies model IDs and input modalities; OpenCode Go supplies model IDs through its models command. Unsupported discovery stays unknown. They contain no slots or capacity field. Readiness does not prove model entitlement. Discovery and execution select the same executable from `PATH`. A run retains its acknowledged executable paths for every attempt and recovery. A concurrent probe changes the selection for subsequent runs. A tool installed after discovery remains unavailable until a new observation is acknowledged.
 
 A stable runtime UUID and monotonic observation sequence identify each immutable registration. Identical replay returns its saved receipt; conflicting content under the same sequence returns 409. Late observations cannot replace newer observations. Pairing recovers the dashboard sequence floor after local state erasure. Cached status never rescans. Failed probe delivery never replaces the last acknowledged snapshot.
 
