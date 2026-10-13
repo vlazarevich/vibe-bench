@@ -191,7 +191,7 @@ test('0–100 slider commits one pointer drag and preserves exact keyboard value
   await page.mouse.down();
   await page.mouse.move(box.x + box.width * 0.73, box.y + box.height / 2, { steps: 8 });
   expect(writes).toBe(before);
-  const value = await slider.inputValue();
+  const value = await slider.getAttribute('aria-valuenow');
   await page.mouse.up();
   await expect(group).toContainText(`Saved grade ${value}/100`);
   expect(writes).toBe(before + 1);
