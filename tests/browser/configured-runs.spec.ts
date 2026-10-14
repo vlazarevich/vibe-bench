@@ -24,7 +24,7 @@ async function seed(request: APIRequestContext, baseURL: string) {
       observedAt: new Date().toISOString(),
       machine: { platform: 'linux', architecture: 'x64', logicalCpus: 2, memoryBytes: 4_000_000_000 },
       tools: ToolName.options.map((name) => ({ name, availability: { kind: 'available', version: '1.2.3' } })),
-      harnesses: { codex: { kind: 'ready' }, claude: { kind: 'ready' }, opencodeGo: { kind: 'ready' } },
+      harnesses: { codex: { kind: 'ready', models: ['catalog-codex-model', 'retry-model', 'fixture-result-model'] }, claude: { kind: 'ready', models: ['catalog-claude-model'] }, opencodeGo: { kind: 'ready' } },
       modelPolicy: 'provider-discovered-at-execution',
     },
   });
@@ -82,9 +82,6 @@ async function selectSuite(page: Page, suite: SuiteView, runtimeId: string) {
   await select(page, 'Suite', suite.content.definition.title);
   await select(page, 'Runtime', runtimeId.slice(0, 8));
 }
-async function options(page: Page) {
-  await page.getByText('Tasks and execution options', { exact: true }).click();
-}
 async function create(page: Page) {
   const response = page.waitForResponse(
     (r) => r.url().endsWith('/api/configured-runs') && r.request().method() === 'POST',
@@ -95,7 +92,7 @@ async function create(page: Page) {
   await expect(page.getByRole('dialog')).toHaveCount(0);
   return ConfiguredRunView.parse(await r.json());
 }
-test('create selected matrix with exact entrants, review pinned history, cancel, and run again', async ({
+test('create full matrix with dropdown entrants, review pinned history, cancel, and run again', async ({
   page,
   request,
   baseURL,
@@ -103,27 +100,22 @@ test('create selected matrix with exact entrants, review pinned history, cancel,
   if (!baseURL) throw new Error();
   const { suite, runtimeId } = await seed(request, baseURL);
   await selectSuite(page, suite, runtimeId);
-  await page.getByRole('combobox', { name: 'Model 1', exact: true }).fill('custom-codex-model');
-  await select(page, 'Effort', 'High');
+  await select(page, 'Model 1', 'catalog-codex-model');
+  await select(page, 'Effort 1', 'High');
   await page.getByRole('button', { name: 'Add entrant' }).click();
   await page.locator('#harness-1').click();
   await page.getByRole('option', { name: 'Claude Code', exact: true }).click();
-  await page.getByRole('combobox', { name: 'Model 2', exact: true }).fill('custom-claude-model');
+  await select(page, 'Model 2', 'catalog-claude-model');
   await page.locator('#effort-1').click();
   await page.getByRole('option', { name: 'Max', exact: true }).click();
-  await options(page);
-  await select(page, 'Execution mode', 'Fixture · no model calls');
-  await page.getByRole('spinbutton', { name: 'Entrant 1 time limit (seconds)' }).fill('42');
-  await page.getByRole('button', { name: 'Preview matrix' }).click();
-  await expect(page.getByRole('region', { name: 'Execution plan' })).toContainText('3 tasks · 2 models · 6 attempts');
-  await page.getByRole('checkbox', { name: 'All tasks', exact: true }).uncheck();
-  await expect(page.getByRole('button', { name: /^(Start|Queue) run$/ })).toBeDisabled();
-  await page.getByRole('checkbox', { name: 'All tasks in Review' }).check();
-  await page.getByRole('checkbox', { name: 'Explain', exact: true }).check();
+  await expect(page.getByText('Tasks and execution options')).toHaveCount(0);
+  await expect(page.getByRole('combobox')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Preview matrix' })).toHaveCount(0);
   const run = await create(page);
-  expect(run.attempts).toHaveLength(4);
+  expect(run.attempts).toHaveLength(6);
+  expect(run.snapshot.source).toBe('live');
   expect(run.snapshot.entrants.map((e) => e.settings)).toEqual([
-    { timeoutMs: 42000, reasoningEffort: 'high' },
+    { timeoutMs: 120000, reasoningEffort: 'high' },
     { timeoutMs: 120000, effort: 'max' },
   ]);
   await request.post(`/api/suites/${suite.content.suiteId}`, {
@@ -145,20 +137,20 @@ test('create selected matrix with exact entrants, review pinned history, cancel,
   await page.getByRole('dialog').getByRole('button', { name: 'Cancel run', exact: true }).click();
   await expect(card).toContainText('Cancelled');
   await card.getByRole('button', { name: 'Run again' }).click();
-  await expect(page.getByRole('combobox', { name: 'Model 1', exact: true })).toHaveValue('custom-codex-model');
+  await expect(page.locator('#model-0')).toContainText('catalog-codex-model');
   await expect(page.getByRole('button', { name: /^Revision Rev 1/ })).toBeVisible();
   await page.screenshot({ path: '.artifacts/new-run-design.png' });
 });
-test('missing model, no entrants and invalid timeout cannot create a run', async ({ page, request, baseURL }) => {
+test('missing model, unavailable model discovery and no entrants cannot create a run', async ({ page, request, baseURL }) => {
   if (!baseURL) throw new Error();
   const { suite, runtimeId } = await seed(request, baseURL);
   await selectSuite(page, suite, runtimeId);
   await expect(page.getByRole('button', { name: /^(Start|Queue) run$/ })).toBeDisabled();
-  await page.getByRole('combobox', { name: 'Model 1', exact: true }).fill('custom');
-  await options(page);
-  await page.getByRole('spinbutton', { name: 'Entrant 1 time limit (seconds)' }).fill('0');
-  await page.getByRole('button', { name: 'Preview matrix' }).click();
-  await expect(page.getByRole('alert')).toBeVisible();
+  await select(page, 'Model 1', 'catalog-codex-model');
+  await select(page, 'Harness 1', 'OpenCode');
+  await expect(page.locator('#model-0')).toBeDisabled();
+  await expect(page.locator('#model-0')).toContainText('No models');
+  await expect(page.getByRole('button', { name: /^(Start|Queue) run$/ })).toBeDisabled();
   await page.getByRole('button', { name: 'Remove entrant 1' }).click();
   await expect(page.getByRole('button', { name: /^(Start|Queue) run$/ })).toBeDisabled();
 });
@@ -166,7 +158,7 @@ test('lost create response retries exact immutable request and creates one run',
   if (!baseURL) throw new Error();
   const { suite, runtimeId } = await seed(request, baseURL);
   await selectSuite(page, suite, runtimeId);
-  await page.getByRole('combobox', { name: 'Model 1', exact: true }).fill('retry-model');
+  await select(page, 'Model 1', 'retry-model');
   const accepted: ConfiguredRunView[] = [],
     bodies: string[] = [];
   await page.route('**/api/configured-runs', async (route) => {
@@ -198,10 +190,7 @@ test('run management shows terminal reasons and downloads files without executin
   if (!baseURL) throw new Error('Missing test server URL');
   const { suite, runtimeId } = await seed(request, baseURL);
   await selectSuite(page, suite, runtimeId);
-  await page.getByRole('combobox', { name: 'Model 1', exact: true }).fill('fixture-result-model');
-  await options(page);
-  await select(page, 'Execution mode', 'Fixture · no model calls');
-  await page.getByRole('button', { name: 'Preview matrix', exact: true }).click();
+  await select(page, 'Model 1', 'fixture-result-model');
   const created = await create(page);
   await page.goto(`/?view=runs&run=${created.runId}`);
   await expect(page.getByRole('region', { name: 'Saved run' })).toBeVisible();
@@ -292,4 +281,54 @@ test('run management shows terminal reasons and downloads files without executin
   await expect(page).not.toHaveTitle('unsafe');
   await page.reload();
   await expect(page.getByRole('region', { name: 'Attempt results' })).toContainText('Model unavailable');
+});
+
+test('minor saves replace the revision picker entry; fixture repeats retain hidden API settings and show their source', async ({ page, request, baseURL }) => {
+  if (!baseURL) throw new Error();
+  const { suite, runtimeId } = await seed(request, baseURL);
+  const response = await request.post(`/api/suites/${suite.content.suiteId}`, {
+    headers: { origin: baseURL },
+    data: { expectedContentId: suite.content.contentId, change: 'minor', definition: { ...suite.content.definition, description: 'Latest minor edit' } },
+  });
+  const latest = SuiteView.parse(await response.json());
+  await selectSuite(page, suite, runtimeId);
+  await page.getByRole('button', { name: /^Revision Rev 1$/ }).click();
+  await expect(page.getByRole('option')).toHaveCount(1);
+  await expect(page.getByRole('option', { name: 'Rev 1', exact: true })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await select(page, 'Model 1', 'catalog-codex-model');
+  const fresh = await create(page);
+  expect(fresh.snapshot.content.contentId).toBe(latest.content.contentId);
+  const input = { requestId: randomUUID(), contentId: latest.content.contentId, runtimeId, source: 'fixture', selection: { kind: 'subset', categoryIds: [], taskIds: [suite.content.definition.categories[0]!.tasks[0]!.id] }, entrants: [{ id: randomUUID(), harness: 'codex', model: 'catalog-codex-model', settings: { timeoutMs: 45000 } }] };
+  const fixtureResponse = await request.post('/api/configured-runs', { headers: { origin: baseURL }, data: input });
+  expect(fixtureResponse.ok(), await fixtureResponse.text()).toBeTruthy();
+  const fixture = ConfiguredRunView.parse(await fixtureResponse.json());
+  await request.post(`/api/configured-runs/${fixture.runId}/cancel`, { headers: { origin: baseURL }, data: {} });
+  const minorResponse = await request.post(`/api/suites/${suite.content.suiteId}`, {
+    headers: { origin: baseURL },
+    data: { expectedContentId: latest.content.contentId, change: 'minor', definition: { ...latest.content.definition, description: 'Edited after the original run' } },
+  });
+  const newer = SuiteView.parse(await minorResponse.json());
+  await page.goto(`/?view=runs&run=${fixture.runId}`);
+  await page.getByRole('button', { name: 'All runs', exact: true }).click();
+  const card = page.getByRole('article').filter({ hasText: 'Cancelled' }).filter({ hasText: suite.content.definition.title });
+  let releaseHistory!: () => void;
+  const historyGate = new Promise<void>((resolve) => { releaseHistory = resolve; });
+  const historyUrl = `**/api/suites/${suite.content.suiteId}/history`;
+  await page.route(historyUrl, async (route) => { await historyGate; await route.continue(); });
+  await card.getByRole('button', { name: 'Run again' }).click();
+  await expect(page.getByRole('button', { name: /^(Start|Queue) run$/ })).toBeDisabled();
+  releaseHistory();
+  await expect(page.getByRole('dialog')).toContainText('Fixture run · no model calls.');
+  const repeated = await create(page);
+  expect(repeated.snapshot.content.contentId).toBe(newer.content.contentId);
+  expect(repeated.snapshot.content.definition.description).toBe('Edited after the original run');
+  expect(repeated.snapshot.source).toBe('fixture');
+  expect(repeated.snapshot.selectedTaskIds).toEqual(fixture.snapshot.selectedTaskIds);
+  expect(repeated.snapshot.entrants[0]!.settings.timeoutMs).toBe(45000);
+  await page.unroute(historyUrl);
+  await page.route(historyUrl, (route) => route.abort('failed'));
+  await card.getByRole('button', { name: 'Run again' }).click();
+  await expect(page.getByRole('alert')).toBeVisible();
+  await expect(page.getByRole('button', { name: /^(Start|Queue) run$/ })).toBeDisabled();
 });

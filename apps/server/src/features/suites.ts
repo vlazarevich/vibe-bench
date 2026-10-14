@@ -45,8 +45,11 @@ export async function listSuites(pool: pg.Pool) {
     await pool.query(`SELECT c.suite_id AS "suiteId", c.definition->>'title' AS title, c.revision, c.ordinal,
     jsonb_array_length(c.definition->'categories') AS categories,
     (SELECT coalesce(sum(jsonb_array_length(category->'tasks')),0)::int FROM jsonb_array_elements(c.definition->'categories') AS category) AS tasks,
-    (SELECT max(r.created_at) FROM configured_runs r WHERE r.snapshot->'content'->>'suiteId'=s.id::text) AS "lastRun"
-    FROM suites s JOIN suite_contents c ON c.id = s.current_content_id ORDER BY c.created_at DESC`);
+    latest.created_at AS "lastRun", latest.number::int AS "lastRunNumber"
+    FROM suites s JOIN suite_contents c ON c.id = s.current_content_id
+    LEFT JOIN LATERAL (SELECT r.created_at,r.number FROM configured_runs r
+      WHERE r.snapshot->'content'->>'suiteId'=s.id::text ORDER BY r.created_at DESC,r.number DESC LIMIT 1) latest ON true
+    ORDER BY c.created_at DESC`);
   return SuiteList.parse(result.rows.map((row) => ({ ...row, lastRun: row.lastRun?.toISOString() ?? null })));
 }
 export async function readSuite(pool: pg.Pool, suiteId: z.infer<typeof SuiteId>) {
@@ -67,7 +70,7 @@ export async function readSuiteContent(
   return content(result.rows[0]);
 }
 export async function suiteHistory(pool: pg.Pool, suiteId: z.infer<typeof SuiteId>) {
-  const result = await pool.query('SELECT * FROM suite_contents WHERE suite_id = $1 ORDER BY ordinal DESC', [suiteId]);
+  const result = await pool.query('SELECT DISTINCT ON (revision) * FROM suite_contents WHERE suite_id = $1 ORDER BY revision DESC, ordinal DESC', [suiteId]);
   if (!result.rowCount) throw new NotFound();
   return result.rows.map(content);
 }

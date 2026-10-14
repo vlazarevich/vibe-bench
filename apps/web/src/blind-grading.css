@@ -135,3 +135,48 @@
     border-bottom: 1px solid var(--border-default);
   }
 }
+
+/* The active workspace follows the handoff's edge-to-edge shell. */
+.grading-main { padding: 0; overflow: hidden; }
+.grading-page.is-active { gap: 0; }
+.grading-session-head { min-height: 64px; padding: 10px 24px 10px 16px; display: flex; align-items: center; gap: 12px; background: var(--bg-surface); border-bottom: 1px solid var(--border-subtle); flex: none; }
+.grading-heading { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.grading-session-head .grading-heading { gap: 2px; }
+.grading-session-head h1 { font: var(--text-heading-sm); }
+.grading-suite { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+.grading-session-actions { margin-left: auto; display: flex; gap: 20px; align-items: center; }
+.grading-progress { width: 200px; display: flex; flex-direction: column; gap: 6px; }
+.grading-workspace { border: 0; border-radius: 0; background: var(--bg-canvas); }
+.grading-tree { width: 272px; background: var(--bg-surface); border-color: var(--border-subtle); }
+.grading-right { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; }
+.grading-task { padding: 24px 32px 32px; gap: 20px; }
+.grading-task-head { display: flex; align-items: flex-start; gap: 24px; }
+.grading-task-description { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.grading-task-head > .vb-seg { flex: none; }
+.task-prompt { border: 0; padding: 0; white-space: pre-wrap; max-width: 72ch; }
+.grading-page .sticky-footer { padding: 12px 32px; justify-content: space-between; }
+.grading-page .sticky-footer > .actions { width: 100%; justify-content: space-between; }
+.grading-overview-head { align-items: flex-end; }
+.grading-copy { width: 168px; }
+.grading-start-form { display: flex; align-items: center; gap: 8px; }
+.grading-start-form > .vb-field { flex: 1; min-width: 0; }
+.grading-list { border: 1px solid var(--border-default); border-radius: var(--radius-card); background: var(--bg-surface); overflow: auto; }
+.grading-list table { table-layout: fixed; }
+.grading-list th, .grading-list td { padding: 12px 16px; vertical-align: middle; }
+.grading-list th { background: var(--bg-canvas); color: var(--text-muted); font: var(--text-label-md); text-transform: uppercase; }
+.grading-list th:nth-child(2) { width: 150px; }
+.grading-list th:nth-child(3) { width: 220px; }
+.grading-list th:nth-child(4) { width: 130px; }
+.grading-list th:nth-child(5) { width: 136px; }
+.grading-list td:last-child .vb-btn { width: 104px; }
+.grading-name { display: flex; align-items: center; gap: 10px; }
+.grading-name > b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.grader-avatar { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: var(--bg-sunken); color: var(--text-muted); flex: none; }
+.grading-you { padding: 0 8px; border-radius: var(--radius-pill); background: var(--bg-accent-soft); font: 600 11px/20px var(--font-body); }
+.grading-row-progress { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+@media (max-width: 1100px) { .grading-list th:nth-child(3) { width: 150px; } .grading-tree { width: 220px; } }
+@media (max-width: 800px) { .grading-task-head { flex-wrap: wrap; } .grading-session-head { flex-wrap: wrap; } .grading-session-actions { margin-left: 0; } .grading-task { padding: 16px; } .grading-tree { width: 150px; } }
+@media (max-width: 600px) { .grading-tree { width: 100%; } .grading-session-actions { gap: 8px; } .grading-progress { width: 140px; } }
+
+.grading-shared-inputs { align-self: flex-start; max-width: 100%; padding: 16px; display: flex; flex-direction: column; gap: 10px; border: 1px solid var(--border-subtle); border-radius: var(--radius-card); background: var(--bg-surface); }
+.grading-shared-inputs > h3 { font: var(--text-label-md); text-transform: uppercase; color: var(--text-muted); }

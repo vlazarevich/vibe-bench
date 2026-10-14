@@ -37,7 +37,7 @@ function TextResult({ url, diff = false }: { url: string; diff?: boolean }) {
     <TextOutput text={text} maxHeight={500} />
   );
 }
-function ResultFile({ file, diff = false }: { file: FileView; diff?: boolean }) {
+export function ResultFile({ file, diff = false }: { file: FileView; diff?: boolean }) {
   return (
     <section className="result-file" aria-label={file.download.name}>
       {file.kind === 'text' ? (
@@ -148,7 +148,7 @@ function TextAnswer({ result }: { result: Extract<ResultPresentation, { kind: 't
     </>
   );
 }
-export function ResultViewer({ result }: { result: ResultPresentation }) {
+export function ResultViewer({ result, hideInputs = false }: { result: ResultPresentation; hideInputs?: boolean }) {
   let primary;
   switch (result.kind) {
     case 'text':
@@ -209,7 +209,7 @@ export function ResultViewer({ result }: { result: ResultPresentation }) {
   }
   return (
     <section className="result-viewer" aria-label="Result preview">
-      {!!result.inputs?.length && (
+      {!hideInputs && !!result.inputs?.length && (
         <details className="original-inputs">
           <summary>Original input</summary>
           {result.inputs.map((file) => (
@@ -229,7 +229,7 @@ export function ResultViewer({ result }: { result: ResultPresentation }) {
     </section>
   );
 }
-export function RequestedResultViewer({ resultUrl }: { resultUrl: string }) {
+export function RequestedResultViewer({ resultUrl, hideInputs = false }: { resultUrl: string; hideInputs?: boolean }) {
   const [result, setResult] = useState<ResultPresentation | null>(null);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
@@ -247,7 +247,7 @@ export function RequestedResultViewer({ resultUrl }: { resultUrl: string }) {
     return () => controller.abort();
   }, [resultUrl]);
   return result ? (
-    <ResultViewer result={result} />
+    <ResultViewer result={result} hideInputs={hideInputs} />
   ) : (
     <p role="status">
       {failed ? 'Result preview is unavailable. The original downloads remain available.' : 'Loading result…'}

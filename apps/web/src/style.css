@@ -1,6 +1,12 @@
 * {
   box-sizing: border-box;
 }
+html[data-theme='dark'] {
+  color-scheme: dark;
+}
+html[data-theme='light'] {
+  color-scheme: light;
+}
 html,
 body,
 #root {
@@ -103,20 +109,19 @@ h3 {
   gap: 8px;
 }
 .empty-state {
-  min-height: 360px;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-direction: column;
   gap: 16px;
-  padding: 64px 24px;
+  padding: 72px 24px;
   background: var(--bg-surface);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-card);
   text-align: center;
 }
 .empty-state > .muted {
-  max-width: 510px;
+  max-width: 460px;
 }
 .empty-icon {
   width: 56px;
@@ -352,3 +357,21 @@ fieldset {
     width: 100%;
   }
 }
+
+.toolbar:has(> .vb-tabs) { align-items: flex-end; }
+
+.runtime-connect-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 16px; }
+.runtime-connect-steps > li { display: flex; gap: 12px; }
+.runtime-connect-steps > li > span { flex: none; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; background: var(--bg-sunken); color: var(--text-muted); font: var(--text-ui-label); }
+.runtime-connect-steps > li > div { flex: 1; min-width: 0; padding-top: 2px; display: flex; flex-direction: column; gap: 8px; }
+.runtime-connect-steps h3, .runtime-run-command > label { font: var(--text-ui-label); }
+.runtime-command { position: relative; }
+.runtime-command input { padding-right: 44px; }
+.runtime-command > .vb-ibtn { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); }
+.runtime-connect-waiting { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: var(--radius-card); background: var(--bg-sunken); color: var(--text-muted); }
+.runtime-connected { display: flex; align-items: center; gap: 12px; }
+.runtime-connected-icon { display: grid; place-items: center; width: 44px; height: 44px; border-radius: var(--radius-xl); background: var(--status-success-bg); color: var(--status-success); }
+.runtime-connected h2 { font: var(--text-heading-sm); }
+.runtime-capabilities { display: flex; flex-direction: column; gap: 8px; }
+.runtime-capabilities h3 { font: var(--text-label-md); text-transform: uppercase; color: var(--text-muted); }
+.runtime-run-command { gap: 8px; }

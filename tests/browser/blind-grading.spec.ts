@@ -23,11 +23,17 @@ test('anonymous picker, autosaved stars, slider zero, thumbs, skip and clear per
     await route.fulfill({ response });
   });
   await page.goto(`/?view=grading&grading=${session.id}`);
+  await page.getByRole('button', { name: 'Expand sidebar', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Collapse', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Collapse', exact: true }).click();
   await expect(page.getByRole('navigation', { name: 'Grading tasks' })).not.toContainText('Excluded task');
   const card = await completedCard(page, 'First task');
   const stars = card.getByRole('group', { name: 'stars-5', exact: true }),
     slider = card.getByRole('group', { name: 'slider-10', exact: true }),
     thumbs = card.getByRole('group', { name: 'thumbs', exact: true });
+  await expect(page.getByText('Original First task prompt', { exact: true })).toBeVisible();
+  await slider.locator('.vb-crit-info').hover();
+  await expect(page.getByRole('tooltip', { name: 'Original slider-10 guidance', exact: true })).toBeVisible();
   await stars.getByRole('radio', { name: '4 of 5', exact: true }).click();
   await expect(stars).toContainText('Saved grade 80/100');
   await slider.getByRole('slider').press('Home');

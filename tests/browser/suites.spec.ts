@@ -22,7 +22,7 @@ test('author all task types, criteria and sources; preserve immutable revisions,
   await page.getByRole('textbox', { name: 'Suite title', exact: true }).fill('All task types');
   await page.getByRole('textbox', { name: 'Description', exact: true }).fill('All fields persist');
   await page.getByRole('tab', { name: /Criteria/ }).click();
-  for (const [i, control] of ['Stars', 'Slider', 'Thumbs up or down'].entries()) {
+  for (const [i, control] of ['Stars, 1 to 5', 'Slider, 0 to 100', 'Thumbs up or down'].entries()) {
     await page.getByRole('button', { name: 'Add criterion', exact: true }).click();
     await page.getByRole('textbox', { name: 'Criterion title', exact: true }).fill(`Quality ${i + 1}`);
     await page.getByRole('textbox', { name: 'Guidance', exact: true }).fill(`Guidance ${i + 1}`);
@@ -48,16 +48,14 @@ test('author all task types, criteria and sources; preserve immutable revisions,
     await page.getByRole('button', { name: /^Quality 2/ }).click();
   }
   await page.getByRole('tab', { name: 'Info', exact: true }).click();
-  await page.getByText('Ranking guidance', { exact: true }).click();
-  await page.getByRole('button', { name: 'Add ranking rule' }).click();
-  await page.getByLabel('Rule title').fill('Tie guidance');
-  await page.getByLabel('Rule guidance').fill('Use clarity for ties.');
+  await expect(page.getByText('Ranking guidance', { exact: true })).toHaveCount(0);
   const first = await saved(page, 'Save minor change');
   expect(first.content.revision).toBe(1);
   expect(first.content.definition.categories[0].tasks).toHaveLength(10);
   await page.reload();
   await expect(page.getByLabel('Suite title')).toHaveValue('All task types');
   await page.getByRole('tab', { name: /Tasks/ }).click();
+  await expect(page.getByLabel('Task title', { exact: true })).toHaveValue('Task 1');
   for (const [i, type] of types.entries()) {
     await page.getByRole('treeitem', { name: `Task ${i + 1}`, exact: true }).click();
     await expect(page.getByRole('button', { name: new RegExp(`^Task type ${type}`) })).toBeVisible();
@@ -76,13 +74,15 @@ test('author all task types, criteria and sources; preserve immutable revisions,
   const second = await saved(page, 'Save new revision');
   expect(second.content.revision).toBe(2);
   await page.getByRole('button', { name: 'History and recovery' }).click();
-  await page.getByRole('button', { name: 'Revision 1 · Content 2', exact: true }).click();
+  await expect(page.getByRole('dialog').getByRole('button', { name: /^Revision / })).toHaveCount(2);
+  await expect(page.getByRole('dialog')).not.toContainText('Content');
+  await page.getByRole('button', { name: 'Revision 1', exact: true }).click();
   await expect(page.getByRole('region', { name: 'Historical content' })).toContainText(
     'Prompt for Browser use scenario',
   );
   await page.getByRole('button', { name: 'Close', exact: true }).click();
   await page.getByRole('tab', { name: /Criteria/ }).click();
-  await page.getByRole('treeitem', { name: 'Quality 2', exact: true }).click();
+  await page.getByRole('treeitem', { name: /^Quality 2 / }).click();
   await page.getByRole('button', { name: 'Delete criterion', exact: true }).click();
   await page.getByRole('dialog').getByRole('button', { name: 'Delete criterion', exact: true }).click();
   await page.getByRole('tab', { name: /Tasks/ }).click();

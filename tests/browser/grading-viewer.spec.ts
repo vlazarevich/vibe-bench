@@ -135,3 +135,29 @@ test('blind grading displays every rich result and saves judgments with session-
     await foreign.close();
   }
 });
+
+for (const inputs of ['matching', 'different', 'missing'] as const) {
+  test(`original inputs are shared only when every completed result matches: ${inputs}`, async ({ page, baseURL }) => {
+    if (!baseURL) throw new Error();
+    const { gradingFixture } = await import('../grading-fixtures.ts');
+    const fixture = await gradingFixture(baseURL, '', 'slider-10', inputs);
+    await fixture.finish();
+    const session = await sessionFor(page, fixture.run.runId);
+    await page.goto(`/?view=grading&grading=${session.id}`);
+    await completedCard(page, 'First task');
+    const shared = page.getByRole('region', { name: 'Original input', exact: true });
+    if (inputs === 'matching') {
+      await expect(shared).toContainText('Original input shared');
+      await expect(page.locator('.result-viewer .original-inputs')).toHaveCount(0);
+      await page.reload();
+      await expect(shared).toContainText('Original input shared');
+    } else {
+      await expect(shared).toHaveCount(0);
+      await page.getByRole('radio', { name: 'One at a time', exact: true }).click();
+      await expect(page.getByRole('region', { name: 'Result preview', exact: true })).toBeVisible();
+      if (await page.locator('.original-inputs').count() === 0) await completedCard(page, 'First task', 1);
+      await page.locator('.original-inputs').first().getByText('Original input', { exact: true }).click();
+      await expect(page.locator('.original-inputs').first()).toContainText('Original input ');
+    }
+  });
+}

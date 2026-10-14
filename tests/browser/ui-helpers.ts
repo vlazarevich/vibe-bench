@@ -17,7 +17,7 @@ export async function sessionFor(page: Page, runId: string) {
   return BlindGradingSession.parse(await response.json());
 }
 export async function completedCard(page: Page, title: string, index = 0) {
-  const loaded = page.waitForResponse((r) => r.url().includes('/tasks/') && r.request().method() === 'GET');
+  const loaded = page.waitForResponse((r) => /\/tasks\/[a-f0-9-]+$/.test(new URL(r.url()).pathname) && r.request().method() === 'GET');
   await page.getByRole('treeitem', { name: new RegExp(`^${title}( |$)`) }).click();
   await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible();
   await page.getByRole('radio', { name: 'One at a time', exact: true }).click();

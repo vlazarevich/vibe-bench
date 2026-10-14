@@ -7,6 +7,7 @@ import { connectDatabase } from '../../apps/server/src/db.ts';
 import { createApp } from '../../apps/server/src/app.ts';
 import { PreviewOpened } from '../../packages/contracts/src/artifact-viewer.ts';
 import { EnrollmentCommand, EnrollmentReceipt } from '../../packages/contracts/src/access.ts';
+import { ToolName } from '../../packages/contracts/src/runtime.ts';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { seedArtifactRun } from '../artifact-fixtures.ts';
 
@@ -32,7 +33,13 @@ test('protected dashboard login, rich result access, enrollment and revocation w
     await page.getByRole('button', { name: 'Sign in' }).click();
     await expect(page.getByRole('heading', { name: 'Runtimes', exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Connect runtime' }).click();
+    await expect(page.getByRole('dialog')).toContainText('Download the runner');
+    await expect(page.getByRole('dialog')).toContainText('Install it');
+    await expect(page.getByRole('dialog')).toContainText('Pair it with this workspace');
     const command = await page.getByLabel('Enrollment command').inputValue();
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    await page.getByRole('button', { name: 'Copy command', exact: true }).click();
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(command);
     const payload = EnrollmentCommand.parse(
       JSON.parse(Buffer.from(command.split(' ')[2] ?? '', 'base64url').toString()),
     );
@@ -43,7 +50,19 @@ test('protected dashboard login, rich result access, enrollment and revocation w
       body: JSON.stringify({ requestId: randomUUID(), key: payload.key, credentialId: randomUUID(), secret }),
     });
     const receipt = EnrollmentReceipt.parse(await response.json());
-    await page.getByRole('button', { name: 'Close', exact: true }).click();
+    const registered = await fetch(url + '/api/worker/registrations', {
+      method: 'POST', headers: { authorization: `Bearer ${receipt.credentialId}.${secret}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ protocol: 1, runtimeId: receipt.runtimeId, observation: 1, observedAt: new Date().toISOString(),
+        machine: { hostname: 'Browser runtime', platform: 'linux', architecture: 'x64', logicalCpus: 2, memoryBytes: 1000000 },
+        tools: ToolName.options.map((name) => ({ name, availability: { kind: 'available', version: '1.2.3' } })),
+        harnesses: { codex: { kind: 'ready', models: ['test-model'] }, claude: { kind: 'not-ready' }, opencodeGo: { kind: 'not-ready' } }, modelPolicy: 'provider-discovered-at-execution' }),
+    });
+    expect(registered.ok).toBe(true);
+    await expect(page.getByRole('heading', { name: 'Runtime connected', exact: true })).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Capabilities', exact: true })).toContainText('Codex');
+    await page.getByRole('button', { name: 'Copy run command', exact: true }).click();
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('vibe-runner run');
+    await page.getByRole('button', { name: 'Done', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Revoke', exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Revoke', exact: true }).click();
     await page.getByRole('dialog').getByRole('button', { name: 'Revoke runtime', exact: true }).click();
@@ -114,4 +133,6 @@ test('passwordless dashboard creates enrollment through Runtimes', async ({ page
   await expect(page.getByRole('button', { name: 'Log out' })).toHaveCount(0);
   await page.getByRole('button', { name: 'Connect runtime' }).click();
   await expect(page.getByLabel('Enrollment command')).toHaveValue(/^vibe-runner pair /);
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
 });

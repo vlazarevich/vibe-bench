@@ -10,6 +10,7 @@
 .results-layout > .vb-fpanel {
   flex: none;
   width: 288px;
+  background: var(--bg-surface);
   overflow-y: auto;
   border-right: 1px solid var(--border-default);
 }

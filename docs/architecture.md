@@ -22,7 +22,7 @@ flowchart LR
 | `packages/contracts/src/runtime.ts` | Tool discovery observations and receipts without capacity |
 | `packages/contracts/src/configured-runs.ts`, `work.ts`, `task-io.ts` | Immutable run inputs, lifecycle, assignments, outcomes, repository declarations |
 | `packages/contracts/src/blind-grading.ts` | Anonymous navigation, result cards, criterion judgments |
-| `apps/server/src/features/suites.ts` | Append-only content, exact-base saves, historical reads |
+| `apps/server/src/features/suites.ts` | Immutable execution content, revision replacement, exact-base saves |
 | `apps/server/src/features/access.ts` | Browser sessions, single-use enrollment, revocation, abandonment |
 | `apps/server/src/features/runtimes.ts` | Immutable observations, sequence ordering, stable receipts |
 | `apps/server/src/features/configured-runs.ts` | Matrix creation, claims, preparation, outcomes, artifacts |
@@ -49,7 +49,7 @@ Feature queries stay with the owner of their invariants. Schemas validate extern
 
 An abstract Unix socket keyed by the canonical state path excludes concurrent dashboard owners. The lock remains until shutdown completes and is released on process death. A dedicated worker owns PostgreSQL, verifies its SQL connection before readiness, and shuts down on owner-pipe closure. Startup and shutdown timeouts terminate its process group. Early shutdown handlers cover interruption during database startup. Saved files remain intact; incomplete first initialization is not automatically repaired.
 
-Suite edits append complete immutable definitions and move the current pointer with an exact base content ID. Configured runs pin saved suite content and entrants before assigning work. The server derives progress from immutable preparation and attempt records, plus durable abandonment records. Migrations remove legacy pairwise tables while preserving the shared immutability function and configured history.
+Suite minor edits replace the current revision in authoring and History. Internal saves append immutable definitions and move the current pointer with an exact base content ID, preserving already-pinned execution inputs. Configured runs pin saved suite content and entrants before assigning work. The server derives progress from immutable preparation and attempt records, plus durable abandonment records. Migrations remove legacy pairwise tables while preserving the shared immutability function and configured history.
 
 ## Pairing and capabilities
 

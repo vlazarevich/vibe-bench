@@ -53,7 +53,7 @@ async function save(previous: SuiteView, change: 'minor' | 'revision', value = p
   return SuiteView.parse(await response.json());
 }
 
-test('nested edits append whole content, explicit minor/new revision labels persist, and old content is immutable', async () => {
+test('minor edits replace revision history entries, new revisions persist, and execution content stays immutable', async () => {
   const created = await create();
   expect(created.assessment).toEqual({ kind: 'ready' });
   const value = created.content.definition,
@@ -117,7 +117,6 @@ test('nested edits append whole content, explicit minor/new revision labels pers
   ).toEqual([
     [2, 3],
     [1, 2],
-    [1, 1],
   ]);
   expect(SuiteList.parse(await (await fetch(url + '/api/suites')).json())).toContainEqual({
     suiteId: created.content.suiteId,
@@ -127,6 +126,7 @@ test('nested edits append whole content, explicit minor/new revision labels pers
     categories: 0,
     tasks: 0,
     lastRun: null,
+    lastRunNumber: null,
   });
   await expect(
     pool.query('UPDATE suite_contents SET definition = $1 WHERE id = $2', [{}, created.content.contentId]),

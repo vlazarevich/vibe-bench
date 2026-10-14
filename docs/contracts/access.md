@@ -31,3 +31,5 @@ An assignment is durable before execution. Preparation, attempt starts, terminal
 The runtime retains collected records until durable acknowledgement and verifies response identities. API outages trigger progressive capped retries and do not abandon assigned work. Server-side credential revocation marks unfinished assignments abandoned and rejects further reports. Restart restores saved assignments before asking the server for new work. A started attempt with no saved outcome is uncertain and never executes again under its old ID. It receives a truthful interrupted result. No lease expiry stops work because the API is unreachable.
 
 The release guide documents binaries and prerequisites. Authentication and fixture tests do not prove provider access or hosted deployment readiness.
+
+The dashboard onboarding dialog presents numbered Download, Install, and Pair steps for Linux. Its command uses a single-use enrollment token. Cancel closes the dialog; an unused token still expires normally. After acknowledged capabilities arrive, the dialog shows the runtime and capability summary, a copyable `vibe-runner run` command, and Done.

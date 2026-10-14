@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import { seedArtifactRun } from '../artifact-fixtures.ts';
-import { sessionFor, select, completedCard } from './ui-helpers.ts';
+import { sessionFor, completedCard } from './ui-helpers.ts';
 import { BlindGradingTask } from '../../packages/contracts/src/blind-grading.ts';
 test('shared invitation starts a named grading, partial submit freezes scores, reveals entrants and is visible to another grader', async ({
   page,
@@ -23,20 +23,28 @@ test('shared invitation starts a named grading, partial submit freezes scores, r
   await expect(page.getByRole('navigation', { name: 'Main' })).toHaveCount(0);
   await page.getByRole('button', { name: 'Submit grading', exact: true }).click();
   await expect(page.getByRole('dialog')).toContainText('partial grading');
-  await page.getByRole('dialog').getByRole('button', { name: 'Submit', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Submitted grading' })).toBeVisible();
+  await page.getByRole('dialog').getByRole('button', { name: 'Submit grading', exact: true }).click();
+  await expect(page.getByText('Submitted', { exact: true })).toBeVisible();
   await expect(card).toContainText('viewer-fixture');
   await expect(card.getByRole('radio', { name: '4 of 5', exact: true })).toBeDisabled();
   await page.reload();
-  await expect(page.getByRole('heading', { name: 'Submitted grading' })).toBeVisible();
+  await expect(page.getByText('Submitted', { exact: true })).toBeVisible();
   const other = await browser.newContext();
   try {
     const second = await other.newPage();
     await second.goto(`${baseURL}/?view=grading&run=${run.id}`);
     await expect(second.getByRole('table', { name: 'Gradings' })).toContainText('Reviewer');
-    await second.getByRole('button', { name: 'View grading', exact: true }).click();
-    await expect(second.getByRole('heading', { name: 'Submitted grading' })).toBeVisible();
+    await second.getByRole('button', { name: 'View', exact: true }).click();
+    await expect(second.getByText('Submitted', { exact: true })).toBeVisible();
     await expect(second.getByRole('radio', { name: '4 of 5', exact: true })).toBeDisabled();
+    await expect(second.locator('.grading-progress')).toContainText('1 of 5 tasks');
+    await second.getByRole('button', { name: 'Back to gradings', exact: true }).click();
+    await expect(second.getByRole('table', { name: 'Gradings' })).toContainText('1 of 5 tasks');
+    await second.goto('/?view=suites');
+    const suiteRow = second.getByRole('row').filter({ hasText: fixture.run.snapshot.content.definition.title });
+    await suiteRow.getByRole('link', { name: /^Run / }).click();
+    await expect(second.getByRole('article')).toHaveCount(1);
+    await expect(second.getByRole('article')).toContainText(fixture.run.snapshot.content.definition.title);
   } finally {
     await other.close();
   }
@@ -46,7 +54,7 @@ test('Results filters, weighted scores, confidence styling, details, dates, mode
   baseURL,
 }) => {
   if (!baseURL) throw new Error();
-  const fixture = await seedArtifactRun(baseURL);
+  const fixture = await seedArtifactRun(baseURL, '', 'live');
   for (let i = 0; i < 21; i++) {
     const session = await sessionFor(page, fixture.run.runId);
     const task = BlindGradingTask.parse(
@@ -98,7 +106,7 @@ test('Results filters, weighted scores, confidence styling, details, dates, mode
     }),
   );
   await page.goto('/?view=results');
-  await select(page, 'Evidence', 'Fixture · no model calls');
+  await expect(page.getByRole('button', { name: /^Evidence/ })).toHaveCount(0);
   await expect(page.getByRole('treegrid', { name: 'Results scores' })).toBeVisible();
   const score = page.getByRole('button', { name: 'Test family on Text: 80. Show details', exact: true });
   await expect(score).toHaveClass(/is-best/);

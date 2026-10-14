@@ -14,6 +14,9 @@ import {
 import { DashboardRuns, type DashboardRun } from '../../../packages/contracts/src/dashboard.ts';
 import {
   Button,
+  Badge,
+  Icon,
+  IconButton,
   Dialog,
   Input,
   Popover,
@@ -25,8 +28,9 @@ import {
   type Entrant,
 } from './design-system';
 import { GradingControls } from './grading-controls.tsx';
-import { RequestedResultViewer } from './result-viewer.tsx';
-import { api, Empty, Notice, errorMessage, runLabel } from './ui.tsx';
+import { SharedTaskInputs } from '../../../packages/contracts/src/artifact-viewer.ts';
+import { RequestedResultViewer, ResultFile } from './result-viewer.tsx';
+import { api, Empty, Notice, errorMessage, runLabel, shortDateTime } from './ui.tsx';
 import './blind-grading.css';
 const letter = (i: number) => String.fromCharCode(65 + i);
 export function BlindGrading() {
@@ -36,6 +40,7 @@ export function BlindGrading() {
     reviewId = params.get('review');
   const [session, setSession] = useState<BlindGradingSession | null>(null),
     [task, setTask] = useState<BlindGradingTask | null>(null),
+    [sharedInputs, setSharedInputs] = useState<z.infer<typeof SharedTaskInputs>>({ shared: false }),
     [lifecycle, setLifecycle] = useState<z.infer<typeof GradingLifecycle> | null>(null),
     [revealed, setRevealed] = useState<z.infer<typeof RevealedEntrants>>([]),
     [overview, setOverview] = useState<z.infer<typeof GradingOverview>>([]),
@@ -91,6 +96,10 @@ export function BlindGrading() {
       const value = await api(`/api/blind-grading/${sessionId}/tasks/${handle}`, BlindGradingTask);
       if (version !== taskGeneration.current) return;
       setTask(value);
+      setSharedInputs({ shared: false });
+      void api(`/api/blind-grading/${sessionId}/tasks/${handle}/inputs`, SharedTaskInputs)
+        .then((inputs) => { if (version === taskGeneration.current) setSharedInputs(inputs); })
+        .catch(() => { /* Keep each result's original inputs when the shared read is unavailable. */ });
       setLeft(0);
       setRight(1);
       setLayout(
@@ -101,7 +110,7 @@ export function BlindGrading() {
       history.replaceState(
         null,
         '',
-        `?view=grading&grading=${sessionId}&task=${handle}${params.has('shared') ? '&shared=1' : ''}`,
+        `?view=grading&grading=${sessionId}&task=${handle}${runId ? `&run=${runId}` : ''}${params.has('shared') ? '&shared=1' : ''}`,
       );
     } finally {
       if (version === taskGeneration.current) setBusy(false);
@@ -152,7 +161,7 @@ export function BlindGrading() {
         graderName: name,
       });
       localStorage.setItem('vb-grader-name', name);
-      location.assign(`?view=grading&grading=${value.id}${reviewId ? '&shared=1' : ''}`);
+      location.assign(`?view=grading&grading=${value.id}${runId ? `&run=${runId}` : ''}${reviewId ? '&shared=1' : ''}`);
     } catch (e) {
       setError(errorMessage(e));
       setBusy(false);
@@ -161,8 +170,8 @@ export function BlindGrading() {
   }
   const flat = session?.categories.flatMap((c) => c.tasks) ?? [],
     index = flat.findIndex((t) => t.handle === task?.handle),
-    done = flat.reduce((n, t) => n + t.progress.graded + t.progress.skipped, 0),
-    total = flat.reduce((n, t) => n + t.progress.graded + t.progress.skipped + t.progress.ungraded, 0),
+    done = flat.filter((t) => t.progress.graded > 0 && t.progress.ungraded === 0 && t.progress.skipped === 0).length,
+    total = flat.length,
     submitted = !!lifecycle?.submittedAt;
   const onPending = (key: string, value: boolean) =>
     setPending((old) => {
@@ -229,7 +238,7 @@ export function BlindGrading() {
         }
       >
         {card.kind === 'completed' ? (
-          <RequestedResultViewer resultUrl={`/api/blind-grading/${session.id}/cards/${card.handle}/result`} />
+          <RequestedResultViewer hideInputs={sharedInputs.shared} resultUrl={`/api/blind-grading/${session.id}/cards/${card.handle}/result`} />
         ) : (
           <p className="notice">
             Execution {card.kind === 'failed' ? 'failed' : 'was skipped'}. No grade can be saved.
@@ -245,13 +254,13 @@ export function BlindGrading() {
       open={startOpen}
       onOpenChange={setStartOpen}
       trigger={
-        <Button variant="primary" icon="nav-grade" disabled={busy || !invitation.ready}>
-          Start grading
+        <Button variant="primary" icon={overview.length ? 'plus' : 'nav-grade'} disabled={busy || !invitation.ready}>
+          {overview.length ? 'Start new grading' : 'Start grading'}
         </Button>
       }
     >
-      <div className="stack">
-        <Input label="Your name (optional)" maxLength={120} value={name} onChange={(e) => setName(e.target.value)} />
+      <div className="grading-start-form">
+        <Input aria-label="Your name (optional)" placeholder="Your name" maxLength={120} value={name} onChange={(e) => setName(e.target.value)} />
         <Button variant="primary" disabled={busy} onClick={() => void start(invitation.reviewId)}>
           Start
         </Button>
@@ -267,36 +276,44 @@ export function BlindGrading() {
           <span>{runLabel(run.number)}</span>
         </div>
       )}
-      <div className="page-head">
-        <div className="stack">
-          <h1>{session ? (submitted ? 'Submitted grading' : 'Grading') : 'Grading'}</h1>
-          <p className="muted">
-            {session?.title ?? invitation?.title}
-            {run ? ` · Rev ${run.revision}` : ''}
-          </p>
+      <header className={session ? 'grading-session-head' : 'page-head grading-overview-head'}>
+        {session && !params.has('shared') && (
+          <IconButton icon="prev" label={runId ? 'Back to gradings' : 'Back to runs'} tooltip
+            disabled={pending.size > 0}
+            onClick={() => location.assign(runId ? `?view=grading&run=${runId}` : '?view=runs')} />
+        )}
+        <div className="grading-heading">
+          <div className="actions">
+            <h1>{session ? lifecycle?.graderName || 'Anonymous grading' : 'Grading'}</h1>
+            {session && <Badge tone={submitted ? 'success' : 'accent'} icon={submitted ? 'passed' : 'running'} size="sm">
+              {submitted ? 'Submitted' : 'In progress'}
+            </Badge>}
+          </div>
+          <div className="grading-suite muted">
+            <Icon name="nav-suites" size={14} />
+            {run ? <a href={`/?view=suites&suite=${run.suiteId}`}>{run.title}</a> : session?.title ?? invitation?.title}
+            {run && <span className="monospace">Rev {run.revision}</span>}
+          </div>
         </div>
         {!session && invitation && (
-          <Button
-            icon="link"
-            onClick={() =>
-              void navigator.clipboard
-                .writeText(`${location.origin}/?view=grading&review=${invitation.reviewId}`)
-                .then(() => setCopied(true))
-                .catch(() => setError('Could not copy the grading link.'))
-            }
-          >
-            {copied ? 'Copied' : 'Copy grading link'}
-          </Button>
-        )}
-        {session && (
-          <div className="stack">
-            <span className="small muted">
-              {done} of {total} criteria {submitted ? 'submitted' : 'scored or skipped'}
-            </span>
-            <ProgressBar value={done} max={total || 1} label="Grading progress" />
+          <div className="actions">
+            <Button icon={copied ? 'check' : 'share'} className="grading-copy"
+              onClick={() => void navigator.clipboard.writeText(`${location.origin}/?view=grading&review=${invitation.reviewId}`)
+                .then(() => setCopied(true)).catch(() => setError('Could not copy the grading link.'))}>
+              {copied ? 'Link copied' : 'Copy grading link'}
+            </Button>
+            {overview.length > 0 && startButton}
           </div>
         )}
-      </div>
+        {session && <div className="grading-session-actions">
+          <div className="grading-progress">
+            <span className="small muted"><b>{done}</b> of <b>{total}</b> tasks graded</span>
+            <ProgressBar value={done} max={total || 1} tone={submitted ? 'success' : undefined} label="Grading progress" />
+          </div>
+          {submitted ? <span className="small muted">Submitted {shortDateTime(lifecycle!.submittedAt!)}</span> :
+            <Button variant="primary" icon="check" disabled={pending.size > 0 || busy} onClick={() => setSubmitOpen(true)}>Submit grading</Button>}
+        </div>}
+      </header>
       <Notice error={error} />
       {error.includes('progress could not be refreshed') && (
         <Button onClick={() => void refreshProgress().then(() => setError(''))}>Refresh progress</Button>
@@ -306,41 +323,40 @@ export function BlindGrading() {
         invitation &&
         (overview.length ? (
           <>
-            <div className="actions end">{startButton}</div>
-            <div className="panel">
+            <div className="grading-list">
               <table aria-label="Gradings">
                 <thead>
                   <tr>
-                    <th>Grader</th>
-                    <th>Submitted</th>
+                    <th>Grading</th>
+                    <th>Started</th>
                     <th>Progress</th>
-                    <th>Actions</th>
+                    <th>Status</th>
+                    <th><span className="screen-reader-only">Actions</span></th>
                   </tr>
                 </thead>
                 <tbody>
                   {overview.map((g) => (
                     <tr key={g.id}>
-                      <td>{g.graderName || 'Anonymous'}</td>
-                      <td>{g.submittedAt ? new Date(g.submittedAt).toLocaleString() : 'Draft'}</td>
-                      <td>
-                        {g.graded} / {g.total}
-                      </td>
+                      <td><span className="grading-name"><span className="grader-avatar"><Icon name="grader" /></span><b>{g.graderName || 'Anonymous'}</b>{g.own && <span className="grading-you">You</span>}</span></td>
+                      <td>{shortDateTime(g.createdAt)}</td>
+                      <td><div className="grading-row-progress"><span><b>{g.gradedTasks}</b> of <b>{g.totalTasks}</b> tasks</span><ProgressBar value={g.gradedTasks} max={g.totalTasks || 1} tone={g.submittedAt ? 'success' : undefined} label="Tasks graded" /></div></td>
+                      <td><Badge tone={g.submittedAt ? 'success' : 'accent'} icon={g.submittedAt ? 'passed' : 'running'} size="sm">{g.submittedAt ? 'Submitted' : 'In progress'}</Badge></td>
                       <td>
                         <Button
                           size="sm"
                           onClick={() => {
-                            if (g.own) location.assign(`?view=grading&grading=${g.id}`);
+                            if (g.own) location.assign(`?view=grading&grading=${g.id}&run=${runId}`);
                             else
                               void api(
                                 `/api/configured-runs/${runId}/gradings/${g.id}/view`,
                                 z.object({ id: z.string() }),
                                 {},
                               )
-                                .then((v) => location.assign(`?view=grading&grading=${v.id}`))
+                                .then((v) => location.assign(`?view=grading&grading=${v.id}&run=${runId}`))
                                 .catch((e) => setError(errorMessage(e)));
                           }}
                         >
-                          {g.submittedAt ? 'View grading' : 'Continue grading'}
+                          {g.submittedAt ? 'View' : 'Continue'}
                         </Button>
                       </td>
                     </tr>
@@ -379,8 +395,7 @@ export function BlindGrading() {
                   children: c.tasks.map((t) => ({
                     id: t.handle,
                     label: t.title,
-                    status: t.progress.ungraded === 0 ? 'passed' : 'queued',
-                    count: t.progress.graded,
+                    status: t.progress.graded > 0 && t.progress.ungraded === 0 && t.progress.skipped === 0 ? 'passed' : 'queued',
                   })),
                 }))}
                 selectedId={task.handle}
@@ -391,9 +406,14 @@ export function BlindGrading() {
                 }}
               />
             </nav>
+            <div className="grading-right">
             <div className="grading-task">
-              <div className="toolbar">
-                <h2>{task.title}</h2>
+              <div className="grading-task-head">
+                <div className="grading-task-description">
+                  <TaskTypeTag type={task.kind === 'browser-scenario' ? 'browser-use' : task.kind} />
+                  <h2>{task.title}</h2>
+                  <p className="task-prompt muted">{task.prompt}</p>
+                </div>
                 <Segmented
                   label="Grading layout"
                   options={[
@@ -409,22 +429,15 @@ export function BlindGrading() {
                   }}
                 />
               </div>
-              <TaskTypeTag type={task.kind === 'browser-scenario' ? 'browser-use' : task.kind} />
-              <details className="task-prompt">
-                <summary>Task instructions</summary>
-                <p>{task.prompt}</p>
-                {task.criteria.map((c) => (
-                  <p key={c.handle}>
-                    <b>{c.title}:</b> {c.instructions}
-                  </p>
-                ))}
-              </details>
+              {sharedInputs.shared && <section className="grading-shared-inputs" aria-label="Original input">
+                <h3>Original input</h3>
+                {sharedInputs.inputs.map((file) => <ResultFile key={file.download.url} file={file} />)}
+              </section>}
               <div className={`grading-panels ${layout === 'compare' && task.cards.length > 1 ? 'compare' : ''}`}>
                 {panel(left, right, setLeft)}
                 {layout === 'compare' && task.cards.length > 1 && panel(right, left, setRight)}
               </div>
             </div>
-          </div>
           <footer className="sticky-footer">
             <div className="actions">
               <Button
@@ -449,19 +462,9 @@ export function BlindGrading() {
                 Next task
               </Button>
             </div>
-            {submitted ? (
-              <Button href="/?view=runs">Back to Runs</Button>
-            ) : (
-              <Button
-                variant="primary"
-                icon="check"
-                disabled={pending.size > 0 || busy}
-                onClick={() => setSubmitOpen(true)}
-              >
-                Submit grading
-              </Button>
-            )}
           </footer>
+            </div>
+          </div>
         </>
       )}
       {session?.source === 'fixture' && <p className="small muted">Fixture results · no model calls.</p>}
@@ -470,8 +473,8 @@ export function BlindGrading() {
           <div className="stack">
             <p>
               {total - done > 0
-                ? `${total - done} criteria are still ungraded. You can submit a partial grading.`
-                : 'All criteria are scored or skipped.'}{' '}
+                ? `${total - done} tasks are not fully graded. You can submit a partial grading.`
+                : 'All tasks are graded.'}{' '}
               Submitting freezes your scores and reveals the entrants.
             </p>
             <div className="actions end">
@@ -491,7 +494,7 @@ export function BlindGrading() {
                     .finally(() => setBusy(false));
                 }}
               >
-                Submit
+                Submit grading
               </Button>
             </div>
           </div>

@@ -4,7 +4,7 @@ The executable schemas are `packages/contracts/src/configured-runs.ts`, `task-io
 
 ## Configuration and immutable inputs
 
-The dashboard selects an exact saved suite content version, one registered runtime, and one or more entrants. Each entrant records its harness, requested model, and supported settings. Full runs select every task. Partial runs select the union of categories and individual tasks, deduplicated in suite order. A run contains at most 1,000 task and entrant combinations.
+The dashboard selects a suite revision (its latest saved content), one registered runtime, and one or more entrants. Models must be selected from the runtime-discovered dropdown; custom IDs remain API-only. New dashboard runs select all tasks, use live execution, and default to a 120-second timeout. The API retains subsets, fixture mode, custom timeouts, and matrix preview. Repeats use the latest saved content in the selected revision and preserve execution options, including a visible fixture notice when applicable. Each entrant records its harness, requested model, and supported settings. Full runs select every task. Partial runs select the union of categories and individual tasks, deduplicated in suite order. A run contains at most 1,000 task and entrant combinations.
 
 Preview and creation use the same matrix calculation. Creation stores the entire suite content, selected task IDs, entrants, source label, and a canonical digest. Later suite edits cannot change that snapshot. Suite revision boundaries still require the author's explicit minor-change or new-revision choice.
 
