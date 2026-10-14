@@ -3,7 +3,6 @@ import {
   ConfigureRun,
   ConfiguredRunView,
   CreateConfiguredRun,
-  RunPreview,
 } from '../../../packages/contracts/src/configured-runs.ts';
 import {
   DashboardRuns,
@@ -12,10 +11,8 @@ import {
   type DashboardRuntime,
 } from '../../../packages/contracts/src/dashboard.ts';
 import { SuiteContent, SuiteHistory, SuiteList, assessDefinition } from '../../../packages/contracts/src/suites.ts';
-import { ModelCatalog } from '../../../packages/contracts/src/model-catalog.ts';
 import {
   Button,
-  Checkbox,
   Dialog,
   Icon,
   IconButton,
@@ -25,9 +22,9 @@ import {
   Tabs,
   type IconName,
 } from './design-system';
-import { RunDetails, RunMatrix } from './run-details.tsx';
+import { RunDetails } from './run-details.tsx';
 import { newEntrant, type EntrantDraft } from './run-entrants.tsx';
-import { api, Okay, Empty, Confirm, errorMessage, Notice, runLabel, entrantTag } from './ui.tsx';
+import { api, Okay, Empty, Confirm, errorMessage, Notice, runLabel, entrantTag, shortDateTime } from './ui.tsx';
 import './runs.css';
 function duration(run: DashboardRun) {
   if (!run.startedAt) return undefined;
@@ -35,7 +32,8 @@ function duration(run: DashboardRun) {
     0,
     Math.floor(((run.finishedAt ? Date.parse(run.finishedAt) : Date.now()) - Date.parse(run.startedAt)) / 1000),
   );
-  return `${Math.floor(seconds / 60)}m ${seconds % 60}s${run.state === 'running' ? ' so far' : ''}`;
+  const hours = Math.floor(seconds / 3600);
+  return `${hours ? `${hours}h ${Math.floor((seconds % 3600) / 60)}m` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`}${run.state === 'running' ? ' so far' : ''}`;
 }
 export function ConfiguredRuns() {
   const [runs, setRuns] = useState<DashboardRun[]>([]),
@@ -169,7 +167,7 @@ export function ConfiguredRuns() {
                 runtime={r.runtimeName}
                 entrants={r.entrants.map(entrantTag)}
                 tasks={r.tasks}
-                started={r.startedAt ? { iso: r.startedAt, label: new Date(r.startedAt).toLocaleString() } : undefined}
+                started={r.startedAt ? { iso: r.startedAt, label: shortDateTime(r.startedAt) } : undefined}
                 duration={duration(r)}
                 gradings={r.gradings}
                 suiteHref={`/?view=suites&suite=${r.suiteId}`}
@@ -237,7 +235,7 @@ function NewRun({
 }) {
   const [suites, setSuites] = useState<ReturnType<typeof SuiteList.parse>>([]),
     [versions, setVersions] = useState<SuiteContent[]>([]),
-    [content, setContent] = useState<SuiteContent | null>(repeat?.snapshot.content ?? null),
+    [content, setContent] = useState<SuiteContent | null>(null),
     [suiteId, setSuiteId] = useState(repeat?.snapshot.content.suiteId ?? ''),
     [runtimeId, setRuntimeId] = useState(repeat?.snapshot.runtimeId ?? runtimes.find((r) => r.connected)?.id ?? ''),
     [entrants, setEntrants] = useState<EntrantDraft[]>(() =>
@@ -256,16 +254,9 @@ function NewRun({
           }))
         : [newEntrant()],
     ),
-    [source, setSource] = useState<'live' | 'fixture'>(repeat?.snapshot.source ?? 'live'),
-    [selection, setSelection] = useState<ConfigureRun['selection']>(
-      repeat ? { kind: 'subset', taskIds: repeat.snapshot.selectedTaskIds, categoryIds: [] } : { kind: 'all' },
-    ),
-    [catalog, setCatalog] = useState<ModelCatalog | null>(null),
-    [preview, setPreview] = useState<RunPreview | null>(null),
     [error, setError] = useState(''),
     [busy, setBusy] = useState(false);
   const request = useRef<CreateConfiguredRun | null>(null),
-    generation = useRef(0),
     inFlight = useRef(false);
   useEffect(() => {
     void api('/api/suites', SuiteList)
@@ -274,9 +265,6 @@ function NewRun({
         if (!suiteId) setSuiteId(value[0]?.suiteId ?? '');
       })
       .catch((e) => setError(errorMessage(e)));
-    void api('/api/model-catalog', ModelCatalog)
-      .then(setCatalog)
-      .catch(() => {});
   }, []);
   useEffect(() => {
     if (!suiteId) return;
@@ -285,7 +273,7 @@ function NewRun({
       .then((value) => {
         if (!current) return;
         setVersions(value);
-        setContent((old) => (old?.suiteId === suiteId ? old : (value[0] ?? null)));
+        setContent((old) => value.find((v) => (old ?? repeat?.snapshot.content)?.suiteId === suiteId && v.revision === (old ?? repeat?.snapshot.content)?.revision) ?? value[0] ?? null);
       })
       .catch((e) => setError(errorMessage(e)));
     return () => {
@@ -293,41 +281,33 @@ function NewRun({
     };
   }, [suiteId]);
   function changed() {
-    generation.current++;
     request.current = null;
-    setPreview(null);
     setError('');
   }
   const runtime = runtimes.find((r) => r.id === runtimeId),
     queued = runtime?.state === 'offline' || runtime?.state === 'working';
-  function knownModels(harness: EntrantDraft['harness']) {
+  function modelOptions(harness: EntrantDraft['harness']) {
     const readiness = runtime?.registration?.harnesses[harness === 'opencode' ? 'opencodeGo' : harness];
-    return readiness?.kind === 'ready' ? (readiness.models ?? []) : [];
+    if (readiness?.kind !== 'ready') return [];
+    const ids = [...new Set([...(readiness.models ?? []), ...(readiness.modelDetails ?? []).map((m) => m.id)])];
+    return ids.map((id) => ({ value: id, label: readiness.modelDetails?.find((m) => m.id === id)?.name ?? id, app: harness }));
   }
-  const tasks =
-    content?.definition.categories
-      .flatMap((c) => c.tasks)
-      .filter(
-        (t) =>
-          selection.kind === 'all' ||
-          selection.taskIds.includes(t.id) ||
-          content.definition.categories.some(
-            (c) => selection.categoryIds.includes(c.id) && c.tasks.some((x) => x.id === t.id),
-          ),
-      ) ?? [];
+  const selection: ConfigureRun['selection'] = repeat && content?.suiteId === repeat.snapshot.content.suiteId && repeat.snapshot.selectedTaskIds.length < repeat.snapshot.content.definition.categories.flatMap((c) => c.tasks).length
+    ? { kind: 'subset', taskIds: repeat.snapshot.selectedTaskIds.filter((id) => content.definition.categories.some((c) => c.tasks.some((t) => t.id === id))), categoryIds: [] } : { kind: 'all' };
+  const tasks = content?.definition.categories.flatMap((c) => c.tasks).filter((t) => selection.kind === 'all' || selection.taskIds.includes(t.id)) ?? [];
   const valid =
     content &&
     assessDefinition(content.definition).kind === 'ready' &&
     runtime &&
     tasks.length > 0 &&
     entrants.length > 0 &&
-    entrants.every((e) => e.model.trim());
+    entrants.every((e) => modelOptions(e.harness).some((m) => m.value === e.model));
   function config() {
     return ConfigureRun.parse({
       contentId: content?.contentId,
       runtimeId,
       selection,
-      source,
+      source: repeat?.snapshot.source ?? 'live',
       entrants: entrants.map((e) => ({
         id: e.id,
         harness: e.harness,
@@ -377,25 +357,24 @@ function NewRun({
               <Select
                 label="Suite"
                 value={suiteId}
-                options={suites.map((s) => ({ value: s.suiteId, label: s.title || 'Untitled suite' }))}
+                options={suites.map((s) => ({ value: s.suiteId, label: s.title || 'Untitled suite', icon: 'nav-suites' }))}
                 onChange={(value) => {
                   changed();
                   setSuiteId(value);
                   setContent(null);
-                  setSelection({ kind: 'all' });
                 }}
               />
               <Select
                 label="Revision"
-                value={content?.contentId ?? ''}
+                value={content ? String(content.revision) : ''}
                 options={versions.map((v) => ({
-                  value: v.contentId,
-                  label: `Rev ${v.revision} · Content ${v.ordinal}`,
+                  value: String(v.revision),
+                  label: `Rev ${v.revision}`,
+                  icon: 'save-revision',
                 }))}
                 onChange={(value) => {
                   changed();
-                  setContent(versions.find((v) => v.contentId === value) ?? null);
-                  setSelection({ kind: 'all' });
+                  setContent(versions.find((v) => String(v.revision) === value) ?? null);
                 }}
               />
               <Select
@@ -404,6 +383,7 @@ function NewRun({
                 options={runtimes.map((r) => ({
                   value: r.id,
                   label: `${r.name}${r.state === 'ready' ? '' : ` · ${r.state}`}`,
+                  icon: 'runtime',
                 }))}
                 onChange={(value) => {
                   changed();
@@ -426,7 +406,7 @@ function NewRun({
               {entrants.map((e, i) => (
                 <div className="entrant-row" key={e.id}>
                   <Select
-                    label={i === 0 ? 'Harness' : undefined}
+                    label={<span className="screen-reader-only">Harness {i + 1}</span>}
                     id={`harness-${i}`}
                     value={e.harness}
                     options={[
@@ -434,28 +414,19 @@ function NewRun({
                       { value: 'codex', label: 'Codex', app: 'codex' },
                       { value: 'opencode', label: 'OpenCode', app: 'opencode' },
                     ]}
-                    onChange={(value) => update(i, { ...e, harness: value as EntrantDraft['harness'], effort: '' })}
+                    onChange={(value) => update(i, { ...e, harness: value as EntrantDraft['harness'], model: '', effort: '' })}
                   />
-                  <Input
-                    label={i === 0 ? 'Model' : undefined}
-                    aria-label={`Model ${i + 1}`}
-                    list={`catalog-${i}`}
-                    value={e.model}
-                    placeholder="Exact model identifier"
-                    onChange={(event) => update(i, { ...e, model: event.target.value })}
-                  />
-                  <datalist id={`catalog-${i}`}>
-                    {knownModels(e.harness).map((id) => (
-                      <option key={id} value={id} />
-                    ))}
-                    {catalog?.models.map((m) => (
-                      <option key={m.id} value={m.slug}>
-                        {m.name}
-                      </option>
-                    ))}
-                  </datalist>
                   <Select
-                    label={i === 0 ? 'Effort' : undefined}
+                    id={`model-${i}`}
+                    label={<span className="screen-reader-only">Model {i + 1}</span>}
+                    value={e.model}
+                    options={modelOptions(e.harness)}
+                    placeholder={modelOptions(e.harness).length ? 'Select model' : 'No models'}
+                    disabled={!modelOptions(e.harness).length}
+                    onChange={(value) => update(i, { ...e, model: value })}
+                  />
+                  <Select
+                    label={<span className="screen-reader-only">Effort {i + 1}</span>}
                     id={`effort-${i}`}
                     value={e.effort || 'auto'}
                     options={['auto', 'low', 'medium', 'high', 'xhigh', 'max'].map((value) => ({
@@ -493,92 +464,7 @@ function NewRun({
                 </Button>
               </div>
             </div>
-            <details>
-              <summary>Tasks and execution options</summary>
-              <div className="stack">
-                <Checkbox
-                  label="All tasks"
-                  checked={selection.kind === 'all'}
-                  onChange={(e) => {
-                    changed();
-                    setSelection(e.target.checked ? { kind: 'all' } : { kind: 'subset', categoryIds: [], taskIds: [] });
-                  }}
-                />
-                {selection.kind === 'subset' &&
-                  content?.definition.categories.map((c) => (
-                    <div className="stack" key={c.id}>
-                      <Checkbox
-                        label={`All tasks in ${c.title}`}
-                        checked={selection.categoryIds.includes(c.id)}
-                        onChange={(e) => {
-                          changed();
-                          setSelection({
-                            ...selection,
-                            categoryIds: e.target.checked
-                              ? [...selection.categoryIds, c.id]
-                              : selection.categoryIds.filter((id) => id !== c.id),
-                          });
-                        }}
-                      />
-                      {c.tasks.map((t) => (
-                        <Checkbox
-                          key={t.id}
-                          label={t.title}
-                          disabled={selection.categoryIds.includes(c.id)}
-                          checked={selection.categoryIds.includes(c.id) || selection.taskIds.includes(t.id)}
-                          onChange={(e) => {
-                            changed();
-                            setSelection({
-                              ...selection,
-                              taskIds: e.target.checked
-                                ? [...selection.taskIds, t.id]
-                                : selection.taskIds.filter((id) => id !== t.id),
-                            });
-                          }}
-                        />
-                      ))}
-                    </div>
-                  ))}
-                <Select
-                  label="Execution mode"
-                  options={[
-                    { value: 'live', label: 'Live models' },
-                    { value: 'fixture', label: 'Fixture · no model calls' },
-                  ]}
-                  value={source}
-                  onChange={(value) => {
-                    changed();
-                    setSource(value as 'live' | 'fixture');
-                  }}
-                />
-                {entrants.map((e, i) => (
-                  <Input
-                    key={e.id}
-                    label={`Entrant ${i + 1} time limit (seconds)`}
-                    type="number"
-                    min={0.1}
-                    max={3600}
-                    value={e.timeout}
-                    onChange={(event) => update(i, { ...e, timeout: event.target.value })}
-                  />
-                ))}
-                <Button
-                  disabled={!valid}
-                  onClick={() => {
-                    const version = generation.current;
-                    void Promise.resolve()
-                      .then(() => api('/api/configured-runs/preview', RunPreview, config()))
-                      .then((value) => {
-                        if (version === generation.current) setPreview(value);
-                      })
-                      .catch((e) => setError(errorMessage(e)));
-                  }}
-                >
-                  Preview matrix
-                </Button>
-                {preview && <RunMatrix preview={preview} />}
-              </div>
-            </details>
+
           </fieldset>
         </div>
         <Notice error={error} />
@@ -588,13 +474,12 @@ function NewRun({
               {tasks.length} tasks × {entrants.length} entrants · {tasks.length * entrants.length} attempts
             </p>
             <p className="queue-hint">
+              {repeat?.snapshot.source === 'fixture' && <span>Fixture run · no model calls. </span>}
               {queued ? (
                 <>
                   <Icon name="queued" />
                   {runtime?.state === 'offline' ? 'Runtime is offline.' : 'Runtime is busy.'} This run will be queued.
                 </>
-              ) : source === 'fixture' ? (
-                'Deterministic fixture · no model calls.'
               ) : (
                 ''
               )}

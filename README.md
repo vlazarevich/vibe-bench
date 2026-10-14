@@ -45,9 +45,9 @@ Revocation attempts the remote operation, then removes local state regardless of
 
 ## Author suites and configure runs
 
-Open **Suites** to author any of the ten supported task kinds, criteria, rating controls, ranking guidance, and repository materials. Incomplete drafts can be saved. Every later save requires an explicit minor change or new revision and preserves earlier content. Concurrent edits retain local changes after a conflict until the author reloads.
+Open **Suites** to author any of the ten supported task kinds, criteria, rating controls, and repository materials. Incomplete drafts can be saved. Minor saves replace the current revision; a new revision preserves the previous revision in History. Existing runs retain their immutable inputs. Concurrent edits retain local changes after a conflict until the author reloads.
 
-**Runs** is the default dashboard page. Select an exact suite content version, a paired runtime, tasks, and entrants. Each entrant names its harness, exact model, timeout, and supported settings. Preview the full or partial matrix before creating it. Later suite edits cannot change execution inputs.
+**Runs** is the default dashboard page. Select a suite revision, a paired runtime, and entrants. The revision picker uses the latest save in each revision. Each entrant selects its harness, a runtime-discovered model, and supported effort setting. New runs use all tasks, live execution, and a two-minute per-entrant timeout. Task subsets, fixture execution, custom timeouts, and matrix preview remain available through the API. Run again uses the latest saved content within the selected revision and preserves execution options; fixture repeats display a read-only notice. Later suite edits cannot change execution inputs.
 
 **Live** invokes actual harnesses. **Fixture** uses deterministic configured-harness subprocesses and remains labeled fixture evidence. Missing tools or known unsupported capabilities produce skips. Execution errors and missing required outputs produce failures with diagnostics. Other attempts continue.
 
@@ -63,7 +63,7 @@ Selections autosave. Saved judgments and shuffled card order survive reloads and
 
 ## Results and model metadata
 
-**Results** aggregates submitted grades with UTC date presets, family, class, license, harness, effort, suite, task-type, and evidence filters. Pivot by model, suite, or task. Scores normalize to 0–100, average within each category, then weight categories equally. Skips and missing judgments contribute no score; zero grades do. Cells with fewer than 20 grades show low confidence. Fixture and live evidence are separate.
+**Results** aggregates submitted grades with UTC date presets, family, class, license, harness, effort, suite, task-type, filters. Pivot by model, suite, or task. Scores normalize to 0–100, average within each category, then weight categories equally. Skips and missing judgments contribute no score; zero grades do. Cells with fewer than 20 grades show low confidence. The dashboard shows live results only; the API keeps fixture and live evidence separate.
 
 Set `ARTIFICIAL_ANALYSIS_API_KEY` on the dashboard for the daily cached Artificial Analysis catalog. Pro metadata provides license, size, context, and modalities when disclosed. The Free endpoint supplies names and creators but omits much of that metadata; unknown values stay unknown. See the [Results contract](docs/contracts/results.md) for matching and size-class derivation. The key never enters runner subprocesses.
 

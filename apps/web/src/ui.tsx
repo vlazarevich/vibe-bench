@@ -24,6 +24,12 @@ export async function api<T>(path: string, schema: z.ZodType<T>, body?: unknown)
 export const Okay = z.object({ ok: z.literal(true) });
 export const errorMessage = (e: unknown) => (e instanceof Error ? e.message : 'Request failed');
 export const runLabel = (n: number) => `Run ${String(n).padStart(4, '0')}`;
+export const shortDateTime = (value: string) => new Intl.DateTimeFormat('en-US', {
+  month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false,
+}).format(new Date(value));
+export const shortDate = (value: string) => new Intl.DateTimeFormat('en-US', {
+  month: 'short', day: 'numeric',
+}).format(new Date(value));
 export function entrantTag(e: RunEntrant): Entrant {
   const effort =
     e.harness === 'codex'

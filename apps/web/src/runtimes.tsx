@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { z } from 'zod';
 import { DashboardRuntimes, type DashboardRuntime } from '../../../packages/contracts/src/dashboard.ts';
-import { Button, Dialog, Input, RuntimeCard, Tabs, Icon, type Capability } from './design-system';
+import { Button, Dialog, Input, RuntimeCard, Tabs, Icon, IconButton, CapabilityChip, type Capability } from './design-system';
 import { api, Okay, Empty, Confirm, errorMessage, Notice, runLabel } from './ui.tsx';
 const Enrollment = z.object({ command: z.string(), expiresAt: z.iso.datetime(), runtimeId: z.string() });
 function capabilities(runtime: DashboardRuntime): Capability[] {
@@ -41,6 +41,7 @@ export function Runtimes() {
     [busy, setBusy] = useState(false),
     [enrollment, setEnrollment] = useState<z.infer<typeof Enrollment> | null>(null),
     [copied, setCopied] = useState(false),
+    [copiedRun, setCopiedRun] = useState(false),
     [confirm, setConfirm] = useState<{ kind: 'revoke' | 'delete'; runtime: DashboardRuntime } | null>(null);
   const refresh = useCallback(async () => {
     setItems(await api('/api/dashboard/runtimes', DashboardRuntimes));
@@ -55,6 +56,7 @@ export function Runtimes() {
     setBusy(true);
     setError('');
     setCopied(false);
+    setCopiedRun(false);
     try {
       setEnrollment(
         await api('/api/runtime-enrollments', Enrollment, {
@@ -166,15 +168,22 @@ export function Runtimes() {
           <div className="stack">
             {connected ? (
               <>
-                <div className="actions">
-                  <Icon name="passed" size={32} />
-                  <h2>{connected.name} is connected</h2>
+                <div className="runtime-connected" role="status">
+                  <span className="runtime-connected-icon"><Icon name="passed" size={22} /></span>
+                  <div><h2>{connected.name} is connected</h2><p className="small muted">{connected.os} · checked in just now</p></div>
                 </div>
-                <p>{connected.os}</p>
-                <p className="muted">
-                  Capabilities have been received. Run <code>vibe-runner run</code> on this machine to execute queued
-                  work.
-                </p>
+                <section className="runtime-capabilities" aria-label="Capabilities">
+                  <h3>Capabilities</h3>
+                  <div className="actions">{capabilities(connected).map((capability) => <CapabilityChip key={capability.app} capability={capability} runtimeName={connected.name} />)}</div>
+                </section>
+                <div className="stack runtime-run-command">
+                  <label htmlFor="runtime-run">Start taking tasks</label>
+                  <p className="muted">Run this on the runtime so it picks up tasks and runs them. Keep it running while you use the runtime.</p>
+                  <div className="runtime-command">
+                    <Input id="runtime-run" aria-label="Start taking tasks" mono readOnly value="vibe-runner run" />
+                    <IconButton icon={copiedRun ? 'check' : 'copy'} label={copiedRun ? 'Copied run command' : 'Copy run command'} size="sm" onClick={() => void navigator.clipboard.writeText('vibe-runner run').then(() => setCopiedRun(true)).catch(() => setError('Select and copy the command manually.'))} />
+                  </div>
+                </div>
                 <div className="actions end">
                   <Button variant="primary" onClick={() => setEnrollment(null)}>
                     Done
@@ -183,35 +192,23 @@ export function Runtimes() {
               </>
             ) : (
               <>
-                <p>
-                  Install the Linux runtime from{' '}
-                  <a href="https://github.com/vlazarevich/vibe-bench/releases" target="_blank" rel="noreferrer">
-                    Releases
-                  </a>
-                  , then run this command on the machine you want to connect.
+                <ol className="runtime-connect-steps">
+                  <li><span>1</span><div><h3>Download the runner</h3><p className="muted">Get the <a href="https://github.com/vlazarevich/vibe-bench/releases/latest" target="_blank" rel="noreferrer">latest vibe-runner release</a> for Linux from GitHub.</p></div></li>
+                  <li><span>2</span><div><h3>Install it</h3><p className="muted">Unpack the archive and put <code>vibe-runner</code> on your PATH. On Linux, <code>/usr/local/bin</code> works. Install and sign in to the harnesses separately.</p></div></li>
+                  <li><span>3</span><div>
+                    <label htmlFor="runtime-pair">Pair it with this workspace</label>
+                    <div className="runtime-command">
+                      <Input id="runtime-pair" aria-label="Enrollment command" onFocus={(e) => { e.currentTarget.setSelectionRange(0, 0); e.currentTarget.scrollLeft = 0; }} mono readOnly value={enrollment.command} />
+                      <IconButton icon={copied ? 'check' : 'copy'} label={copied ? 'Copied' : 'Copy command'} size="sm" onClick={() => void navigator.clipboard.writeText(enrollment.command).then(() => setCopied(true)).catch(() => setError('Select and copy the command manually.'))} />
+                    </div>
+                    <p className="small muted">The token works once and expires at {new Date(enrollment.expiresAt).toLocaleTimeString()} (15 minutes).</p>
+                  </div></li>
+                </ol>
+                <p role="status" className="runtime-connect-waiting">
+                  <Icon name="running" />
+                  {Date.parse(enrollment.expiresAt) < Date.now() ? 'Token expired. Close this dialog and connect again.' : 'Waiting for the runtime to check in…'}
                 </p>
-                <Input label="Enrollment command" mono multiline readOnly value={enrollment.command} rows={4} />
-                <Button
-                  icon="copy"
-                  onClick={() =>
-                    void navigator.clipboard
-                      .writeText(enrollment.command)
-                      .then(() => setCopied(true))
-                      .catch(() => setError('Select and copy the command manually.'))
-                  }
-                >
-                  {copied ? 'Copied' : 'Copy command'}
-                </Button>
-                <p className="small muted">
-                  The token works once and expires at {new Date(enrollment.expiresAt).toLocaleTimeString()} (15
-                  minutes). Install and sign in to the harnesses separately.
-                </p>
-                <p role="status" className="actions">
-                  <Icon name="queued" />
-                  {Date.parse(enrollment.expiresAt) < Date.now()
-                    ? 'Token expired. Close this dialog and connect again.'
-                    : 'Waiting for the runtime to check in…'}
-                </p>
+                <div className="actions end"><Button onClick={() => setEnrollment(null)}>Cancel</Button></div>
               </>
             )}
           </div>

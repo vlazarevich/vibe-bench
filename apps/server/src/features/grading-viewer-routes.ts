@@ -1,9 +1,9 @@
 import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import { z } from 'zod';
-import { GradingCardHandle, GradingSessionId } from '../../../../packages/contracts/src/blind-grading.ts';
-import { PreviewInput, TextFile } from '../../../../packages/contracts/src/artifact-viewer.ts';
-import { readGradingCard } from './blind-grading.ts';
+import { GradingCardHandle, GradingSessionId, GradingTaskHandle } from '../../../../packages/contracts/src/blind-grading.ts';
+import { PreviewInput, TextFile, SharedTaskInputs } from '../../../../packages/contracts/src/artifact-viewer.ts';
+import { readGradingCard, readGradingTask } from './blind-grading.ts';
 import { readAttemptResult } from './configured-runs.ts';
 import { decodeText, htmlBundle, projectResult, type ResultLinks, type SavedResult } from './artifact-viewer.ts';
 import { HtmlPreviews, PreviewUnavailable } from './html-preview.ts';
@@ -25,6 +25,29 @@ export function registerGradingViewer(app: FastifyInstance, pool: pg.Pool, previ
     const card = await authorize(params, authority);
     return readAttemptResult(pool, card.runId, card.attemptId);
   }
+  app.get('/api/blind-grading/:id/tasks/:task/inputs', async (request) => {
+    const params = z.object({ id: GradingSessionId, task: GradingTaskHandle }).parse(request.params);
+    const authority = request.cookies.vibe_grading_authority;
+    const task = await readGradingTask(pool, params.id, authority ?? '', params.task);
+    const cards = task.cards.filter((card) => card.kind === 'completed');
+    let first: { saved: SavedResult; card: z.infer<typeof GradingCardHandle> } | undefined;
+    for (const card of cards) {
+      const saved = await savedResult({ id: params.id, card: card.handle }, authority);
+      const inputs = saved.outcome.result.inputs ?? [];
+      if (!inputs.length) return SharedTaskInputs.parse({ shared: false });
+      if (!first) { first = { saved, card: card.handle }; continue; }
+      const original = first.saved.outcome.result.inputs ?? [];
+      if (original.length !== inputs.length || !inputs.every((input, index) => {
+        const other = original[index];
+        const file = saved.artifacts.find((a) => a.metadata.id === input.artifactId);
+        const previous = first!.saved.artifacts.find((a) => a.metadata.id === other?.artifactId);
+        return input.kind === other?.kind && file && previous && file.metadata.mediaType === previous.metadata.mediaType && file.bytes.equals(previous.bytes);
+      })) return SharedTaskInputs.parse({ shared: false });
+    }
+    if (!first) return SharedTaskInputs.parse({ shared: false });
+    const presentation = await projectResult(first.saved, links({ id: params.id, card: first.card }, first.saved));
+    return SharedTaskInputs.parse({ shared: true, inputs: presentation.inputs });
+  });
   app.get(`${route}/result`, async (request) => {
     const params = Params.parse(request.params), saved = await savedResult(params, request.cookies.vibe_grading_authority);
     return projectResult(saved, links(params, saved));

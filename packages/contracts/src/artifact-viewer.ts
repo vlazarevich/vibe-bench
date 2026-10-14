@@ -11,6 +11,10 @@ export const FileView = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('unsupported'), reason: Text.max(500), download: Download }).strict(),
 ]);
 export type FileView = z.infer<typeof FileView>;
+export const SharedTaskInputs = z.discriminatedUnion('shared', [
+  z.object({ shared: z.literal(true), inputs: z.array(FileView).min(1).max(32) }).strict(),
+  z.object({ shared: z.literal(false) }).strict(),
+]);
 const originalInputs = { inputs: z.array(FileView).max(32).optional() };
 const outputs = z.array(FileView).max(32);
 export const ResultPresentation = z.discriminatedUnion('kind', [

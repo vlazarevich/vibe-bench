@@ -4,7 +4,7 @@ import { join, resolve } from 'node:path';
 import { startDatabase } from '../scripts/local-database.ts';
 import { connectDatabase } from '../apps/server/src/db.ts';
 import { createApp } from '../apps/server/src/app.ts';
-import { ResultPresentation, PreviewOpened } from '../packages/contracts/src/artifact-viewer.ts';
+import { ResultPresentation, PreviewOpened, SharedTaskInputs } from '../packages/contracts/src/artifact-viewer.ts';
 import { BlindGradingRuns, BlindGradingSession, BlindGradingTask, Judgment } from '../packages/contracts/src/blind-grading.ts';
 import { seedArtifactRun } from './artifact-fixtures.ts';
 
@@ -79,4 +79,32 @@ test('HTML capabilities reauthorize open, input and delete and cannot cross sess
   expect((await post(input, { kind: 'click', x: 50, y: 40 })).status).toBe(200);
   expect((await fetch(url + close, { method: 'DELETE', headers: { origin: url, cookie } })).status).toBe(204);
   expect((await post(input, { kind: 'refresh' })).status).toBe(503);
+});
+
+test('shared task inputs compare saved bytes and preserve neutral scoped file authority', async () => {
+  const { gradingFixture } = await import('./grading-fixtures.ts');
+  for (const mode of ['matching', 'different', 'missing'] as const) {
+    const fixture = await gradingFixture(url, '', 'slider-10', mode);
+    await fixture.finish();
+    const runs = BlindGradingRuns.parse(await (await get('/api/blind-grading/runs', '')).json());
+    const run = runs.find((r) => r.title === fixture.run.snapshot.content.definition.title)!;
+    const response = await post('/api/blind-grading', { reviewId: run.reviewId }, '');
+    const auth = response.headers.get('set-cookie')!.split(';')[0]!;
+    const session = BlindGradingSession.parse(await response.json());
+    const task = session.categories[0]!.tasks[0]!;
+    const path = `/api/blind-grading/${session.id}/tasks/${task.handle}/inputs`;
+    const result = SharedTaskInputs.parse(await (await get(path, auth)).json());
+    expect(result.shared).toBe(mode === 'matching');
+    expect((await get(path, '')).status).toBe(404);
+    expect((await get(path, foreign)).status).toBe(404);
+    if (result.shared) {
+      expect(result.inputs).toHaveLength(1);
+      const file = result.inputs[0]!;
+      expect(file.download.name).toBe('Result file');
+      expect(await (await get(file.download.url, auth)).text()).toBe('Original input shared');
+      expect((await get(file.download.url, foreign)).status).toBe(404);
+      const json = JSON.stringify(result);
+      for (const forbidden of [fixture.run.runId, fixture.input.runtimeId, ...fixture.artifacts.map((a) => a.id)]) expect(json).not.toContain(forbidden);
+    }
+  }
 });

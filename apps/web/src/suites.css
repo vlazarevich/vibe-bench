@@ -84,3 +84,7 @@
     padding: 0 8px;
   }
 }
+
+.suite-toolbar > .actions { gap: 4px; padding: 6px 0; }
+.suite-toolbar > .vb-tabs { margin-bottom: -1px; }
+.suite-tree { overflow-x: hidden; }

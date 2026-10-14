@@ -24,7 +24,7 @@ function App() {
   const [theme, setTheme] = useState<'light' | 'dark'>(() =>
     localStorage.getItem('vb-theme') === 'dark' ? 'dark' : 'light',
   );
-  const [collapsed, setCollapsed] = useState(() => localStorage.getItem('vb-sidebar') === 'collapsed');
+  const [collapsed, setCollapsed] = useState(() => params.has('grading') || localStorage.getItem('vb-sidebar') === 'collapsed');
   document.documentElement.dataset.theme = theme;
   return (
     <div className="app-shell">
@@ -37,14 +37,14 @@ function App() {
             setTheme(value);
             localStorage.setItem('vb-theme', value);
           }}
-          collapsed={params.has('grading') || collapsed}
+          collapsed={collapsed}
           onCollapsedChange={(value) => {
             setCollapsed(value);
             localStorage.setItem('vb-sidebar', value ? 'collapsed' : 'expanded');
           }}
         />
       )}
-      <main className={view === 'results' ? 'app-main results-main' : 'app-main'}>
+      <main className={`app-main${view === 'results' ? ' results-main' : view === 'grading' && params.has('grading') ? ' grading-main' : ''}`}>
         {view === 'runtimes' ? (
           <Runtimes />
         ) : view === 'grading' ? (

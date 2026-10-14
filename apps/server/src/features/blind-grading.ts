@@ -484,7 +484,10 @@ export async function submitGrading(pool: pg.Pool, id: z.infer<typeof GradingSes
 export async function gradingOverview(pool: pg.Pool, runId: string, authority: string) {
   const rows = await pool.query(
     `SELECT s.id,d.grader_name,d.created_at,sub.submitted_at,COALESCE(s.authority_hash=$2,false) AS own,
-    count(j.*)::int AS total,count(j.*) FILTER(WHERE j.value->>'kind'='graded')::int AS graded
+    count(j.*)::int AS total,count(j.*) FILTER(WHERE j.value->>'kind'='graded')::int AS graded,
+    jsonb_array_length(jsonb_path_query_array(s.mapping,'$.categories[*].tasks[*]')) AS total_tasks,
+    (SELECT count(*)::int FROM (SELECT task_handle FROM blind_grading_judgments WHERE session_id=s.id
+      GROUP BY task_handle HAVING bool_and(value->>'kind'='graded')) complete) AS graded_tasks
     FROM blind_grading_sessions s JOIN grading_details d ON d.session_id=s.id LEFT JOIN grading_submissions sub ON sub.session_id=s.id LEFT JOIN blind_grading_judgments j ON j.session_id=s.id
     WHERE s.run_id=$1 AND (sub.session_id IS NOT NULL OR s.authority_hash=$2) GROUP BY s.id,d.session_id,sub.session_id ORDER BY d.created_at DESC`,
     [runId, hash(authority)],
@@ -497,6 +500,8 @@ export async function gradingOverview(pool: pg.Pool, runId: string, authority: s
       submittedAt: row.submitted_at?.toISOString() ?? null,
       graded: row.graded,
       total: row.total,
+      gradedTasks: row.graded_tasks,
+      totalTasks: row.total_tasks,
       own: row.own,
     })),
   );

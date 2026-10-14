@@ -12,7 +12,7 @@ Invalid IDs, duplicate IDs, missing criterion references, repeated assignments, 
 
 ## Content and revisions
 
-Creation establishes revision 1 and content ordinal 1. Every edit supplies an exact `expectedContentId` and an explicit `minor` or `revision` choice. A minor save preserves the revision label. A revision save increments it. Both append the complete definition with a new content ID and ordinal. Even unchanged content can be saved with the chosen revision behavior.
+Creation establishes revision 1 and content ordinal 1. Every edit supplies an exact `expectedContentId` and an explicit `minor` or `revision` choice. A minor save replaces the current revision in the editor, revision picker, and History. A revision save increments the revision label. Internal immutable snapshots still append the complete definition with a new content ID and ordinal for exact-base concurrency and pinned execution inputs; these internal content numbers are not shown in the dashboard. Even unchanged content can be saved with the chosen revision behavior.
 
 A suite row points to its current content. A transaction locks that row, rejects stale content IDs with HTTP 409, inserts the immutable content, and moves the pointer. Concurrent edits from one base produce one success and one conflict. The editor retains local changes after a conflict until the author explicitly reloads.
 
@@ -22,7 +22,7 @@ Content stores a schema version and SHA-256 digest of canonical JSON containing 
 
 The `rating-control-v1` conversion maps integer stars 1 through 5 to 20, 40, 60, 80, and 100. Integer slider values 0 through 100 map directly to that grade. Legacy slider-10 values map to ten times the selection. Thumbs down maps to 0 and thumbs up to 100. The absence of a selection is ungraded.
 
-The editor previews each conversion. Ranking rules are written guidance only. There is no aggregation formula or persisted rubric judgment in this feature.
+The editor previews each conversion. Ranking rules remain API-only written guidance; the editor does not expose them. There is no aggregation formula or persisted rubric judgment in this feature.
 
 ## HTTP operations
 
@@ -32,7 +32,7 @@ The editor previews each conversion. Ranking rules are written guidance only. Th
 | `POST /api/suites` | New content and readiness from `{ definition }` |
 | `GET /api/suites/:id` | Current content and readiness |
 | `POST /api/suites/:id` | Appended content and readiness from `{ expectedContentId, change, definition }` |
-| `GET /api/suites/:id/history` | Immutable contents, newest first |
+| `GET /api/suites/:id/history` | Latest saved definition per revision, newest revision first |
 | `GET /api/suites/:id/contents/:contentId` | Exact saved content belonging to that suite |
 
 Malformed requests return 400 with field issues. Unknown suites or versions return 404. Every authoring mutation requires the local Host and matching Origin. This is the existing local application boundary, without hosted user accounts.
@@ -43,4 +43,4 @@ Configured Runs select an exact saved content version and one or more tasks. The
 
 ## Designed authoring interface
 
-Suites use a master-detail table with revision, category/task counts and latest run. Info, Criteria and Tasks tabs share minor/new-revision saves and conflict recovery. Criteria support five stars, a 0–100 slider and thumbs; legacy 0–10 sliders remain readable. Category/task trees and criterion chips preserve immutable IDs. Optional task paths must be contained relative directories and require a Sources repository. Deletions and discarded drafts require confirmation; history remains immutable.
+Suites use a master-detail table with revision, category/task counts and latest run. Info, Criteria and Tasks tabs share minor/new-revision saves and conflict recovery. Criteria support five stars, a 0–100 slider and thumbs; legacy 0–10 sliders remain readable. Category/task trees and criterion chips preserve immutable IDs. Optional task paths must be contained relative directories and require a Sources repository. Deletions and discarded drafts require confirmation; History exposes one latest entry per revision. Opening Tasks selects the first task; Last run links to the matching Runs entry.

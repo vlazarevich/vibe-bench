@@ -126,6 +126,8 @@ export const GradingOverview = z.array(
       graded: z.number(),
       total: z.number(),
       own: z.boolean(),
+      gradedTasks: z.number().int().nonnegative(),
+      totalTasks: z.number().int().nonnegative(),
     })
     .strict(),
 );

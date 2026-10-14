@@ -14,7 +14,7 @@ import { definition } from './suite-fixtures.ts';
 export const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6dWQAAAAASUVORK5CYII=', 'base64');
 export const interactiveHtml = '<!doctype html><link rel="stylesheet" href="assets/style.css?v=1"><button id="counter">Count 0</button><input aria-label="name"><p id="echo"></p><img src="assets/picture.png"><script src="assets/app.js"></script>';
 export const interactiveJs = 'let n=0;document.querySelector("button").onclick=()=>document.querySelector("button").textContent="Count "+(++n);document.querySelector("input").oninput=e=>document.querySelector("#echo").textContent=e.target.value;';
-export async function seedArtifactRun(url: string, cookie = '') {
+export async function seedArtifactRun(url: string, cookie = '', source: 'live' | 'fixture' = 'fixture') {
   const configuration = await enrollRuntime(url, undefined, cookie);
   async function post(path: string, body: unknown) {
     const response = await fetch(url + path, { method: 'POST', headers: { 'content-type': 'application/json', ...(path.startsWith('/api/worker/') ? { authorization: runtimeAuthorization(configuration) } : { origin: url, cookie }) }, body: JSON.stringify(body) });
@@ -38,7 +38,7 @@ export async function seedArtifactRun(url: string, cookie = '') {
   const kinds = ['text-generation', 'image-generation', 'coding-feature', 'html-interactive', 'browser-scenario'].map((kind) => TaskKind.parse(kind));
   const tasks = kinds.map((kind) => ({ id: randomUUID(), title: kind, kind, prompt: 'Artifact viewer fixture', criterionIds: value.evaluation.criteria.map((criterion) => criterion.id) }));
   const suite = SuiteView.parse(await post('/api/suites', { definition: { ...value, title: `Artifact suite ${randomUUID()}`, categories: [{ id: randomUUID(), title: 'Results', tasks }], materials: { kind: 'repository', url: 'https://example.invalid/repo.git', requestedRef: 'main' } } }));
-  const run = ConfiguredRunView.parse(await post('/api/configured-runs', { requestId: randomUUID(), contentId: suite.content.contentId, runtimeId, selection: { kind: 'all' }, source: 'fixture', entrants: [{ id: randomUUID(), harness: 'codex', model: 'viewer-fixture', settings: { timeoutMs: 3000 } }] }));
+  const run = ConfiguredRunView.parse(await post('/api/configured-runs', { requestId: randomUUID(), contentId: suite.content.contentId, runtimeId, selection: { kind: 'all' }, source, entrants: [{ id: randomUUID(), harness: 'codex', model: 'viewer-fixture', settings: { timeoutMs: 3000 } }] }));
   const assignment = RunAssignment.parse(await post('/api/worker/claims', { protocol: 1, requestId: randomUUID(), runtimeId }));
   const manifest = { version: 1, tasks: Object.fromEntries(tasks.map((task) => [task.id, { inputs: [], outputs: [{ path: 'extra.txt', kind: 'text' }, { path: 'binary.dat', kind: 'code' }], browser: null }])) };
   const identity = () => ({ protocol: 1, reportId: randomUUID(), runtimeId, assignmentId: assignment.assignmentId, runId: run.runId });

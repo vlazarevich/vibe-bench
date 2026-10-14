@@ -16,7 +16,7 @@ export function RunDetails({ run }: { run: ConfiguredRunView }) {
   return <section aria-label="Saved run">
     <div className="eyebrow">{snapshot.source === 'fixture' ? 'FIXTURE DEMO · NO MODEL CALLS' : 'LIVE MODEL EXECUTION'}</div>
     <h1>{snapshot.content.definition.title}</h1>
-    <p>Revision {snapshot.content.revision} · Content {snapshot.content.ordinal} · {run.status}</p>
+    <p>Revision {snapshot.content.revision} · {run.status}</p>
     <p className="field-help">These saved inputs stay unchanged when the suite is edited. Results identify the model and are for run management.</p>
     {run.status === 'queued' && <p role="status">Waiting for the selected runtime to collect this run. Start its worker to continue.</p>}
     {run.preparation?.kind === 'failed' && <p role="alert" className="error">Materials could not be prepared. {run.preparation.reason}</p>}

@@ -52,6 +52,8 @@ test('multiple named blind gradings freeze partial scores, reveal only after sub
   const run = runs.find((r) => r.id === fixture.run.runId)!;
   expect(run.state).toBe('done');
   expect(run.tasks).toEqual({ total: 5, ran: 5, passed: 0 });
+  const suites = await get('/api/suites');
+  expect(suites.find((s: {suiteId: string}) => s.suiteId === run.suiteId)).toMatchObject({lastRunNumber: run.number});
   const command = { reviewId: run.reviewId, requestId: randomUUID(), graderName: 'Alex' };
   const response = await post('/api/blind-grading', command);
   expect(response.status).toBe(200);
@@ -93,6 +95,23 @@ test('multiple named blind gradings freeze partial scores, reveal only after sub
   );
   expect(second.id).not.toBe(session.id);
   expect(GradingOverview.parse(await get(`/api/configured-runs/${run.id}/gradings`, cookie))).toHaveLength(2);
+  const secondTask = BlindGradingTask.parse(await get(`/api/blind-grading/${second.id}/tasks/${second.categories[0]!.tasks[0]!.handle}`, cookie));
+  const progress = async () => GradingOverview.parse(await get(`/api/configured-runs/${run.id}/gradings`, cookie)).find((g) => g.id === second.id)!;
+  expect(await progress()).toMatchObject({gradedTasks: 0, totalTasks: second.categories.flatMap((c) => c.tasks).length});
+  for (const card of secondTask.cards) if (card.kind === 'completed') for (const judgment of card.judgments) {
+    const criterion = secondTask.criteria.find((c) => c.handle === judgment.criterion)!;
+    expect((await post(`/api/blind-grading/${second.id}/judgments`, {
+      card: card.handle, criterion: judgment.criterion, expectedVersion: 0,
+      value: {kind: 'graded', selection: {control: criterion.control, value: criterion.control === 'thumbs' ? true : 1}},
+    }, cookie)).status).toBe(200);
+  }
+  expect(await progress()).toMatchObject({gradedTasks: 1});
+  const complete = secondTask.cards.find((c) => c.kind === 'completed')!;
+  if (complete.kind !== 'completed') throw new Error();
+  expect((await post(`/api/blind-grading/${second.id}/judgments`, {
+    card: complete.handle, criterion: complete.judgments[0]!.criterion, expectedVersion: 1, value: {kind: 'skipped'},
+  }, cookie)).status).toBe(200);
+  expect(await progress()).toMatchObject({gradedTasks: 0});
   const granted = await post(`/api/configured-runs/${run.id}/gradings/${session.id}/view`, {});
   expect(granted.status).toBe(200);
   const reader = granted.headers.get('set-cookie')!.split(';')[0]!;

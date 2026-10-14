@@ -18,6 +18,7 @@ export async function gradingFixture(
   url: string,
   cookie = '',
   sliderControl: 'slider-10' | 'slider-100' = 'slider-10',
+  originalInputs: 'none' | 'matching' | 'different' | 'missing' = 'none',
 ) {
   const configuration = await enrollRuntime(url, undefined, cookie);
   async function post(path: string, body: unknown) {
@@ -182,7 +183,9 @@ export async function gradingFixture(
                     `application/${canary}`,
                   )
                 : null;
-      const uploads = output ? [output, diagnostic] : [diagnostic];
+      const original = originalInputs !== 'none' && !(originalInputs === 'missing' && index % 4 === 1)
+        ? artifact(Buffer.from(`Original input ${originalInputs === 'different' ? index % 4 : 'shared'}`), 'text', 'text/plain') : null;
+      const uploads = [...(output ? [output, diagnostic] : [diagnostic]), ...(original ? [original] : [])];
       const result = output
         ? task.kind === 'browser-scenario'
           ? { kind: 'browser', recordingArtifactId: output.id, format: 'webm', screenshotArtifactIds: [] }
@@ -203,7 +206,7 @@ export async function gradingFixture(
         attemptId: attempt.attemptId,
         outcome: {
           kind: 'completed',
-          result,
+          result: { ...result, ...(original ? { inputs: [{ kind: 'text', artifactId: original.id }] } : {}) },
           summary: task.kind === 'text-generation' ? `<script>Escaped answer ${index % 4}</script>` : canary,
           artifacts: uploads.map(({ base64: _base64, ...metadata }) => metadata),
         },

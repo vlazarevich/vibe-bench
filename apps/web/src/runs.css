@@ -1,5 +1,5 @@
 .new-run-body {
-  height: min(600px, 75vh);
+  height: min(300px, 65vh);
 }
 .new-run-scroll {
   overflow: auto;
@@ -12,7 +12,7 @@
 }
 .entrant-row {
   display: grid;
-  grid-template-columns: 150px minmax(0, 1fr) 140px 36px;
+  grid-template-columns: 180px minmax(0, 1fr) 156px 36px;
   gap: 8px;
   align-items: end;
 }
@@ -29,7 +29,7 @@
   margin-top: auto;
 }
 .queue-hint {
-  height: 36px;
+  height: 18px;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -62,3 +62,9 @@
     min-height: 36px;
   }
 }
+
+.entrant-row .vb-field { gap: 0; }
+.new-run-scroll fieldset > .stack { gap: 8px; }
+
+.vb-rt a.run-link:not(.vb-btn) { color: var(--text-primary); }
+.vb-rt a.run-link:not(.vb-btn):hover { color: var(--text-accent); }

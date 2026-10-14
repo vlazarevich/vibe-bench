@@ -35,7 +35,7 @@ export function RunSuite({ disabled, content, onChange }: { disabled: boolean; c
     </select></label>
     {!loading && suites.length === 0 && <p>No suites yet. <a href="/?view=suites">Create a suite</a> before starting a run.</p>}
     {versions.length > 0 && <label>Saved version<select disabled={loading} value={content?.contentId ?? ''} onChange={(event) => onChange(versions.find((version) => version.contentId === event.target.value) ?? null)}>
-      {versions.map((version, index) => <option key={version.contentId} value={version.contentId}>Revision {version.revision} · Content {version.ordinal}{index === 0 ? ' · Latest' : ''}</option>)}
+      {versions.map((version, index) => <option key={version.contentId} value={version.contentId}>Revision {version.revision}{index === 0 ? ' · Latest' : ''}</option>)}
     </select></label>}
     <p className="field-help">The selected version and its evaluation criteria stay with the run even after you edit the suite.</p>
     {loading && <p role="status">Loading suites…</p>}{error && <p role="alert" className="error">{error}</p>}

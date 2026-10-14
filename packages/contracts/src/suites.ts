@@ -199,6 +199,7 @@ export const SuiteList = z.array(
       categories: z.number().int().nonnegative().optional(),
       tasks: z.number().int().nonnegative().optional(),
       lastRun: z.iso.datetime().nullable().optional(),
+      lastRunNumber: z.number().int().positive().nullable().optional(),
     })
     .strict(),
 );

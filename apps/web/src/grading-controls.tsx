@@ -5,7 +5,7 @@ import type {
   JudgmentValue,
   SaveJudgment,
 } from '../../../packages/contracts/src/blind-grading.ts';
-import { CriterionScore, Button, Slider, type ScoreValue } from './design-system';
+import { CriterionScore, Button, Slider, Icon, type ScoreValue } from './design-system';
 export function GradingControls({
   criterion,
   judgment,
@@ -64,7 +64,7 @@ export function GradingControls({
     <fieldset className="grading-control" disabled={busy || readOnly} aria-label={criterion.title}>
       {criterion.control === 'slider-10' ? (
         <Slider
-          label={criterion.title}
+          label={<>{criterion.title}{criterion.instructions && <Icon name="info" size={14} tooltip={criterion.instructions} tooltipSide="top" className="vb-crit-info" />}</>}
           min={0}
           max={10}
           step={1}

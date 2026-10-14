@@ -15,7 +15,6 @@ import {
   IconButton,
   Popover,
   Checklist,
-  Select,
   type DateRange,
   type DatePreset,
   type FilterSection,
@@ -60,7 +59,6 @@ export function Results() {
     ['all', 'All time', '2000-01-01', today],
   ].map(([id, label, from, to]) => ({ id: id!, label: label!, phrase: label!.toLowerCase(), from: from!, to: to! }));
   const [range, setRange] = useState<DateRange>({ from: offset(-29), to: today, preset: '30' }),
-    [source, setSource] = useState<'live' | 'fixture'>('live'),
     [data, setData] = useState<ResultsData | null>(null),
     [catalog, setCatalog] = useState<ModelCatalog | null>(null),
     [error, setError] = useState(''),
@@ -78,7 +76,7 @@ export function Results() {
     let current = true;
     setLoading(true);
     setError('');
-    void api(`/api/results?from=${range.from}&to=${range.to}&source=${source}`, ResultsData)
+    void api(`/api/results?from=${range.from}&to=${range.to}&source=live`, ResultsData)
       .then((value) => {
         if (current) setData(value);
       })
@@ -91,7 +89,7 @@ export function Results() {
     return () => {
       current = false;
     };
-  }, [range.from, range.to, source]);
+  }, [range.from, range.to]);
   const observations = data?.observations ?? [];
   const models = unique(observations.map((o) => o.model)).sort();
   const metadata = new Map(models.map((model) => [model, matchCatalogModel(model, catalog?.models ?? [])]));
@@ -244,7 +242,7 @@ export function Results() {
           label: f,
           app: f === 'Anthropic' ? 'claude' : f === 'OpenAI' ? 'codex' : undefined,
           icon: 'model',
-          meta: `${unique(family.map((o) => o.model)).length} models`,
+          meta: `${unique(family.map((o) => o.model)).length} ${unique(family.map((o) => o.model)).length === 1 ? 'model' : 'models'}`,
           cells: cells(family, f),
           children: unique(family.map((o) => o.model)).map((m) => {
             const model = family.filter((o) => o.model === m),
@@ -380,7 +378,7 @@ export function Results() {
           ].map((stat) => (
             <StatTile
               key={stat.label}
-              label={stat.label}
+              label={stat.value === 1 ? stat.label.slice(0, -1) : stat.label}
               value={stat.value.toLocaleString()}
               icon={stat.icon as IconName}
             />
@@ -444,26 +442,13 @@ export function Results() {
           </Empty>
         )}
         <div className="results-foot">
-          <Select
-            label="Evidence"
-            value={source}
-            onChange={(value) => setSource(value as 'live' | 'fixture')}
-            options={[
-              { value: 'live', label: 'Live models' },
-              { value: 'fixture', label: 'Fixture · no model calls' },
-            ]}
-          />
           <div className="small muted">
-            <p>
-              Scores are 0–100 averages, with suite categories weighted equally across revisions. Fewer than 20 grades
-              appear grey.
-            </p>
             <p>
               Model metadata:{' '}
               <a href="https://artificialanalysis.ai/" target="_blank" rel="noreferrer">
                 Artificial Analysis
               </a>
-              . {catalog?.message}
+
             </p>
             {data?.truncated && <p role="alert">Showing the first 100,000 grades. Choose a shorter period.</p>}
           </div>

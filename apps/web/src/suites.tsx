@@ -6,7 +6,6 @@ import {
   Criterion,
   CriterionId,
   Definition,
-  RankingRuleId,
   RatingControl,
   SuiteContent,
   SuiteHistory,
@@ -33,7 +32,7 @@ import {
   type TableColumn,
   type IconName,
 } from './design-system';
-import { api, Confirm, errorMessage, Notice } from './ui.tsx';
+import { api, Confirm, errorMessage, Notice, shortDate, runLabel } from './ui.tsx';
 import './suites.css';
 const blank = (): Definition => ({
   title: '',
@@ -57,9 +56,9 @@ export const taskLabels: Record<z.infer<typeof TaskKind>, string> = {
 export const taskIcon = (kind: z.infer<typeof TaskKind>): IconName =>
   `type-${kind === 'browser-scenario' ? 'browser-use' : kind}` as IconName;
 const controls: Record<z.infer<typeof RatingControl>, string> = {
-  'stars-5': 'Stars',
+  'stars-5': 'Stars, 1 to 5',
   'slider-10': 'Slider (0–10)',
-  'slider-100': 'Slider',
+  'slider-100': 'Slider, 0 to 100',
   thumbs: 'Thumbs up or down',
 };
 const controlIcon = (control: z.infer<typeof RatingControl>): IconName =>
@@ -119,7 +118,7 @@ export function Suites() {
       setSaved(value);
       setDraft(value.content.definition);
       setVersions(history);
-      setSelected('');
+      setSelected(value.content.definition.categories.flatMap((c) => c.tasks)[0]?.id ?? '');
       setCriterionId('');
       setStatus('');
       window.history.replaceState(null, '', `?view=suites&suite=${id}`);
@@ -223,6 +222,7 @@ export function Suites() {
             categories: 0,
             tasks: 0,
             lastRun: null,
+            lastRunNumber: null,
           },
         ]
       : []),
@@ -231,19 +231,24 @@ export function Suites() {
     ),
   ];
   const columns: TableColumn<(typeof rows)[number]>[] = [
-    { key: 'title', label: 'Name', width: '50%' },
-    { key: 'revision', label: 'Revision', width: '120px', mono: true },
+    { key: 'title', label: 'Name' },
+    { key: 'revision', label: 'Revision', width: '88px', mono: true, render: (row) => `Rev ${row.revision}` },
     {
       key: 'tasks',
       label: 'Tasks',
-      width: '180px',
-      render: (row) => `${row.categories ?? 0} categories / ${row.tasks ?? 0} tasks`,
+      width: '120px',
+      counts: (row) => [
+        { value: row.categories ?? 0, icon: 'folder', label: row.categories === 1 ? 'category' : 'categories' },
+        { value: row.tasks ?? 0, icon: 'task', label: row.tasks === 1 ? 'task' : 'tasks' },
+      ],
     },
     {
       key: 'lastRun',
       label: 'Last run',
-      width: '160px',
-      render: (row) => (row.lastRun ? new Date(row.lastRun).toLocaleDateString() : '—'),
+      width: '170px',
+      render: (row) => row.lastRunNumber ? runLabel(row.lastRunNumber) : '—',
+      href: (row) => row.lastRunNumber ? `/?view=runs&q=${encodeURIComponent(runLabel(row.lastRunNumber))}` : undefined,
+      suffix: (row) => row.lastRun ? shortDate(row.lastRun) : '',
     },
   ];
   const assessment = draft ? Definition.safeParse(draft) : null;
@@ -308,13 +313,17 @@ export function Suites() {
                   { id: 'tasks', label: 'Tasks', count: draft.categories.reduce((n, c) => n + c.tasks.length, 0) },
                 ]}
                 value={tab}
-                onChange={setTab}
+                onChange={(value) => {
+                  setTab(value);
+                  if (value === 'tasks' && !selected) setSelected(draft.categories.flatMap((c) => c.tasks)[0]?.id ?? '');
+                }}
               />
               <div className="actions">
                 {dirty && <Icon name="pen" tooltip="Unsaved changes" />}
                 <IconButton
                   label={saved ? 'Save minor change' : 'Create suite'}
                   icon="save"
+                  size="sm"
                   tooltip
                   disabled={busy || !dirty}
                   onClick={() => void save('minor')}
@@ -322,13 +331,14 @@ export function Suites() {
                 <IconButton
                   label="Save new revision"
                   icon="save-revision"
+                  size="sm"
                   tooltip
                   variant="primary"
                   disabled={busy || !dirty}
                   onClick={() => void save('revision')}
                 />
                 {saved && (
-                  <IconButton icon="more" label="History and recovery" tooltip onClick={() => setShowHistory(true)} />
+                  <IconButton size="sm" icon="more" label="History and recovery" tooltip onClick={() => setShowHistory(true)} />
                 )}
               </div>
             </div>
@@ -346,6 +356,7 @@ export function Suites() {
                     label="Description"
                     multiline
                     rows={4}
+                    placeholder="What this suite tests and how it’s graded"
                     value={draft.description}
                     onChange={(e) => setDraft({ ...draft, description: e.target.value })}
                   />
@@ -380,83 +391,7 @@ export function Suites() {
                       }}
                     />
                   )}
-                  <details>
-                    <summary>Ranking guidance</summary>
-                    <div className="stack">
-                      {draft.evaluation.rankingRules.map((rule, i) => (
-                        <div className="stack" key={rule.id}>
-                          <Input
-                            label="Rule title"
-                            value={rule.title}
-                            onChange={(e) =>
-                              setDraft({
-                                ...draft,
-                                evaluation: {
-                                  ...draft.evaluation,
-                                  rankingRules: draft.evaluation.rankingRules.map((r, j) =>
-                                    i === j ? { ...r, title: e.target.value } : r,
-                                  ),
-                                },
-                              })
-                            }
-                          />
-                          <Input
-                            label="Rule guidance"
-                            multiline
-                            value={rule.instructions}
-                            onChange={(e) =>
-                              setDraft({
-                                ...draft,
-                                evaluation: {
-                                  ...draft.evaluation,
-                                  rankingRules: draft.evaluation.rankingRules.map((r, j) =>
-                                    i === j ? { ...r, instructions: e.target.value } : r,
-                                  ),
-                                },
-                              })
-                            }
-                          />
-                          <Button
-                            variant="danger"
-                            onClick={() =>
-                              setConfirm({
-                                title: 'Delete ranking rule?',
-                                label: 'Delete rule',
-                                action: () =>
-                                  setDraft({
-                                    ...draft,
-                                    evaluation: {
-                                      ...draft.evaluation,
-                                      rankingRules: draft.evaluation.rankingRules.filter((r) => r.id !== rule.id),
-                                    },
-                                  }),
-                              })
-                            }
-                          >
-                            Delete rule
-                          </Button>
-                        </div>
-                      ))}
-                      <Button
-                        variant="quiet"
-                        icon="plus"
-                        onClick={() =>
-                          setDraft({
-                            ...draft,
-                            evaluation: {
-                              ...draft.evaluation,
-                              rankingRules: [
-                                ...draft.evaluation.rankingRules,
-                                { id: RankingRuleId.parse(crypto.randomUUID()), title: '', instructions: '' },
-                              ],
-                            },
-                          })
-                        }
-                      >
-                        Add ranking rule
-                      </Button>
-                    </div>
-                  </details>
+
                   {ready?.kind === 'incomplete' && (
                     <details className="readiness">
                       <summary>Incomplete definition · {ready.issues.length} fields to complete</summary>
@@ -472,11 +407,13 @@ export function Suites() {
                 <div className="suite-split">
                   <div className="suite-tree">
                     <TreeList
+                      key="criteria"
                       label="Criteria"
                       nodes={draft.evaluation.criteria.map((c) => ({
                         id: c.id,
                         label: c.title || 'Untitled criterion',
-                        icon: controlIcon(c.control),
+                        metaIcon: controlIcon(c.control),
+                        metaIconLabel: controls[c.control],
                       }))}
                       selectedId={criterion?.id}
                       onSelect={(n) => setCriterionId(n.id)}
@@ -514,7 +451,8 @@ export function Suites() {
                         <Input
                           label="Guidance"
                           multiline
-                          rows={5}
+                          rows={3}
+                          hint="Graders see this next to the rating control."
                           value={criterion.instructions}
                           onChange={(e) => updateCriterion({ ...criterion, instructions: e.target.value })}
                         />
@@ -567,6 +505,7 @@ export function Suites() {
                 <div className="suite-split">
                   <div className="suite-tree">
                     <TreeList
+                      key={`tasks-${saved?.content.suiteId ?? 'new'}`}
                       label="Tasks"
                       nodes={draft.categories.map((c) => ({
                         id: c.id,
@@ -769,7 +708,7 @@ export function Suites() {
             </Button>
             {versions.map((v) => (
               <Button key={v.contentId} onClick={() => setHistorical(v)}>
-                Revision {v.revision} · Content {v.ordinal}
+                Revision {v.revision}
               </Button>
             ))}
             {historical && (
