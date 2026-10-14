@@ -441,18 +441,11 @@ export function Results() {
               : 'Finish a run and submit a grading to compare model scores.'}
           </Empty>
         )}
-        <div className="results-foot">
-          <div className="small muted">
-            <p>
-              Model metadata:{' '}
-              <a href="https://artificialanalysis.ai/" target="_blank" rel="noreferrer">
-                Artificial Analysis
-              </a>
-
-            </p>
-            {data?.truncated && <p role="alert">Showing the first 100,000 grades. Choose a shorter period.</p>}
-          </div>
-        </div>
+        {data?.truncated && (
+          <p className="results-foot small muted" role="alert">
+            Showing the first 100,000 grades. Choose a shorter period.
+          </p>
+        )}
       </section>
     </div>
   );
