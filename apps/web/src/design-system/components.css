@@ -1873,6 +1873,15 @@ textarea.vb-input {
 .vb-run {
   --vb-card-side: 264px;
 }
+.vb-run .vb-rt-actions {
+  height: auto;
+  min-height: 44px;
+  flex-wrap: wrap;
+}
+.vb-run .vb-rt-actions .vb-btn {
+  width: auto;
+  flex: 1 0 auto;
+}
 .vb-run-main {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 220px;
