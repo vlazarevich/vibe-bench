@@ -9,6 +9,10 @@ const migrations = new URL(
 
 export async function connectDatabase(connectionString: string) {
   const pool = new pg.Pool({ connectionString, max: 8 });
+  // Idle clients can be terminated by a restart or a hosted provider's idle timeout; the pool discards them.
+  pool.on('error', (error) => {
+    process.stderr.write(`PostgreSQL idle connection closed: ${error.message}\n`);
+  });
   try {
     const client = await pool.connect();
     try {

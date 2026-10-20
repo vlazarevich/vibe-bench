@@ -158,11 +158,16 @@ export async function runWorkerOnce(options: WorkerOptions) {
     }
     if (await exists(currentPath)) assignment = await readAssignment(currentPath);
     else {
-      const claim = (await exists(claimPath))
-        ? ClaimRequest.parse(JSON.parse(await readFile(claimPath, 'utf8')))
-        : ClaimRequest.parse({ protocol: WORK_PROTOCOL, requestId: randomUUID(), runtimeId: options.configuration.runtimeId });
-      if (claim.runtimeId !== options.configuration.runtimeId)
+      const saved = (await exists(claimPath))
+        ? z.looseObject({ protocol: z.number(), runtimeId: z.string() }).parse(JSON.parse(await readFile(claimPath, 'utf8')))
+        : undefined;
+      if (saved && saved.runtimeId !== options.configuration.runtimeId)
         throw new Error('Worker state belongs to another runtime');
+      // The dashboard rejects claims from another worker protocol, so an older saved claim is replaced, not replayed.
+      const claim =
+        saved?.protocol === WORK_PROTOCOL
+          ? ClaimRequest.parse(saved)
+          : ClaimRequest.parse({ protocol: WORK_PROTOCOL, requestId: randomUUID(), runtimeId: options.configuration.runtimeId });
       await durableWrite(claimPath, claim);
       const receipt = ClaimReceipt.parse(await workerPost(options.configuration, '/api/worker/claims', claim));
       if (receipt.requestId !== claim.requestId) throw new Error('Claim receipt identity mismatch');

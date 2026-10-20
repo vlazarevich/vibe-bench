@@ -164,6 +164,29 @@ test('reconnect failures progress to a bounded delay including rejected authenti
   expect([1, 2, 3, 4, 5, 6, 7, 99].map(reconnectDelay)).toEqual([1000, 2000, 4000, 8000, 16000, 32000, 60000, 60000]);
 });
 
+test('a claim saved by an older worker protocol is replaced with a fresh protocol-2 request', async () => {
+  const stateRoot = await root();
+  const claims: unknown[] = [];
+  const configuration = RuntimeConfiguration.parse({
+    version: 1,
+    apiUrl: await endpoint(async (request, response, body) => {
+      expect(request.url).toBe('/api/worker/claims');
+      claims.push(body);
+      response.end(JSON.stringify({ kind: 'idle', requestId: ClaimRequest.parse(body).requestId }));
+    }),
+    installationId: randomUUID(),
+    runtimeId: randomUUID(),
+    credentialId: randomUUID(),
+    secret: 'e'.repeat(64),
+  });
+  const old = { protocol: 1, requestId: randomUUID(), runtimeId: configuration.runtimeId };
+  await durableWrite(join(runtimeRoot(stateRoot, configuration), 'work', 'claim.json'), old);
+  expect(await runWorkerOnce({ configuration, stateRoot, executables: {} })).toEqual({ kind: 'idle' });
+  expect(claims).toEqual([{ protocol: 2, requestId: expect.not.stringMatching(old.requestId), runtimeId: configuration.runtimeId }]);
+  await durableWrite(join(runtimeRoot(stateRoot, configuration), 'work', 'claim.json'), { ...old, runtimeId: randomUUID() });
+  await expect(runWorkerOnce({ configuration, stateRoot, executables: {} })).rejects.toThrow('Worker state belongs to another runtime');
+});
+
 test('new destination never receives old results and targeted same identity recovers them', async () => {
   const stateRoot = await root();
   let offline = true;

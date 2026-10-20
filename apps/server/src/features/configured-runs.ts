@@ -445,13 +445,14 @@ async function assembleArtifacts(client: pg.PoolClient, attemptId: string, liste
   );
   const chunks = new Map<string, Buffer[]>();
   for (const row of rows.rows) {
+    // Staged slices the outcome does not list are discarded with the rest of the staging rows.
+    if (!listed.some((artifact) => artifact.id === row.artifact_id)) continue;
     const list = chunks.get(row.artifact_id) ?? [];
     if (row.chunk_offset !== list.length * ARTIFACT_CHUNK_BYTES || list.some((part) => part.length !== ARTIFACT_CHUNK_BYTES))
       throw new Conflict('Artifact chunks are not contiguous');
     list.push(row.bytes);
     chunks.set(row.artifact_id, list);
   }
-  // Staged slices the outcome does not list are discarded with the rest of the staging rows.
   return listed.map((artifact): StagedArtifact => ({ ...artifact, data: Buffer.concat(chunks.get(artifact.id) ?? []) }));
 }
 

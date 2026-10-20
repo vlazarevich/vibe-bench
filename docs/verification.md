@@ -6,7 +6,7 @@ The application, database, and execution runtime require Linux verification.
 
 ## Checks
 
-`tests/production-server.test.ts` builds the dashboard bundle into a temporary directory and runs it from outside the repository. Two bundled processes start concurrently against one external PostgreSQL database, serve health and web assets, apply migrations once, create no local state, and exit cleanly without stopping that database. The bundled migration command is idempotent and refuses to run without `DATABASE_URL`. Embedded mode creates its state, rejects a second owner, and stops PostgreSQL on shutdown.
+`tests/production-server.test.ts` builds the dashboard bundle into a temporary directory and runs it from outside the repository. Two bundled processes start concurrently against one external PostgreSQL database, serve health and web assets, apply migrations once, create no local state, and exit cleanly without stopping that database. The bundled migration command is idempotent and refuses to run without `DATABASE_URL`. Embedded mode creates its state, rejects a second owner, and stops PostgreSQL on shutdown. Terminating the dashboard's idle database connections, as a restart or a hosted provider's idle timeout does, leaves the process running and healthy.
 
 The persistence test reopens the same database three times to exercise shutdown completion. `tests/database-lifecycle.test.ts` forcibly terminates the owning Node process, verifies that the real postmaster and workers exit and the TCP port closes, then reopens the database and checks saved data. The app startup test interrupts the dashboard after observing a real PostgreSQL process. Test cleanup uses the pinned `pg_ctl` against only its own temporary database if an assertion fails.
 

@@ -124,3 +124,20 @@ test('bundled dashboard owns embedded PostgreSQL state', async () => {
   } finally { expect(await stop(owner.child)).toBe(0); }
   await expect(access(join(state, 'postgres', 'postmaster.pid'))).rejects.toThrow();
 }, 180_000);
+
+test('terminated idle database connections do not stop the dashboard', async () => {
+  const url = await freshDatabase('terminated_connections');
+  const dashboard = await launch({ DATABASE_URL: url });
+  try {
+    const admin = new pg.Client({ connectionString: database.url });
+    await admin.connect();
+    try {
+      const terminated = await admin.query("SELECT count(*)::int AS count FROM (SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = 'terminated_connections' AND pid <> pg_backend_pid()) AS ended");
+      expect(terminated.rows[0].count).toBeGreaterThan(0);
+    } finally { await admin.end(); }
+    await setTimeout(200);
+    expect(dashboard.child.exitCode).toBeNull();
+    expect(await (await fetch(`${dashboard.origin}/api/health`)).json()).toEqual({ ok: true });
+    expect(dashboard.output()).toContain('PostgreSQL idle connection closed');
+  } finally { expect(await stop(dashboard.child)).toBe(0); }
+}, 120_000);

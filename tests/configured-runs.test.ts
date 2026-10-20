@@ -229,7 +229,10 @@ test('artifact chunks assemble multi-chunk outputs, enforce authority and alignm
   expect((await post('/api/worker/artifact-chunks', first, workerUrl)).status).toBe(200);
   expect((await post('/api/worker/attempts', report, workerUrl)).status).toBe(409);
   expect((await post('/api/worker/artifact-chunks', second, workerUrl)).status).toBe(200);
+  const unlisted = randomUUID();
+  for (const offset of [0, ARTIFACT_CHUNK_BYTES]) expect((await post('/api/worker/artifact-chunks', { ...first, artifactId: unlisted, offset, base64: Buffer.from('short').toString('base64') }, workerUrl)).status).toBe(200);
   expect((await post('/api/worker/attempts', report, workerUrl)).status).toBe(200);
+  expect((await pool.query('SELECT 1 FROM artifact_chunks WHERE artifact_id = $1', [unlisted])).rowCount).toBe(0);
   const downloaded = await fetch(url + `/api/configured-runs/${view.runId}/artifacts/${metadata.id}`);
   expect(Buffer.from(await downloaded.arrayBuffer()).equals(bytes)).toBe(true);
   await start(assignment, 1);
