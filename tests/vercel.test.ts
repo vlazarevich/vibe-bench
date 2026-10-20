@@ -35,9 +35,17 @@ beforeAll(async () => {
   await writeFile(join(root, 'serve.mjs'), `
 import { createServer } from 'node:http';
 import handler from ${JSON.stringify(pathToFileURL(join(functionRoot, 'index.mjs')).href)};
+const pending = new Set();
+let registered = 0;
+globalThis[Symbol.for('@vercel/request-context')] = { get: () => ({ waitUntil(promise) {
+  registered++; pending.add(promise); promise.finally(() => pending.delete(promise));
+} }) };
 const server = createServer((request, response) => { void handler(request, response); });
 server.listen(0, '127.0.0.1', () => process.send({ port: server.address().port }));
-process.on('message', (env) => { Object.assign(process.env, env); process.send('updated'); });
+process.on('message', async (env) => {
+  if (env === 'drain') { await Promise.all([...pending]); process.send({ drained: true, registered }); }
+  else { Object.assign(process.env, env); process.send('updated'); }
+});
 `);
   database = await startDatabase(join(root, 'postgres'));
 }, 120_000);
@@ -52,7 +60,7 @@ async function launch(settings: Record<string, string> = {}) {
   const inherited = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^(VIBE_|VERCEL|DATABASE_URL$|POSTGRES_URL$)/.test(key)));
   const child = spawn(process.execPath, [join(root, 'serve.mjs')], { cwd: root,
     env: { ...inherited, POSTGRES_URL: database.url, VIBE_APP_PASSWORD: ` ${password} `,
-      VERCEL_ENV: 'production', VERCEL_PROJECT_PRODUCTION_URL: 'bench.example', ...settings },
+      VERCEL_ENV: 'production', VERCEL_URL: 'deployment.example', VERCEL_REGION: 'local-fixture', VERCEL_PROJECT_PRODUCTION_URL: 'bench.example', ...settings },
     stdio: ['ignore', 'pipe', 'pipe', 'ipc'] });
   children.push(child);
   let output = '';
@@ -82,7 +90,7 @@ async function launch(settings: Record<string, string> = {}) {
 const settings = { POSTGRES_URL: 'postgresql://u:p@db/bench?sslmode=require', VIBE_APP_PASSWORD: ' secret ', VERCEL_URL: 'preview.example' };
 test('hosted configuration requires external persistence, a password, and a pinned HTTPS origin', () => {
   expect(vercelConfig(settings)).toEqual({ databaseUrl: settings.POSTGRES_URL, password: 'secret', publicUrl: 'https://preview.example' });
-  expect(vercelConfig({ ...settings, VERCEL_ENV: 'production', VERCEL_PROJECT_PRODUCTION_URL: 'production.example' }).publicUrl).toBe('https://production.example');
+  expect(vercelConfig({ ...settings, VERCEL_ENV: 'production', VERCEL_URL: 'deployment.example', VERCEL_REGION: 'local-fixture', VERCEL_PROJECT_PRODUCTION_URL: 'production.example' }).publicUrl).toBe('https://production.example');
   expect(vercelConfig({ ...settings, VIBE_PUBLIC_URL: 'https://custom.example' }).publicUrl).toBe('https://custom.example');
   expect(vercelConfig({ ...settings, DATABASE_URL: 'postgres://other/db' }).databaseUrl).toBe('postgres://other/db');
   for (const override of [{ POSTGRES_URL: '' }, { VIBE_APP_PASSWORD: ' ' }, { VERCEL_URL: '' },
@@ -142,3 +150,28 @@ test('failed cold initialization returns a sanitized error and retries successfu
   await updated;
   expect((await broken.request('/api/health')).status).toBe(200);
 });
+
+
+test('released database clients drain before suspension and reconnect on the next request', async () => {
+  const connection = new URL(database.url);
+  connection.searchParams.set('application_name', 'vercel-lifecycle');
+  const dashboard = await launch({ POSTGRES_URL: connection.href });
+  const login = await dashboard.post('/api/access/login', { password });
+  expect(login.status).toBe(200);
+  const cookie = login.headers.get('set-cookie')!.split(';')[0]!;
+  const admin = new pg.Client({ connectionString: database.url });
+  await admin.connect();
+  try {
+    const clients = async () => (await admin.query("SELECT count(*)::int AS count FROM pg_stat_activity WHERE application_name='vercel-lifecycle'")).rows[0].count as number;
+    expect(await clients()).toBeGreaterThan(0);
+    // Model Vercel waiting on registered background work before freezing this instance.
+    const drained = once(dashboard.child, 'message');
+    dashboard.child.send('drain');
+    const [result] = await drained;
+    expect(result).toMatchObject({ drained: true });
+    expect(result.registered).toBeGreaterThan(0);
+    expect(await clients()).toBe(0);
+    expect((await dashboard.request('/api/suites', { headers: { cookie } })).status).toBe(200);
+    expect(await clients()).toBeGreaterThan(0);
+  } finally { await admin.end(); }
+}, 30_000);

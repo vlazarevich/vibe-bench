@@ -1,3 +1,4 @@
+import { attachDatabasePool } from '@vercel/functions/db-connections';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { fileURLToPath } from 'node:url';
 import { createApp } from '../apps/server/src/app.ts';
@@ -8,6 +9,8 @@ let application: Promise<Awaited<ReturnType<typeof createApp>>> | undefined;
 async function start() {
   const config = vercelConfig();
   const pool = await connectDatabase(config.databaseUrl);
+  // Keep the instance alive until released clients reach their idle timeout before suspension.
+  attachDatabasePool(pool);
   try {
     const app = await createApp({ pool, password: config.password, publicUrl: config.publicUrl,
       trustedProxy: [], webRoot: fileURLToPath(new URL('./web/', import.meta.url)) });
