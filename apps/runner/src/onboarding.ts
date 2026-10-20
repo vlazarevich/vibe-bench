@@ -44,7 +44,12 @@ const commands = {
 type Probe =
   | { kind: 'exited'; code: number; output: string; diagnostic: string }
   | { kind: 'missing' | 'failed' | 'timeout' | 'output-limit' };
-async function probe(executable: string, args: string[], timeoutMs: number): Promise<Probe> {
+async function probe(
+  executable: string,
+  args: string[],
+  timeoutMs: number,
+  outputLimit = 16_000,
+): Promise<Probe> {
   const directory = await mkdtemp(join(tmpdir(), 'vibe-onboarding-'));
   try {
     try {
@@ -66,7 +71,7 @@ async function probe(executable: string, args: string[], timeoutMs: number): Pro
       try {
         return {
           ...result,
-          output: await readBounded(join(directory, 'stdout.log'), 16_000),
+          output: await readBounded(join(directory, 'stdout.log'), outputLimit),
           diagnostic: await readBounded(join(directory, 'stderr.log'), 16_000),
         };
       } catch {
@@ -86,7 +91,11 @@ async function probe(executable: string, args: string[], timeoutMs: number): Pro
   }
 }
 
-async function tool(name: z.infer<typeof ToolName>, timeoutMs: number, executable?: string): Promise<ToolAvailability> {
+async function tool(
+  name: z.infer<typeof ToolName>,
+  timeoutMs: number,
+  executable?: string,
+): Promise<ToolAvailability> {
   const result = await probe(executable ?? commands[name], ['--version'], timeoutMs);
   if (result.kind !== 'exited') return { kind: 'unavailable', reason: result.kind };
   if (result.code !== 0) return { kind: 'unavailable', reason: 'failed' };
@@ -99,7 +108,8 @@ async function auth(
   timeoutMs: number,
   executable?: string,
 ): Promise<HarnessReadiness> {
-  const args = name === 'codex' ? ['login', 'status'] : name === 'claude' ? ['auth', 'status'] : ['auth', 'list'];
+  const args =
+    name === 'codex' ? ['login', 'status'] : name === 'claude' ? ['auth', 'status'] : ['auth', 'list'];
   const result = await probe(executable ?? commands[name], args, timeoutMs);
   if (result.kind !== 'exited') return { kind: 'unknown', reason: result.kind };
   if (name === 'claude') {
@@ -150,6 +160,167 @@ async function auth(
     if (result.code === 0 && /\b\d+ credentials?\b/i.test(clean)) return { kind: 'not-ready' };
   }
   return { kind: 'unknown', reason: result.code === 0 ? 'unrecognized' : 'failed' };
+}
+
+// V2 Console credentials can activate Go through a different integration ID.
+// These discovery routes expose connection metadata, never credential values.
+async function opencodeV2(timeoutMs: number, selected?: string): Promise<HarnessReadiness> {
+  const executable = selected ?? commands.opencode;
+  const integrations = await probe(executable, ['api', 'integration.list'], timeoutMs, 200_000);
+  if (integrations.kind !== 'exited') return { kind: 'unknown', reason: integrations.kind };
+  if (integrations.code !== 0) return { kind: 'unknown', reason: 'failed' };
+  const providers = await probe(executable, ['api', 'provider.list'], timeoutMs, 200_000);
+  if (providers.kind !== 'exited') return { kind: 'unknown', reason: providers.kind };
+  if (providers.code !== 0) return { kind: 'unknown', reason: 'failed' };
+  try {
+    const providerList = z
+      .object({ data: z.array(z.object({ id: z.string(), integrationID: z.string().optional() })).max(500) })
+      .parse(JSON.parse(providers.output));
+    const integrationList = z
+      .object({
+        data: z
+          .array(
+            z.object({
+              id: z.string(),
+              connections: z
+                .array(
+                  z.object({
+                    type: z.enum(['credential', 'env']),
+                    method: z.string().optional(),
+                    status: z.object({ status: z.string() }).optional(),
+                  }),
+                )
+                .max(500),
+            }),
+          )
+          .max(1000),
+      })
+      .parse(JSON.parse(integrations.output));
+    const go = providerList.data.find((provider) => provider.id === 'opencode-go');
+    const connections =
+      integrationList.data.find((integration) => integration.id === (go?.integrationID ?? go?.id))
+        ?.connections ?? [];
+    const connection = connections.find((connection) => !connection.status);
+    if (!connection) return { kind: 'not-ready' };
+    const readiness: HarnessReadiness = {
+      kind: 'ready',
+      ...(connection.method === 'oauth'
+        ? { accountType: 'subscription' as const }
+        : connection.method === 'key' || connection.type === 'env'
+          ? { accountType: 'api-key' as const }
+          : {}),
+    };
+    const listed = await probe(executable, ['models'], timeoutMs, 200_000);
+    const models =
+      listed.kind === 'exited' && listed.code === 0
+        ? [
+            ...new Set(
+              listed.output
+                .split(/\r?\n/)
+                .map((line) => line.trim())
+                .filter((line) => /^opencode-go\/[a-zA-Z0-9._:/-]{1,180}$/.test(line)),
+            ),
+          ].slice(0, 500)
+        : [];
+    return { ...readiness, ...(models.length ? { models } : {}) };
+  } catch (error) {
+    if (error instanceof Interrupted) throw error;
+    return { kind: 'unknown', reason: 'unrecognized' };
+  }
+}
+
+async function claudeModels(
+  readiness: HarnessReadiness,
+  timeoutMs: number,
+  selected?: string,
+): Promise<HarnessReadiness> {
+  if (readiness.kind !== 'ready') return readiness;
+  const directory = await mkdtemp(join(tmpdir(), 'vibe-models-'));
+  try {
+    // Initialize the SDK control channel without sending a user turn or running tools.
+    const result = await runProcess({
+      executable: await checkExecutable(selected ?? commands.claude),
+      args: [
+        '-p',
+        '--safe-mode',
+        '--setting-sources',
+        '',
+        '--strict-mcp-config',
+        '--mcp-config',
+        '{"mcpServers":{}}',
+        '--no-session-persistence',
+        '--tools',
+        '',
+        '--input-format',
+        'stream-json',
+        '--output-format',
+        'stream-json',
+        '--verbose',
+      ],
+      cwd: directory,
+      directory,
+      input:
+        JSON.stringify({
+          type: 'control_request',
+          request_id: 'models',
+          request: { subtype: 'initialize', hooks: {} },
+        }) + '\n',
+      holdInputOpen: true,
+      timeoutMs,
+      env: Object.fromEntries(
+        Object.entries(process.env).filter(
+          ([key]) => !key.startsWith('VIBE_') && key !== 'ARTIFICIAL_ANALYSIS_API_KEY',
+        ),
+      ),
+    });
+    if (result.kind === 'output-limit' || (result.kind === 'exited' && result.code !== 0)) return readiness;
+    const response = z.object({
+      type: z.literal('control_response'),
+      response: z.object({
+        subtype: z.literal('success'),
+        request_id: z.literal('models'),
+        response: z.object({
+          models: z
+            .array(
+              z.object({
+                value: z.string().regex(/^[a-zA-Z0-9._:/-]{1,200}$/),
+                resolvedModel: z
+                  .string()
+                  .regex(/^[a-zA-Z0-9._:/-]{1,200}$/)
+                  .optional(),
+                displayName: z.string().min(1).max(200),
+              }),
+            )
+            .max(500),
+        }),
+      }),
+    });
+    const raw = await readBounded(join(directory, 'stdout.log'), 200_000);
+    for (const line of raw.split(/\r?\n/).filter(Boolean)) {
+      let value: unknown;
+      try {
+        value = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      const parsed = response.safeParse(value);
+      if (!parsed.success) continue;
+      const models = new Map(
+        parsed.data.response.response.models.map((model) => [model.resolvedModel ?? model.value, model]),
+      );
+      return {
+        ...readiness,
+        models: [...models.keys()],
+        modelDetails: [...models].map(([id, model]) => ({ id, name: model.displayName, modalities: [] })),
+      };
+    }
+    return readiness;
+  } catch (error) {
+    if (error instanceof Interrupted) throw error;
+    return readiness;
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 }
 
 async function codexModels(
@@ -215,7 +386,11 @@ async function codexModels(
     return {
       ...readiness,
       models: value.result.data.map((m) => m.model),
-      modelDetails: value.result.data.map((m) => ({ id: m.model, name: m.displayName, modalities: m.inputModalities })),
+      modelDetails: value.result.data.map((m) => ({
+        id: m.model,
+        name: m.displayName,
+        modalities: m.inputModalities,
+      })),
     };
   } catch (error) {
     if (error instanceof Interrupted) throw error;
@@ -237,7 +412,8 @@ export async function discoverRuntime({
   timeoutMs?: number;
 }) {
   const tools = [];
-  for (const name of ToolName.options) tools.push({ name, availability: await tool(name, timeoutMs, selected[name]) });
+  for (const name of ToolName.options)
+    tools.push({ name, availability: await tool(name, timeoutMs, selected[name]) });
   return RuntimeRegistration.parse({
     protocol: 1,
     runtimeId,
@@ -256,8 +432,19 @@ export async function discoverRuntime({
     tools,
     harnesses: {
       codex: await codexModels(await auth('codex', timeoutMs, selected.codex), timeoutMs, selected.codex),
-      claude: await auth('claude', timeoutMs, selected.claude),
-      opencodeGo: await auth('opencode', timeoutMs, selected.opencode),
+      claude: await claudeModels(
+        await auth('claude', timeoutMs, selected.claude),
+        timeoutMs,
+        selected.claude,
+      ),
+      opencodeGo: tools.some(
+        (tool) =>
+          tool.name === 'opencode' &&
+          tool.availability.kind === 'available' &&
+          Number(tool.availability.version?.split('.')[0]) >= 2,
+      )
+        ? await opencodeV2(timeoutMs, selected.opencode)
+        : await auth('opencode', timeoutMs, selected.opencode),
     },
     modelPolicy: 'provider-discovered-at-execution',
   });
@@ -278,7 +465,9 @@ export function onboardingUrl(value: string) {
   return new URL('/api/worker/registrations', url);
 }
 
-export const Status = z.object({ runtimeId: RuntimeId, observation: z.number().int().nonnegative() }).strict();
+export const Status = z
+  .object({ runtimeId: RuntimeId, observation: z.number().int().nonnegative() })
+  .strict();
 export const AcknowledgedCapabilities = z
   .object({ registration: RuntimeRegistration, receipt: RuntimeReceipt })
   .strict();
@@ -308,7 +497,9 @@ export async function onboard({ stateRoot, locked = false }: { stateRoot: string
       } catch {}
     }
     const registration = await discoverRuntime({ ...identity, selected });
-    const receipt = RuntimeReceipt.parse(await workerPost(configuration, '/api/worker/registrations', registration));
+    const receipt = RuntimeReceipt.parse(
+      await workerPost(configuration, '/api/worker/registrations', registration),
+    );
     if (
       receipt.runtimeId !== registration.runtimeId ||
       receipt.observation !== registration.observation ||

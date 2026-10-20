@@ -63,6 +63,8 @@ Fixtures prove runner mechanics, not provider account access, model entitlement,
 
 Tests cover empty-database migration, upgrading an existing database, concurrent migration startup, and reopening suite and configured-run state. The app does not implement scheduler leases or general-purpose sandboxing of arbitrary runner code. Shared-password access is distinct from infrastructure deployment verification. Those broader contracts need their own tests as code arrives.
 
+`tests/harness-discovery.test.ts` covers Claude control initialization, canonical model IDs, bounded malformed/failed probes, and OpenCode v2 Console-to-Go connection mapping, credential methods, and model filtering without publishing private metadata. These use fixture subprocesses and do not prove live model entitlement.
+
 `tests/onboarding.test.ts` and pairing tests use real subprocesses, HTTP, and PostgreSQL for missing tools, bounded authentication probes, cached status, single-use tokens and durable exact enrollment retries, credential replacement, sequence recovery, failed-pair cleanup, concurrent probe, state ownership, remote-revoke failure, and abandonment. `run-once` waits through an initially empty queue and the configured matrix is repeated through `vibe-runner`. These fixtures establish mechanics, not live model access.
 
 ## Result viewer checks
