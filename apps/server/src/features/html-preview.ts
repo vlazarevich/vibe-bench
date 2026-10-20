@@ -1,182 +1,80 @@
+import { createHash, randomBytes } from 'node:crypto';
+import type pg from 'pg';
 import { z } from 'zod';
-import { randomUUID } from 'node:crypto';
-import type { Page } from '@playwright/test';
-import type { PreviewInput, PreviewFrame } from '../../../../packages/contracts/src/artifact-viewer.ts';
-import { isolatedChromium } from './isolated-chromium.ts';
+import { AttemptOutcome } from '../../../../packages/contracts/src/configured-runs.ts';
+import { PreviewOpened } from '../../../../packages/contracts/src/artifact-viewer.ts';
+import type { SavedResult } from './artifact-viewer.ts';
+import { NotFound } from '../errors.ts';
 
-export type HtmlBundle = { entry: string; files: { name: string; mediaType: string; bytes: Buffer }[] };
-type Session = {
-  owner: string;
-  runtime: Awaited<ReturnType<typeof isolatedChromium>>;
-  page: Page;
-  blocked: number;
-  touched: number;
-  busy: boolean;
-};
-export class PreviewUnavailable extends Error {
-  constructor() {
-    super('Interactive preview is unavailable. Download the source to inspect it.');
-  }
+export const PREVIEW_LIFETIME_MS = 30 * 60_000;
+export const PreviewToken = z.string().regex(/^[A-Za-z0-9_-]{43}$/);
+const hash = (token: string) => createHash('sha256').update(token).digest('hex');
+/** Bundle paths and request paths compare after the same URL normalization, so encoding differences cannot alias. */
+const normalized = (path: string) => new URL(path, 'https://preview.invalid/').pathname;
+const encodedPath = (name: string) => name.split('/').map(encodeURIComponent).join('/');
+
+/** Issues a capability for one authorized HTML result. The caller has already checked dashboard or grading authority. */
+export async function grantPreview(pool: pg.Pool, attemptId: string, saved: SavedResult) {
+  const result = saved.outcome.result;
+  if (result.kind !== 'html') throw new NotFound();
+  const entry = saved.artifacts.find((file) => file.metadata.id === result.entryArtifactId);
+  if (!entry) throw new NotFound();
+  const token = randomBytes(32).toString('base64url');
+  const expiresAt = new Date(Date.now() + PREVIEW_LIFETIME_MS);
+  await pool.query('DELETE FROM preview_grants WHERE expires_at < now()');
+  await pool.query('INSERT INTO preview_grants(token_hash, attempt_id, expires_at) VALUES($1,$2,$3)', [
+    hash(token),
+    attemptId,
+    expiresAt,
+  ]);
+  return PreviewOpened.parse({
+    frameUrl: `/preview/${token}/${encodedPath(entry.metadata.name)}`,
+    expiresAt: expiresAt.toISOString(),
+  });
 }
 
-export class HtmlPreviews {
-  private sessions = new Map<string, Session>();
-  private opening = 0;
-  private closed = false;
-  private timer = setInterval(() => {
-    for (const [id, session] of this.sessions) if (Date.now() - session.touched > 30_000) void this.remove(id);
-  }, 1000);
-  constructor() {
-    this.timer.unref();
-  }
-  async open(owner: string, bundle: HtmlBundle) {
-    if (this.closed || this.sessions.size + this.opening >= 2) throw new PreviewUnavailable();
-    this.opening++;
-    let runtime: Awaited<ReturnType<typeof isolatedChromium>> | undefined;
-    try {
-      runtime = await isolatedChromium();
-      if (this.closed) throw new PreviewUnavailable();
-      const context = await runtime.browser.newContext({
-        viewport: { width: 960, height: 640 },
-        serviceWorkers: 'block',
-        acceptDownloads: false,
-      });
-      const files = new Map(
-        bundle.files.map((file) => [
-          new URL(file.name.split('/').map(encodeURIComponent).join('/'), 'https://preview.invalid/').pathname,
-          file,
-        ]),
-      );
-      const page = await context.newPage();
-      const session: Session = { owner, runtime, page, blocked: 0, touched: Date.now(), busy: true };
-      context.on('page', (popup) => {
-        if (popup !== page) {
-          session.blocked++;
-          void popup.close();
-        }
-      });
-      await context.routeWebSocket('**/*', (socket) => {
-        session.blocked++;
-        socket.close();
-      });
-      await context.route('**/*', async (route) => {
-        const url = new URL(route.request().url());
-        const file = url.origin === 'https://preview.invalid' ? files.get(url.pathname) : undefined;
-        if (!file) {
-          session.blocked++;
-          await route.abort();
-          return;
-        }
-        await route.fulfill({
-          body: file.bytes,
-          contentType: file.mediaType.startsWith('text/') ? `${file.mediaType}; charset=utf-8` : file.mediaType,
-          headers: {
-            'Content-Security-Policy':
-              "default-src 'self' data:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; worker-src 'none'",
-            'X-Content-Type-Options': 'nosniff',
-          },
-        });
-      });
-      page.setDefaultTimeout(3000);
-      await page.goto(
-        new URL(bundle.entry.split('/').map(encodeURIComponent).join('/'), 'https://preview.invalid/').href,
-        { waitUntil: 'domcontentloaded', timeout: 5000 },
-      );
-      const frame = await this.capture(session);
-      if (this.closed) throw new PreviewUnavailable();
-      session.busy = false;
-      const previewId = randomUUID();
-      this.sessions.set(previewId, session);
-      runtime.browser.once('disconnected', () => {
-        void this.remove(previewId);
-      });
-      return { previewId, frame };
-    } catch {
-      await runtime?.close();
-      throw new PreviewUnavailable();
-    } finally {
-      this.opening--;
-    }
-  }
-  async input(owner: string, id: string, input: PreviewInput): Promise<PreviewFrame> {
-    const session = this.sessions.get(id);
-    if (!session || session.owner !== owner || session.busy) throw new PreviewUnavailable();
-    if (input.kind === 'click')
-      z.object({
-        x: z
-          .number()
-          .nonnegative()
-          .lt(session.page.viewportSize()?.width ?? 960),
-        y: z
-          .number()
-          .nonnegative()
-          .lt(session.page.viewportSize()?.height ?? 640),
-      }).parse(input);
-    const delay = Math.max(0, 150 - (Date.now() - session.touched));
-    session.busy = true;
-    session.touched = Date.now();
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    try {
-      return await Promise.race([
-        (async () => {
-          if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
-          switch (input.kind) {
-            case 'refresh':
-              break;
-            case 'viewport':
-              await session.page.setViewportSize(
-                input.size === 'desktop'
-                  ? { width: 1280, height: 800 }
-                  : input.size === 'tablet'
-                    ? { width: 768, height: 900 }
-                    : { width: 390, height: 844 },
-              );
-              break;
-            case 'click':
-              await session.page.mouse.click(input.x, input.y);
-              break;
-            case 'type':
-              await session.page.keyboard.insertText(input.text);
-              break;
-            case 'key':
-              await session.page.keyboard.press(input.key);
-              break;
-            case 'scroll':
-              await session.page.mouse.wheel(input.deltaX, input.deltaY);
-              break;
-          }
-          return this.capture(session);
-        })(),
-        new Promise<never>((_, reject) => {
-          timer = setTimeout(() => reject(new PreviewUnavailable()), 5000);
-        }),
-      ]);
-    } catch {
-      await this.remove(id);
-      throw new PreviewUnavailable();
-    } finally {
-      clearTimeout(timer);
-      session.busy = false;
-    }
-  }
-  async close(owner: string, id: string) {
-    if (this.sessions.get(id)?.owner === owner) await this.remove(id);
-  }
-  private async capture(session: Session): Promise<PreviewFrame> {
-    return {
-      ...session.page.viewportSize(),
-      png: (await session.page.screenshot({ type: 'png', timeout: 3000 })).toString('base64'),
-      blockedRequests: session.blocked,
-    };
-  }
-  private async remove(id: string) {
-    const session = this.sessions.get(id);
-    this.sessions.delete(id);
-    await session?.runtime.close();
-  }
-  async shutdown() {
-    this.closed = true;
-    clearInterval(this.timer);
-    await Promise.all([...this.sessions.keys()].map((id) => this.remove(id)));
-  }
+/** Resolves one bundle file for an unexpired grant. Only the entry and declared assets are reachable. */
+export async function readPreviewFile(pool: pg.Pool, token: string, requestPath: string) {
+  const grant = await pool.query(
+    'SELECT o.attempt_id, o.outcome FROM preview_grants g JOIN attempt_outcomes o ON o.attempt_id = g.attempt_id WHERE g.token_hash = $1 AND g.expires_at > now()',
+    [hash(token)],
+  );
+  if (!grant.rowCount) throw new NotFound();
+  const outcome = AttemptOutcome.parse(grant.rows[0].outcome);
+  if (outcome.kind !== 'completed' || outcome.result.kind !== 'html') throw new NotFound();
+  const bundle = new Set([outcome.result.entryArtifactId, ...outcome.result.assetArtifactIds]);
+  const wanted = normalized(requestPath);
+  const metadata = outcome.artifacts.find(
+    (file) => bundle.has(file.id) && file.kind !== 'diagnostic' && normalized(encodedPath(file.name)) === wanted,
+  );
+  if (!metadata) throw new NotFound();
+  const stored = await pool.query('SELECT bytes FROM configured_artifacts WHERE id = $1 AND attempt_id = $2', [
+    metadata.id,
+    grant.rows[0].attempt_id,
+  ]);
+  if (!stored.rowCount) throw new NotFound();
+  return { mediaType: metadata.mediaType, bytes: z.instanceof(Buffer).parse(stored.rows[0].bytes) };
+}
+
+/**
+ * Preview responses are sandboxed documents with an opaque origin: scripts run, but cannot read dashboard state,
+ * reach the network, submit forms, open windows, or load anything outside this grant's path.
+ */
+export function previewPolicy(origin: string, token: string) {
+  const bundle = `${origin}/preview/${token}/`;
+  return [
+    'sandbox allow-scripts allow-forms',
+    "default-src 'none'",
+    `script-src ${bundle} 'unsafe-inline' 'unsafe-eval'`,
+    `style-src ${bundle} 'unsafe-inline'`,
+    `img-src ${bundle} data: blob:`,
+    `media-src ${bundle} data: blob:`,
+    `font-src ${bundle} data:`,
+    "connect-src 'none'",
+    "frame-src 'none'",
+    "worker-src 'none'",
+    "form-action 'none'",
+    "base-uri 'none'",
+    `frame-ancestors ${origin}`,
+  ].join('; ');
 }

@@ -1,14 +1,15 @@
 import { afterAll, beforeAll, expect, test } from 'vitest';
 import { mkdtemp, mkdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { startDatabase } from '../scripts/local-database.ts';
 import { connectDatabase } from '../apps/server/src/db.ts';
 import { createApp } from '../apps/server/src/app.ts';
 import { ResultPresentation, PreviewOpened } from '../packages/contracts/src/artifact-viewer.ts';
 import { readAttemptResult } from '../apps/server/src/features/configured-runs.ts';
 import { projectResult } from '../apps/server/src/features/artifact-viewer.ts';
-import { seedArtifactRun } from './artifact-fixtures.ts';
+import { interactiveHtml, png, seedArtifactRun } from './artifact-fixtures.ts';
+import { previewableMedia } from '../apps/server/src/features/media-headers.ts';
 
 let database: Awaited<ReturnType<typeof startDatabase>>;
 let pool: Awaited<ReturnType<typeof connectDatabase>>;
@@ -60,25 +61,65 @@ test('neutral projection rejects malformed bytes and unsafe supplied URLs withou
   expect(invalid.outputs.filter((file) => file.kind === 'unsupported')).toHaveLength(2);
   const imageRecord = fixture.records.find((item) => item.kind === 'image'); if (!imageRecord) throw new Error();
   const images = await readAttemptResult(pool, fixture.run.runId, imageRecord.attemptId);
-  const image = images.artifacts.find((file) => file.metadata.kind === 'image'); if (!image) throw new Error(); image.bytes = image.bytes.subarray(0, 24);
+  const image = images.artifacts.find((file) => file.metadata.kind === 'image'); if (!image) throw new Error(); image.bytes = image.bytes.subarray(0, 20);
   const malformed = await projectResult(images, { names: 'neutral', artifact: (_id, purpose) => `/cards/file/${purpose}`, html: () => '/cards/preview' });
   expect(malformed.kind === 'image' && malformed.images[0]?.kind).toBe('unsupported');
 });
 
-test('HTTP preview actions validate input and scope every capability to its attempt', async () => {
+test('HTML preview grants serve only the granted bundle, without cookies, under a sandbox policy, until expiry', async () => {
   const html = fixture.records.find((record) => record.kind === 'html');
   const other = fixture.records.find((record) => record.kind === 'text');
   if (!html || !other) throw new Error();
   const preview = html.resultUrl.replace('/result', '/preview');
   const send = (path: string, body: unknown) => fetch(url + path, { method: 'POST', headers: { origin: url, 'content-type': 'application/json' }, body: JSON.stringify(body) });
-  const opened = await send(preview, {}); expect(opened.status).toBe(200);
-  const result = PreviewOpened.parse(await opened.json());
-  expect((await send(`${preview}/${result.previewId}/input`, { kind: 'click', x: 960, y: 0 })).status).toBe(400);
-  expect((await send(`${preview}/${result.previewId}/input`, { kind: 'key', key: 'Control+L' })).status).toBe(400);
-  expect((await send(other.resultUrl.replace('/result', `/preview/${result.previewId}/input`), { kind: 'refresh' })).status).toBe(503);
-  expect((await send(`${preview}/${result.previewId}/input`, { kind: 'refresh' })).status).toBe(200);
-  expect((await fetch(`${url}${preview}/${result.previewId}`, { method: 'DELETE', headers: { origin: url } })).status).toBe(204);
-  expect((await send(`${preview}/${result.previewId}/input`, { kind: 'refresh' })).status).toBe(503);
+  expect((await send(preview, { unexpected: true })).status).toBe(400);
+  expect((await send(other.resultUrl.replace('/result', '/preview'), {})).status).toBe(404);
+  const opened = PreviewOpened.parse(await (await send(preview, {})).json());
+  const again = PreviewOpened.parse(await (await send(preview, {})).json());
+  expect(again.frameUrl).not.toBe(opened.frameUrl);
+  expect(Date.parse(opened.expiresAt) - Date.now()).toBeGreaterThan(29 * 60_000);
+  const token = opened.frameUrl.split('/')[2] ?? '';
+  const bundle = `${url}/preview/${token}/`;
+  const entry = await fetch(url + opened.frameUrl);
+  expect(entry.status).toBe(200);
+  expect(entry.headers.get('content-type')).toContain('text/html');
+  const policy = entry.headers.get('content-security-policy') ?? '';
+  for (const directive of ['sandbox allow-scripts allow-forms', `script-src ${bundle} `, "connect-src 'none'", "form-action 'none'", "frame-src 'none'", `frame-ancestors ${url}`]) expect(policy).toContain(directive);
+  expect(await entry.text()).toBe(interactiveHtml);
+  for (const asset of ['assets/style.css?v=1', 'assets/%C3%BC%20wide.css', 'assets/probe.js', 'assets/picture.png', 'extra.txt']) {
+    const response = await fetch(bundle + asset);
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-security-policy')).toBe(policy);
+  }
+  for (const missing of ['diagnostics/log.html', 'assets/missing.js', '..%2f..%2fapi%2fhealth', 'ASSETS/probe.js']) expect((await fetch(bundle + missing)).status).toBe(404);
+  expect((await fetch(`${url}/preview/${'A'.repeat(43)}/index.html`)).status).toBe(404);
+  expect((await fetch(`${url}/preview/short/index.html`)).status).not.toBe(200);
+  const hashes = (await pool.query('SELECT token_hash FROM preview_grants')).rows.map((row) => row.token_hash);
+  expect(hashes).not.toContain(token);
+  expect(hashes).toContain(createHash('sha256').update(token).digest('hex'));
+  expect((await fetch(url + '/')).headers.get('content-security-policy')).toContain(`frame-src ${url}/preview/`);
+  await pool.query("UPDATE preview_grants SET expires_at = now() - interval '1 second' WHERE token_hash = $1", [createHash('sha256').update(token).digest('hex')]);
+  expect((await fetch(url + opened.frameUrl)).status).toBe(404);
+  expect((await fetch(url + again.frameUrl)).status).toBe(200);
+});
+
+test('media is checked from headers only and bounded by declared dimensions', () => {
+  const pngOf = (width: number, height: number) => { const bytes = Buffer.from(png); bytes.writeUInt32BE(width, 16); bytes.writeUInt32BE(height, 20); return bytes; };
+  expect(previewableMedia(png, 'image/png')).toBe(true);
+  expect(previewableMedia(pngOf(0, 1), 'image/png')).toBe(false);
+  expect(previewableMedia(pngOf(10_000, 4001), 'image/png')).toBe(false);
+  expect(previewableMedia(png.subarray(0, 20), 'image/png')).toBe(false);
+  const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x04, 0x00, 0x00, 0xff, 0xc0, 0x00, 0x11, 0x08, 0x00, 0x20, 0x00, 0x40, 0x03]);
+  expect(previewableMedia(jpeg, 'image/jpeg')).toBe(true);
+  expect(previewableMedia(jpeg.subarray(0, 10), 'image/jpeg')).toBe(false);
+  const vp8l = Buffer.alloc(30); vp8l.write('RIFF', 0); vp8l.write('WEBP', 8); vp8l.write('VP8L', 12); vp8l[20] = 0x2f; vp8l.writeUInt32LE((15) | (7 << 14), 21);
+  expect(previewableMedia(vp8l, 'image/webp')).toBe(true);
+  const vp8x = Buffer.alloc(30); vp8x.write('RIFF', 0); vp8x.write('WEBP', 8); vp8x.write('VP8X', 12); vp8x.writeUIntLE(9999, 24, 3); vp8x.writeUIntLE(9999, 27, 3);
+  expect(previewableMedia(vp8x, 'image/webp')).toBe(false);
+  const webm = Buffer.from('1a45dfa39f4286810142f7810142f2810442f381084282847765626d', 'hex');
+  expect(previewableMedia(webm, 'video/webm')).toBe(true);
+  expect(previewableMedia(Buffer.from('1a45dfa39f428288766964656f6d6b76', 'hex'), 'video/webm')).toBe(false);
+  expect(previewableMedia(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"/>'), 'image/svg+xml')).toBe(false);
 });
 
 test('result projection survives a real database restart', async () => {

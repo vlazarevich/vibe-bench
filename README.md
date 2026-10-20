@@ -85,9 +85,9 @@ Set `ARTIFICIAL_ANALYSIS_API_KEY` on the dashboard for the daily cached Artifici
 
 The runner saves immutable assignments, preparation, attempt starts, terminal reports, and artifacts before upload. Artifacts upload in chunks of at most 3 MB so every request fits serverless body limits. Update the dashboard and runners together: a runner using an older worker protocol is told to update and receives no work. Saved delivery retries retain original IDs. Identical replay has one effect; changed accepted content conflicts. A started attempt without a saved terminal result is uncertain and never executes again under its old ID. Recovery reports interruption truthfully.
 
-The server needs Bubblewrap at `/usr/bin/bwrap`, unprivileged user and network namespaces, Playwright Chromium, and browser system libraries and fonts for isolated HTML and media previews. Missing prerequisites show unavailable previews while original downloads remain available. HTML previews start at 960 by 640 and support desktop (1280×800), tablet (768×900), and mobile (390×844) viewports, clicks, keyboard input, and text. Two concurrent sessions are allowed. They expire after 30 seconds idle or two minutes total.
+Previews run in the viewer's browser, so the server needs no browser or sandbox software. **Open interactive preview** loads an HTML result into a sandboxed frame at desktop (1280×800), tablet (768×900), or mobile (390×844) size. The page's scripts run, but cannot read dashboard cookies or the parent page, reach the network, submit forms, open windows, or navigate elsewhere. Each opening issues a 30-minute capability link that serves only that result's files. Images and WebM recordings are checked by header on the server and decoded by the browser; anything that cannot be decoded falls back to its download.
 
-Authentication does not establish deployment readiness. Backups, artifact storage, HTTPS, upload limits, and Chromium isolation need infrastructure verification.
+Authentication does not establish deployment readiness. Backups, artifact storage, HTTPS, and upload limits need infrastructure verification.
 
 ## Verify locally
 

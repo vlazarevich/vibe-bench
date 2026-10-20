@@ -99,8 +99,11 @@ test('protected dashboard login, rich result access, enrollment and revocation w
     await page.getByRole('button', { name: 'Open interactive preview' }).click();
     const openedResponse = await previewResponse;
     const opened = PreviewOpened.parse(await openedResponse.json());
-    await expect(page.getByRole('application')).toBeVisible();
-    const previewEndpoint = `${openedResponse.url()}/${opened.previewId}`;
+    // The sandboxed frame sends no cookies; its capability URL alone loads the bundle in password mode.
+    await expect(
+      page.frameLocator('iframe[title="Interactive HTML preview"]').getByRole('button', { name: 'Count 0' }),
+    ).toBeVisible();
+    const previewEndpoint = openedResponse.url();
     const resultLink = page
       .getByRole('region', { name: 'Result preview', exact: true })
       .locator('a[href$="/files/0/download"]');
@@ -113,12 +116,9 @@ test('protected dashboard login, rich result access, enrollment and revocation w
     expect((await context.request.get(url + `/api/configured-runs/${fixture.run.runId}`)).status()).toBe(401);
     expect((await context.request.get(url + '/api/blind-grading/runs')).status()).toBe(401);
     expect((await context.request.get(url + artifactPath)).status()).toBe(404);
-    expect(
-      (
-        await context.request.post(`${previewEndpoint}/input`, { headers: { origin: url }, data: { kind: 'refresh' } })
-      ).status(),
-    ).toBe(404);
-    expect((await context.request.delete(previewEndpoint, { headers: { origin: url } })).status()).toBe(404);
+    expect((await context.request.post(previewEndpoint, { headers: { origin: url }, data: {} })).status()).toBe(404);
+    // An issued grant stays a capability until it expires; it exposes only the HTML bundle.
+    expect((await context.request.get(url + opened.frameUrl)).status()).toBe(200);
   } finally {
     await context.close();
     await app.close();

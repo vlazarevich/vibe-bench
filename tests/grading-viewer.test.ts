@@ -57,7 +57,7 @@ test('all rich blind results retain grades, neutral transport and authority on e
     expect(replay.cards[0]?.kind === 'completed' && replay.cards[0].judgments[0]?.value).toEqual(saved.value);
   }
 });
-test('HTML capabilities reauthorize open, input and delete and cannot cross sessions', async () => {
+test('HTML preview grants reauthorize the grading session and expose no management identifiers', async () => {
   let base = '';
   for (const taskRef of session.categories.flatMap((category) => category.tasks)) {
     const task = BlindGradingTask.parse(await (await get(`/api/blind-grading/${session.id}/tasks/${taskRef.handle}`)).json());
@@ -66,19 +66,17 @@ test('HTML capabilities reauthorize open, input and delete and cannot cross sess
   }
   expect(base).not.toBe('');
   expect((await post(`${base}/preview`, {}, foreign)).status).toBe(404);
+  expect((await post(`${base}/preview`, {}, '')).status).toBe(404);
   expect((await post(`${base}/preview`, { unexpected: true })).status).toBe(400);
   const opened = PreviewOpened.parse(await (await post(`${base}/preview`, {})).json());
   const html = fixture.records.find((record) => record.kind === 'html'); if (!html) throw new Error();
-  const management = html.resultUrl.replace('/result', '/preview');
-  const managed = PreviewOpened.parse(await (await post(management, {})).json());
-  expect((await post(`${base}/preview`, {})).status).toBe(503);
-  expect((await fetch(`${url}${management}/${managed.previewId}`, { method: 'DELETE', headers: { origin: url } })).status).toBe(204);
-  const input = `${base}/preview/${opened.previewId}/input`, close = `${base}/preview/${opened.previewId}`;
-  expect((await post(input, { kind: 'refresh' }, foreign)).status).toBe(404);
-  expect((await fetch(url + close, { method: 'DELETE', headers: { origin: url, cookie: foreign } })).status).toBe(404);
-  expect((await post(input, { kind: 'click', x: 50, y: 40 })).status).toBe(200);
-  expect((await fetch(url + close, { method: 'DELETE', headers: { origin: url, cookie } })).status).toBe(204);
-  expect((await post(input, { kind: 'refresh' })).status).toBe(503);
+  const managed = PreviewOpened.parse(await (await post(html.resultUrl.replace('/result', '/preview'), {})).json());
+  expect(opened.frameUrl).not.toBe(managed.frameUrl);
+  for (const forbidden of [fixture.run.runId, html.attemptId, ...html.artifacts.map((artifact) => artifact.id)]) expect(JSON.stringify(opened)).not.toContain(forbidden);
+  const entry = await fetch(url + opened.frameUrl);
+  expect(entry.status).toBe(200);
+  expect(entry.headers.get('content-security-policy')).toContain('sandbox allow-scripts allow-forms');
+  expect(await (await fetch(url + opened.frameUrl.replace(/index\.html$/, 'assets/app.js'))).text()).toContain('Count');
 });
 
 test('shared task inputs compare saved bytes and preserve neutral scoped file authority', async () => {

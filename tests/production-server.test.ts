@@ -91,7 +91,7 @@ test('bundled dashboards share an external database without local state', async 
     }
     const client = new pg.Client({ connectionString: url });
     await client.connect();
-    try { expect((await client.query('SELECT count(*)::int AS count FROM schema_migrations')).rows).toEqual([{ count: 10 }]); }
+    try { expect((await client.query('SELECT count(*)::int AS count FROM schema_migrations')).rows).toEqual([{ count: 11 }]); }
     finally { await client.end(); }
     await expect(access(unusedState)).rejects.toThrow();
   } finally {
@@ -109,7 +109,7 @@ test('bundled migration command upgrades an external database idempotently', asy
   for (let run = 0; run < 2; run++) expect((await exec(process.execPath, [migrate], { cwd: root, env: env({ DATABASE_URL: url }) })).stdout).toContain('migrations are current');
   const client = new pg.Client({ connectionString: url });
   await client.connect();
-  try { expect((await client.query('SELECT count(*)::int AS count FROM schema_migrations')).rows).toEqual([{ count: 10 }]); }
+  try { expect((await client.query('SELECT count(*)::int AS count FROM schema_migrations')).rows).toEqual([{ count: 11 }]); }
   finally { await client.end(); }
   await expect(exec(process.execPath, [migrate], { cwd: root, env: env({}) })).rejects.toThrow(/Set DATABASE_URL/);
 }, 60_000);

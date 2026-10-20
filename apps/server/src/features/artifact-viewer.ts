@@ -1,7 +1,6 @@
-import { createHash } from 'node:crypto';
 import { ResultPresentation, type FileView } from '../../../../packages/contracts/src/artifact-viewer.ts';
 import type { readAttemptResult } from './configured-runs.ts';
-import { isolatedChromium } from './isolated-chromium.ts';
+import { previewableMedia } from './media-headers.ts';
 import { NotFound } from '../errors.ts';
 
 type PrimaryResult<T = ResultPresentation> = T extends ResultPresentation ? Omit<T, 'outputs' | 'inputs'> : never;
@@ -18,60 +17,6 @@ export function decodeText(bytes: Buffer): string | null {
   } catch {
     return null;
   }
-}
-const mediaChecks = new Map<string, Promise<boolean>>();
-let mediaQueue = Promise.resolve();
-async function validMedia(bytes: Buffer, mediaType: string) {
-  const signatureMatches =
-    mediaType === 'image/png'
-      ? bytes.length >= 24 && bytes.subarray(0, 8).toString('hex') === '89504e470d0a1a0a'
-      : mediaType === 'image/jpeg'
-        ? bytes.length > 4 && bytes.subarray(0, 3).toString('hex') === 'ffd8ff'
-        : mediaType === 'image/webp'
-          ? bytes.length > 12 && bytes.toString('ascii', 0, 4) === 'RIFF' && bytes.toString('ascii', 8, 12) === 'WEBP'
-          : mediaType === 'video/webm' && bytes.subarray(0, 4).toString('hex') === '1a45dfa3';
-  if (!signatureMatches) return false;
-  const key = createHash('sha256').update(mediaType).update(bytes).digest('hex');
-  const cached = mediaChecks.get(key);
-  if (cached) return cached;
-  const check = mediaQueue
-    .then(async () => {
-      const runtime = await isolatedChromium();
-      try {
-        const page = await runtime.browser.newPage();
-        return await page.evaluate(
-          async ({ data, video }) => {
-            const media = document.createElement(video ? 'video' : 'img');
-            return new Promise<boolean>((resolve) => {
-              const timer = setTimeout(() => resolve(false), 3000);
-              media.onerror = () => {
-                clearTimeout(timer);
-                resolve(false);
-              };
-              if (media instanceof HTMLVideoElement)
-                media.onloadedmetadata = () => {
-                  clearTimeout(timer);
-                  resolve(media.videoWidth > 0 && media.videoWidth * media.videoHeight <= 40_000_000);
-                };
-              else
-                media.onload = () => {
-                  clearTimeout(timer);
-                  resolve(media.naturalWidth > 0 && media.naturalWidth * media.naturalHeight <= 40_000_000);
-                };
-              media.src = data;
-            });
-          },
-          { data: `data:${mediaType};base64,${bytes.toString('base64')}`, video: mediaType === 'video/webm' },
-        );
-      } finally {
-        await runtime.close();
-      }
-    })
-    .catch(() => false);
-  mediaQueue = check.then(() => undefined);
-  if (mediaChecks.size >= 256) mediaChecks.delete(mediaChecks.keys().next().value ?? '');
-  mediaChecks.set(key, check);
-  return check;
 }
 export async function projectResult(saved: SavedResult, links: ResultLinks): Promise<ResultPresentation> {
   const used = new Set<string>();
@@ -91,7 +36,7 @@ export async function projectResult(saved: SavedResult, links: ResultLinks): Pro
     if (
       mode === 'image' &&
       file.metadata.mediaType.startsWith('image/') &&
-      (await validMedia(file.bytes, file.metadata.mediaType))
+      previewableMedia(file.bytes, file.metadata.mediaType)
     )
       return { kind: 'image', imageUrl: links.artifact(file.metadata.id, 'media'), ...common };
     if (mode === 'text' && decodeText(file.bytes) !== null)
@@ -156,7 +101,7 @@ export async function projectResult(saved: SavedResult, links: ResultLinks): Pro
       const recording = artifact(result.recordingArtifactId);
       primary = {
         kind: 'browser',
-        recording: (await validMedia(recording.bytes, recording.metadata.mediaType))
+        recording: previewableMedia(recording.bytes, recording.metadata.mediaType)
           ? { kind: 'video', videoUrl: links.artifact(recording.metadata.id, 'media'), download: download(recording) }
           : {
               kind: 'unsupported',
@@ -192,17 +137,4 @@ export async function projectResult(saved: SavedResult, links: ResultLinks): Pro
     (result.inputs ?? []).map((input) => fileView(artifact(input.artifactId), input.kind)),
   );
   return ResultPresentation.parse({ ...primary, outputs, inputs });
-}
-export function htmlBundle(saved: SavedResult) {
-  const result = saved.outcome.result;
-  if (result.kind !== 'html') throw new NotFound();
-  const ids = new Set([result.entryArtifactId, ...result.assetArtifactIds]);
-  const entry = saved.artifacts.find((file) => file.metadata.id === result.entryArtifactId);
-  if (!entry) throw new NotFound();
-  return {
-    entry: entry.metadata.name,
-    files: saved.artifacts
-      .filter((file) => ids.has(file.metadata.id) && file.metadata.kind !== 'diagnostic')
-      .map((file) => ({ name: file.metadata.name, mediaType: file.metadata.mediaType, bytes: file.bytes })),
-  };
 }

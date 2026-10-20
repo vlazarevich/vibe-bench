@@ -37,13 +37,18 @@ function TextResult({ url, diff = false }: { url: string; diff?: boolean }) {
     <TextOutput text={text} maxHeight={500} />
   );
 }
+// The server checks media headers only; the browser decodes, and a decoding failure falls back to the download.
+const undecodable = 'This file cannot be previewed. Download it to inspect the original bytes.';
 export function ResultFile({ file, diff = false }: { file: FileView; diff?: boolean }) {
+  const [failed, setFailed] = useState(false);
   return (
     <section className="result-file" aria-label={file.download.name}>
       {file.kind === 'text' ? (
         <TextResult url={file.textUrl} diff={diff} />
+      ) : file.kind === 'image' && !failed ? (
+        <ImageOutput src={file.imageUrl} alt={file.download.name} onError={() => setFailed(true)} />
       ) : file.kind === 'image' ? (
-        <ImageOutput src={file.imageUrl} alt={file.download.name} />
+        <p role="status">{undecodable}</p>
       ) : (
         <p role="status">{file.reason}</p>
       )}
@@ -149,6 +154,7 @@ function TextAnswer({ result }: { result: Extract<ResultPresentation, { kind: 't
   );
 }
 export function ResultViewer({ result, hideInputs = false }: { result: ResultPresentation; hideInputs?: boolean }) {
+  const [recordingFailed, setRecordingFailed] = useState(false);
   let primary;
   switch (result.kind) {
     case 'text':
@@ -184,8 +190,9 @@ export function ResultViewer({ result, hideInputs = false }: { result: ResultPre
               outcome={{ ok: true, text: 'Scenario completed' }}
             />
           )}
-          {result.recording.kind === 'video' ? (
+          {result.recording.kind === 'video' && !recordingFailed ? (
             <video
+              onError={() => setRecordingFailed(true)}
               className="result-video"
               controls
               preload="metadata"
@@ -193,7 +200,11 @@ export function ResultViewer({ result, hideInputs = false }: { result: ResultPre
               aria-label="Browser recording"
             />
           ) : (
-            <p role="status">{result.recording.reason}</p>
+            <p role="status">
+              {result.recording.kind === 'video'
+                ? 'This recording cannot be played. Download the original recording.'
+                : result.recording.reason}
+            </p>
           )}
           <p>
             <a href={result.recording.download.url} download>

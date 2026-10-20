@@ -59,7 +59,7 @@ The shared `ResultViewer` shows complete saved text, decoded images and WebM, ch
 | `GET /api/blind-grading/:id/assets/:asset` | Existing authorized neutral result bytes |
 | `GET /api/blind-grading/:id/cards/:card/result` | Strict shared result presentation |
 | `GET /api/blind-grading/:id/cards/:card/files/:file/:purpose` | Published file by ordinal, with `download`, `text`, or `media` purpose |
-| `POST /api/blind-grading/:id/cards/:card/preview` | Open isolated HTML with an empty object body |
+| `POST /api/blind-grading/:id/cards/:card/preview` | Issue a sandboxed HTML preview link with an empty object body |
 | `POST /api/blind-grading/:id/cards/:card/preview/:previewId/input` | Authorized bounded preview action |
 | `DELETE /api/blind-grading/:id/cards/:card/preview/:previewId` | Authorized preview close |
 
