@@ -1,3 +1,4 @@
+import { deliverTerminal } from './worker-delivery.ts';
 import { enrollRuntime, runtimeAuthorization } from './runtime-auth.ts';
 import { createHash, randomUUID } from 'node:crypto';
 import { Definition, SuiteView } from '../packages/contracts/src/suites.ts';
@@ -122,9 +123,9 @@ export async function gradingFixture(
   });
   const run = ConfiguredRunView.parse(await post('/api/configured-runs', input));
   const assignment = RunAssignment.parse(
-    await post('/api/worker/claims', { protocol: 1, requestId: randomUUID(), runtimeId }),
+    await post('/api/worker/claims', { protocol: 2, requestId: randomUUID(), runtimeId }),
   );
-  const identity = { protocol: 1, runtimeId, runId: run.runId, assignmentId: assignment.assignmentId };
+  const identity = { protocol: 2, runtimeId, runId: run.runId, assignmentId: assignment.assignmentId };
   await post('/api/worker/preparations', { ...identity, reportId: randomUUID(), preparation: { kind: 'none' } });
   const artifacts: Array<{ id: string; bytes: Buffer; name: string }> = [];
   async function finish() {
@@ -138,7 +139,6 @@ export async function gradingFixture(
           kind: 'terminal',
           attemptId: attempt.attemptId,
           outcome: { kind: index % 4 === 2 ? 'failed' : 'skipped', reason: canary, artifacts: [] },
-          artifacts: [],
           observed: { executableVersion: canary, model: canary },
         });
         continue;
@@ -199,7 +199,7 @@ export async function gradingFixture(
                   changedFiles: [{ path: `${canary}.ts`, change: 'modified' }],
                 }
         : { kind: 'text' };
-      await post('/api/worker/attempts', {
+      await deliverTerminal(post, {
         ...identity,
         reportId: randomUUID(),
         kind: 'terminal',

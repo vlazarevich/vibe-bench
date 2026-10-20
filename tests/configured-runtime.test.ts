@@ -238,6 +238,10 @@ test('worker durably retries a lost terminal response and does not launch the at
       response.setHeader('content-type', 'application/json');
       if (request.url === '/api/worker/claims')
         response.end(JSON.stringify({ ...assignment, requestId: body.requestId }));
+      else if (request.url === '/api/worker/artifact-chunks')
+        response.end(
+          JSON.stringify({ artifactId: body.artifactId, offset: body.offset, bytes: Buffer.from(body.base64, 'base64').length }),
+        );
       else {
         if (body.kind === 'started') starts++;
         if (body.kind === 'terminal') {
@@ -281,7 +285,7 @@ test('worker durably retries a lost terminal response and does not launch the at
     await writeFile(
       join(attemptDirectory, 'started.json'),
       JSON.stringify({
-        protocol: 1,
+        protocol: 2,
         runtimeId,
         assignmentId: assignment.assignmentId,
         runId: assignment.runId,

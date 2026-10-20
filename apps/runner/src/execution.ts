@@ -11,6 +11,11 @@ import {
   RunAssignment,
   PreparationReport,
   AttemptReport,
+  SpooledAttemptReport,
+  ArtifactChunk,
+  ArtifactChunkReceipt,
+  ARTIFACT_CHUNK_BYTES,
+  WORK_PROTOCOL,
   WorkReceipt,
   TaskIO,
 } from '../../../packages/contracts/src/work.ts';
@@ -36,6 +41,30 @@ async function exists(path: string) {
 async function readAssignment(path: string) {
   return RunAssignment.parse(JSON.parse(await readFile(path, 'utf8')));
 }
+/** Splits spooled artifact bytes into aligned protocol chunks; empty artifacts need none. */
+export function artifactChunks(
+  report: { protocol: number; runtimeId: string; assignmentId: string; runId: string; attemptId: string },
+  artifacts: { id: string; base64: string }[],
+): ArtifactChunk[] {
+  return artifacts.flatMap((artifact) => {
+    const bytes = Buffer.from(artifact.base64, 'base64');
+    const chunks: ArtifactChunk[] = [];
+    for (let offset = 0; offset < bytes.length; offset += ARTIFACT_CHUNK_BYTES)
+      chunks.push(
+        ArtifactChunk.parse({
+          protocol: report.protocol,
+          runtimeId: report.runtimeId,
+          assignmentId: report.assignmentId,
+          runId: report.runId,
+          attemptId: report.attemptId,
+          artifactId: artifact.id,
+          offset,
+          base64: bytes.subarray(offset, offset + ARTIFACT_CHUNK_BYTES).toString('base64'),
+        }),
+      );
+    return chunks;
+  });
+}
 async function uploadAssignment(
   options: WorkerOptions,
   assignment: RunAssignment,
@@ -60,10 +89,14 @@ async function uploadAssignment(
       if (report.terminalPath && (await exists(report.terminalPath))) continue;
       return;
     }
-    const body =
+    const saved =
       report.kind === 'preparation'
         ? PreparationReport.parse(JSON.parse(await readFile(report.path, 'utf8')))
-        : AttemptReport.parse(JSON.parse(await readFile(report.path, 'utf8')));
+        : SpooledAttemptReport.parse(JSON.parse(await readFile(report.path, 'utf8')));
+    const { body, artifacts } =
+      'kind' in saved && saved.kind === 'terminal'
+        ? (({ artifacts, ...wire }) => ({ body: wire, artifacts }))(saved)
+        : { body: saved, artifacts: [] };
     if (
       body.runtimeId !== options.configuration.runtimeId ||
       body.assignmentId !== assignment.assignmentId ||
@@ -77,11 +110,24 @@ async function uploadAssignment(
         throw new Error('Saved receipt identity mismatch');
       continue;
     }
+    // Chunk replays are idempotent on the server, so recovery resends every slice before the report.
+    if ('attemptId' in body)
+      for (const chunk of artifactChunks(body, artifacts)) {
+        const receipt = ArtifactChunkReceipt.parse(
+          await workerPost(options.configuration, '/api/worker/artifact-chunks', chunk),
+        );
+        if (
+          receipt.artifactId !== chunk.artifactId ||
+          receipt.offset !== chunk.offset ||
+          receipt.bytes !== Buffer.from(chunk.base64, 'base64').length
+        )
+          throw new Error('Artifact chunk receipt mismatch');
+      }
     const receipt = WorkReceipt.parse(
       await workerPost(
         options.configuration,
         report.kind === 'preparation' ? '/api/worker/preparations' : '/api/worker/attempts',
-        body,
+        report.kind === 'preparation' ? body : AttemptReport.parse(body),
       ),
     );
     if (receipt.reportId !== body.reportId || receipt.runId !== body.runId)
@@ -114,7 +160,7 @@ export async function runWorkerOnce(options: WorkerOptions) {
     else {
       const claim = (await exists(claimPath))
         ? ClaimRequest.parse(JSON.parse(await readFile(claimPath, 'utf8')))
-        : ClaimRequest.parse({ protocol: 1, requestId: randomUUID(), runtimeId: options.configuration.runtimeId });
+        : ClaimRequest.parse({ protocol: WORK_PROTOCOL, requestId: randomUUID(), runtimeId: options.configuration.runtimeId });
       if (claim.runtimeId !== options.configuration.runtimeId)
         throw new Error('Worker state belongs to another runtime');
       await durableWrite(claimPath, claim);
@@ -185,7 +231,7 @@ export async function runWorkerOnce(options: WorkerOptions) {
       if (!(await exists(cancelledPath)))
         await durableWrite(cancelledPath, { runId: assignment.runId, cancelledAt: new Date().toISOString() }, 'create');
       await durableWrite(claimPath, {
-        protocol: 1,
+        protocol: WORK_PROTOCOL,
         requestId: randomUUID(),
         runtimeId: options.configuration.runtimeId,
       });
@@ -194,7 +240,7 @@ export async function runWorkerOnce(options: WorkerOptions) {
     }
     if (uploadError !== undefined && Date.now() < retryAt) throw uploadError;
     await uploadAssignment(options, assignment, root, accepted);
-    await durableWrite(claimPath, { protocol: 1, requestId: randomUUID(), runtimeId: options.configuration.runtimeId });
+    await durableWrite(claimPath, { protocol: WORK_PROTOCOL, requestId: randomUUID(), runtimeId: options.configuration.runtimeId });
     await rm(currentPath);
     return { kind: 'finished', runId: assignment.runId } as const;
   } finally {
@@ -214,7 +260,7 @@ async function executeAssignment(options: WorkerOptions, assignment: RunAssignme
   const directory = join(root, assignment.runId);
   await durableDirectory(directory);
   const identity = {
-    protocol: 1,
+    protocol: WORK_PROTOCOL,
     runtimeId: options.configuration.runtimeId,
     assignmentId: assignment.assignmentId,
     runId: assignment.runId,
@@ -277,7 +323,7 @@ async function executeAssignment(options: WorkerOptions, assignment: RunAssignme
     await durableDirectory(attemptDirectory);
     const terminalPath = join(attemptDirectory, 'terminal.json');
     if (await exists(terminalPath)) {
-      AttemptReport.parse(JSON.parse(await readFile(terminalPath, 'utf8')));
+      SpooledAttemptReport.parse(JSON.parse(await readFile(terminalPath, 'utf8')));
       continue;
     }
     const task = snapshot.content.definition.categories
@@ -393,7 +439,7 @@ async function executeAssignment(options: WorkerOptions, assignment: RunAssignme
         artifacts: metadata(artifacts),
       };
     }
-    const terminal = AttemptReport.parse({
+    const terminal = SpooledAttemptReport.parse({
       ...identity,
       reportId: randomUUID(),
       kind: 'terminal',

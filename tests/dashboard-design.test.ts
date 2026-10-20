@@ -136,7 +136,7 @@ test('cancelled work retains accepted outcomes and admits partial grading while 
   const fixture = await gradingFixture(url);
   const slot = fixture.assignment.attempts[0]!;
   await fixture.post('/api/worker/attempts', {
-    protocol: 1,
+    protocol: 2,
     reportId: randomUUID(),
     runtimeId: fixture.input.runtimeId,
     assignmentId: fixture.assignment.assignmentId,
@@ -146,7 +146,7 @@ test('cancelled work retains accepted outcomes and admits partial grading while 
     startedAt: new Date().toISOString(),
   });
   await fixture.post('/api/worker/attempts', {
-    protocol: 1,
+    protocol: 2,
     reportId: randomUUID(),
     runtimeId: fixture.input.runtimeId,
     assignmentId: fixture.assignment.assignmentId,
@@ -154,7 +154,6 @@ test('cancelled work retains accepted outcomes and admits partial grading while 
     kind: 'terminal',
     attemptId: slot.attemptId,
     outcome: { kind: 'completed', result: { kind: 'text' }, summary: 'Accepted before cancellation', artifacts: [] },
-    artifacts: [],
     observed: { executableVersion: null, model: null },
   });
   expect((await post(`/api/configured-runs/${fixture.run.runId}/cancel`, {})).status).toBe(200);

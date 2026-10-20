@@ -9,7 +9,7 @@ import { readConfiguration, runtimeRoot } from '../apps/runner/src/configuration
 import { reconnectDelay } from '../apps/runner/src/cli.ts';
 import { runWorkerOnce } from '../apps/runner/src/execution.ts';
 import { RuntimeConfiguration } from '../packages/contracts/src/access.ts';
-import { ClaimRequest, RunAssignment, PreparationReport, AttemptReport } from '../packages/contracts/src/work.ts';
+import { ArtifactChunk, ClaimRequest, RunAssignment, PreparationReport, AttemptReport } from '../packages/contracts/src/work.ts';
 import { durableWrite } from '../apps/runner/src/spool.ts';
 import { checkExecutable } from '../apps/runner/src/adapters.ts';
 import { contentDigest } from '../packages/contracts/src/canonical.ts';
@@ -107,6 +107,12 @@ test('offline collection finishes every assigned attempt and restart retries exa
         response.end('{}');
         return;
       }
+      if (request.url === '/api/worker/artifact-chunks') {
+        const chunk = ArtifactChunk.parse(body);
+        delivered.push(`chunk/${chunk.attemptId}`);
+        response.end(JSON.stringify({ artifactId: chunk.artifactId, offset: chunk.offset, bytes: Buffer.from(chunk.base64, 'base64').length }));
+        return;
+      }
       const report = z.union([PreparationReport, AttemptReport]).parse(body);
       delivered.push('kind' in report ? `${report.kind}/${report.attemptId}` : 'preparation');
       response.end(
@@ -133,10 +139,16 @@ test('offline collection finishes every assigned attempt and restart retries exa
   offline = false;
   expect(await runWorkerOnce(options)).toEqual({ kind: 'finished', runId: work.runId });
   expect(claims).toBe(1);
-  expect(delivered).toEqual([
+  expect(delivered.filter((entry) => !entry.startsWith('chunk/'))).toEqual([
     'preparation',
     ...work.attempts.flatMap((slot) => [`started/${slot.attemptId}`, `terminal/${slot.attemptId}`]),
   ]);
+  for (const slot of work.attempts) {
+    const chunks = delivered.flatMap((entry, index) => (entry === `chunk/${slot.attemptId}` ? [index] : []));
+    expect(chunks.length).toBeGreaterThan(0);
+    expect(Math.max(...chunks)).toBeLessThan(delivered.indexOf(`terminal/${slot.attemptId}`));
+    expect(Math.min(...chunks)).toBeGreaterThan(delivered.indexOf(`started/${slot.attemptId}`));
+  }
   expect(
     await Promise.all(
       work.attempts.map((slot) =>
@@ -168,6 +180,11 @@ test('new destination never receives old results and targeted same identity reco
       if (offline) {
         response.statusCode = 401;
         response.end('{}');
+        return;
+      }
+      if (request.url === '/api/worker/artifact-chunks') {
+        const chunk = ArtifactChunk.parse(body);
+        response.end(JSON.stringify({ artifactId: chunk.artifactId, offset: chunk.offset, bytes: Buffer.from(chunk.base64, 'base64').length }));
         return;
       }
       const report = z.union([PreparationReport, AttemptReport]).parse(body);

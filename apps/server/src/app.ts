@@ -9,6 +9,7 @@ import cookie from '@fastify/cookie';
 import staticFiles from '@fastify/static';
 import type pg from 'pg';
 import { z } from 'zod';
+import { WORK_PROTOCOL } from '../../../packages/contracts/src/work.ts';
 import { ConfigureRun, CreateConfiguredRun, ConfiguredRunId } from '../../../packages/contracts/src/configured-runs.ts';
 import { ApiUrl, CreateEnrollment } from '../../../packages/contracts/src/access.ts';
 import {
@@ -54,7 +55,7 @@ import {
   revealGrading,
   grantSubmittedGrading,
 } from './features/blind-grading.ts';
-import { Conflict, NotFound } from './errors.ts';
+import { Conflict, NotFound, UnsupportedProtocol } from './errors.ts';
 import {
   ContentId,
   CreateSuite,
@@ -143,6 +144,8 @@ export async function createApp({
     if (error instanceof Throttled)
       return reply.code(429).header('Retry-After', '900').send({ error: 'Too many login attempts. Try again later.' });
     if (error instanceof Conflict) return reply.code(409).send({ error: error.message });
+    if (error instanceof UnsupportedProtocol)
+      return reply.code(426).send({ error: `Update vibe-runner: this dashboard requires worker protocol ${WORK_PROTOCOL}` });
     if (error instanceof NotFound) return reply.code(404).send({ error: 'Not found' });
     if (error instanceof Error && 'statusCode' in error) {
       if (error.statusCode === 400) return reply.code(400).send({ error: 'Invalid request' });

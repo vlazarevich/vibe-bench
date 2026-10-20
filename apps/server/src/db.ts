@@ -25,6 +25,7 @@ export async function connectDatabase(connectionString: string) {
         '007-runner-pairing.sql',
         '008-remove-legacy-demo.sql',
         '009-dashboard-design.sql',
+        '010-artifact-chunks.sql',
       ]) {
         if ((await client.query('SELECT name FROM schema_migrations WHERE name = $1', [name])).rowCount) continue;
         await client.query(await readFile(new URL(name, migrations), 'utf8'));

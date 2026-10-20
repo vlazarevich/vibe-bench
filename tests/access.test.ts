@@ -175,7 +175,7 @@ test('runtime credentials isolate identities, cannot grant dashboard access, and
       (
         await post(
           '/api/worker/claims',
-          { protocol: 1, requestId: randomUUID(), runtimeId: b.runtimeId },
+          { protocol: 2, requestId: randomUUID(), runtimeId: b.runtimeId },
           '',
           endpoint,
           { authorization },
@@ -186,7 +186,7 @@ test('runtime credentials isolate identities, cannot grant dashboard access, and
       (
         await post(
           '/api/worker/claims',
-          { protocol: 1, requestId: randomUUID(), runtimeId: a.runtimeId },
+          { protocol: 2, requestId: randomUUID(), runtimeId: a.runtimeId },
           '',
           endpoint,
           { authorization },
@@ -194,7 +194,7 @@ test('runtime credentials isolate identities, cannot grant dashboard access, and
       ).status,
     ).toBe(200);
     expect(
-      (await post('/api/worker/claims', { protocol: 1, requestId: randomUUID(), runtimeId: a.runtimeId }, '', endpoint))
+      (await post('/api/worker/claims', { protocol: 2, requestId: randomUUID(), runtimeId: a.runtimeId }, '', endpoint))
         .status,
     ).toBe(401);
   }
@@ -205,7 +205,7 @@ test('runtime credentials isolate identities, cannot grant dashboard access, and
       (
         await post(
           '/api/worker/claims',
-          { protocol: 1, requestId: randomUUID(), runtimeId: a.runtimeId },
+          { protocol: 2, requestId: randomUUID(), runtimeId: a.runtimeId },
           '',
           endpoint,
           { authorization },
@@ -219,7 +219,7 @@ test('runtime credentials isolate identities, cannot grant dashboard access, and
     (
       await post(
         '/api/worker/claims',
-        { protocol: 1, requestId: randomUUID(), runtimeId: a.runtimeId },
+        { protocol: 2, requestId: randomUUID(), runtimeId: a.runtimeId },
         '',
         workerUrl,
         { authorization: runtimeAuthorization(replacement) },
