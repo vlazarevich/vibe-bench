@@ -26,3 +26,37 @@ test('theme and sidebar collapse persist across navigation and reload', async ({
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   await page.screenshot({ path: '.artifacts/results-dark.png' });
 });
+
+test('saved dark appearance applies before the app loads and during access checks between tabs', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('vb-theme', 'dark'));
+  let startApp!: () => void;
+  const appReady = new Promise<void>((resolve) => { startApp = resolve; });
+  await page.route(/\/assets\/index-.*\.js$/, async (route) => {
+    await appReady;
+    await route.continue();
+  });
+  let finishAccess!: () => void;
+  let accessReady = new Promise<void>((resolve) => { finishAccess = resolve; });
+  await page.route('**/api/access/session', async (route) => {
+    await accessReady;
+    await route.continue();
+  });
+  await page.goto('/', { waitUntil: 'commit' });
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(10, 22, 48)');
+  await expect(page.locator('#root')).toBeEmpty();
+  startApp();
+  await expect(page.getByRole('status')).toHaveText('Checking dashboard access…');
+  await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(10, 22, 48)');
+  finishAccess();
+  await expect(page.getByRole('region', { name: 'Run management', exact: true })).toBeVisible();
+
+  accessReady = new Promise<void>((resolve) => { finishAccess = resolve; });
+  await page.getByRole('link', { name: 'Runtimes', exact: true }).click();
+  await expect(page.getByRole('status')).toHaveText('Checking dashboard access…');
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(10, 22, 48)');
+  await page.screenshot({ path: '.artifacts/access-loading-dark.png' });
+  finishAccess();
+  await expect(page.getByRole('heading', { name: 'Runtimes', exact: true })).toBeVisible();
+});

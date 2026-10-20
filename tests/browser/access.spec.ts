@@ -23,8 +23,17 @@ test('protected dashboard login, rich result access, enrollment and revocation w
   const context = await browser.newContext();
   const page = await context.newPage();
   try {
+    await page.addInitScript(() => localStorage.setItem('vb-theme', 'dark'));
     await page.goto(url + '/?view=runtimes');
     await expect(page.getByRole('heading', { name: 'Sign in to Vibe bench' })).toBeVisible();
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+    await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(10, 22, 48)');
+    const bootstrap = await context.request.get(url + '/assets/theme.js');
+    expect(bootstrap.status()).toBe(200);
+    expect(bootstrap.headers()['content-type']).toContain('javascript');
+    const signIn = page.getByRole('button', { name: 'Sign in', exact: true });
+    await expect(signIn).toHaveCSS('height', '36px');
+    expect((await signIn.boundingBox())!.width).toBe((await page.getByLabel('App password').boundingBox())!.width);
     expect((await context.request.get(url + '/api/runtimes')).status()).toBe(401);
     await page.getByLabel('App password').fill('wrong');
     await page.getByRole('button', { name: 'Sign in' }).click();
@@ -32,6 +41,18 @@ test('protected dashboard login, rich result access, enrollment and revocation w
     await page.getByLabel('App password').fill('browser password');
     await page.getByRole('button', { name: 'Sign in' }).click();
     await expect(page.getByRole('heading', { name: 'Runtimes', exact: true })).toBeVisible();
+    const sidebar = page.getByRole('complementary');
+    const logout = sidebar.getByRole('button', { name: 'Log out', exact: true });
+    await expect(logout).toHaveText('Log out');
+    await page.getByRole('button', { name: 'Collapse', exact: true }).click();
+    await expect(logout).toHaveText('');
+    await expect(logout).toHaveAccessibleName('Log out');
+    await expect(logout).toHaveCSS('width', '47px');
+    await logout.hover();
+    await expect(page.getByRole('tooltip', { name: 'Log out', exact: true })).toHaveText('Log out');
+    await expect(page.locator('.vb-tip.is-shown')).toHaveText('Log out');
+    await page.getByRole('button', { name: 'Expand sidebar', exact: true }).click();
+    await expect(logout).toHaveText('Log out');
     await page.getByRole('button', { name: 'Connect runtime' }).click();
     await expect(page.getByRole('dialog')).toContainText('Download the runner');
     await expect(page.getByRole('dialog')).toContainText('Install it');
@@ -53,16 +74,18 @@ test('protected dashboard login, rich result access, enrollment and revocation w
     const registered = await fetch(url + '/api/worker/registrations', {
       method: 'POST', headers: { authorization: `Bearer ${receipt.credentialId}.${secret}`, 'content-type': 'application/json' },
       body: JSON.stringify({ protocol: 1, runtimeId: receipt.runtimeId, observation: 1, observedAt: new Date().toISOString(),
-        machine: { hostname: 'Browser runtime', platform: 'linux', architecture: 'x64', logicalCpus: 2, memoryBytes: 1000000 },
+        machine: { hostname: 'Browser runtime', os: 'Omarchy 4.0.6', platform: 'linux', architecture: 'x64', logicalCpus: 2, memoryBytes: 1000000 },
         tools: ToolName.options.map((name) => ({ name, availability: { kind: 'available', version: '1.2.3' } })),
         harnesses: { codex: { kind: 'ready', models: ['test-model'] }, claude: { kind: 'not-ready' }, opencodeGo: { kind: 'not-ready' } }, modelPolicy: 'provider-discovered-at-execution' }),
     });
     expect(registered.ok).toBe(true);
     await expect(page.getByRole('heading', { name: 'Runtime connected', exact: true })).toBeVisible();
+    await expect(page.getByRole('dialog')).toContainText('Omarchy 4.0.6');
     await expect(page.getByRole('region', { name: 'Capabilities', exact: true })).toContainText('Codex');
     await page.getByRole('button', { name: 'Copy run command', exact: true }).click();
     await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('vibe-runner run');
     await page.getByRole('button', { name: 'Done', exact: true }).click();
+    await expect(page.getByRole('article').filter({ hasText: 'Browser runtime' })).toContainText('Omarchy 4.0.6');
     await expect(page.getByRole('button', { name: 'Revoke', exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Revoke', exact: true }).click();
     await page.getByRole('dialog').getByRole('button', { name: 'Revoke runtime', exact: true }).click();
@@ -111,8 +134,11 @@ test('protected dashboard login, rich result access, enrollment and revocation w
     if (!artifactPath) throw new Error();
     await page.reload();
     await expect(page.getByRole('button', { name: 'Log out' })).toBeVisible();
+    await page.getByRole('button', { name: 'Expand sidebar', exact: true }).click();
+    await page.getByRole('button', { name: 'Collapse', exact: true }).click();
     await page.getByRole('button', { name: 'Log out' }).click();
     await expect(page.getByRole('heading', { name: 'Sign in to Vibe bench' })).toBeVisible();
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
     expect((await context.request.get(url + `/api/configured-runs/${fixture.run.runId}`)).status()).toBe(401);
     expect((await context.request.get(url + '/api/blind-grading/runs')).status()).toBe(401);
     expect((await context.request.get(url + artifactPath)).status()).toBe(404);

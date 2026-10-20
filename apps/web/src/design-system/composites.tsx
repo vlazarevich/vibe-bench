@@ -459,6 +459,8 @@ export interface SidebarProps {
   items: SidebarItem[];
   /** Secondary sections pinned to the bottom (Settings). */
   footerItems?: SidebarItem[] | undefined;
+  /** Footer actions follow the same icon and label layout as navigation. */
+  footerActions?: { id: string; label: string; icon: IconName; onClick: () => void }[] | undefined;
   currentId?: string | undefined;
   onNavigate?: ((id: string) => void) | undefined;
   /** Controlled collapsed state; omit for uncontrolled. */
@@ -477,6 +479,7 @@ export interface SidebarProps {
 export function Sidebar({
   items,
   footerItems = [],
+  footerActions = [],
   currentId,
   onNavigate,
   collapsed: cProp,
@@ -590,6 +593,30 @@ export function Sidebar({
         <ul>{items.map(link)}</ul>
         <ul className="vb-side-foot">
           {footerItems.map(link)}
+          {footerActions.map((action) => {
+            const button = (
+              <button
+                type="button"
+                className="vb-side-link vb-side-btn"
+                aria-label={collapsed ? action.label : undefined}
+                onClick={action.onClick}
+              >
+                <span className="vb-side-ico">
+                  <Icon name={action.icon} size={20} />
+                </span>
+                {!collapsed && <span className="vb-side-label">{action.label}</span>}
+              </button>
+            );
+            return (
+              <li key={action.id}>
+                {collapsed ? (
+                  <Tooltip content={action.label} side="right">{button}</Tooltip>
+                ) : (
+                  button
+                )}
+              </li>
+            );
+          })}
           {themeBtn}
           <li>
             {collapsed ? (

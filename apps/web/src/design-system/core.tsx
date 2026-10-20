@@ -26,6 +26,7 @@ export type IconName =
   | 'start'
   | 'credentials'
   | 'revoke'
+  | 'logout'
   | 'delete'
   | 'copy'
   | 'connect'
