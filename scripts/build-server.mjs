@@ -23,8 +23,8 @@ export async function buildServer({ output = join(root, 'dist/server') } = {}) {
     format: 'esm',
     target: 'node24',
     define: { __VIBE_BUNDLED__: 'true' },
-    // Native binaries and the browser driver stay installed packages; the CJS shim lets bundled dependencies call require.
-    external: ['embedded-postgres', '@embedded-postgres/*', '@playwright/test', 'playwright', 'playwright-core', 'pg-native'],
+    // Native PostgreSQL binaries stay installed packages; the CJS shim lets bundled dependencies call require.
+    external: ['embedded-postgres', '@embedded-postgres/*', 'pg-native'],
     banner: { js: "import { createRequire as __vibeCreateRequire } from 'node:module'; const require = __vibeCreateRequire(import.meta.url);" },
     logLevel: 'warning',
   });

@@ -13,7 +13,18 @@ import { artifact, metadata } from '../apps/runner/src/artifacts.ts';
 import { definition } from './suite-fixtures.ts';
 
 export const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6dWQAAAAASUVORK5CYII=', 'base64');
-export const interactiveHtml = '<!doctype html><link rel="stylesheet" href="assets/style.css?v=1"><button id="counter">Count 0</button><input aria-label="name"><p id="echo"></p><img src="assets/picture.png"><script src="assets/app.js"></script>';
+export const interactiveHtml = '<!doctype html><link rel="stylesheet" href="assets/style.css?v=1"><button id="counter">Count 0</button><input aria-label="name"><p id="echo"></p><img src="assets/picture.png"><p id="probes"></p><link rel="stylesheet" href="assets/%C3%BC%20wide.css"><link rel="stylesheet" href="assets/vendor+chunk@1,a=b.css"><script src="assets/app.js"></script><script type="module" src="assets/probe.js"></script>';
+/** Hostile probes that a sandboxed preview must contain; each records whether the attempt was blocked. */
+export const probeJs = `const results = [];
+const note = (name, blocked) => { results.push(name + ':' + (blocked ? 'blocked' : 'allowed')); document.querySelector('#probes').textContent = results.sort().join(' '); };
+const attempt = (name, action) => { try { const value = action(); note(name, value === false); } catch { note(name, true); } };
+attempt('parent', () => parent.document.title.length >= 0);
+attempt('cookie', () => typeof document.cookie === 'string');
+attempt('storage', () => localStorage.length >= 0);
+attempt('popup', () => !!window.open('about:blank'));
+attempt('top', () => { top.location.href = '/?escaped=1'; return true; });
+fetch('/api/health').then(() => note('fetch', false), () => note('fetch', true));
+const image = new Image(); image.onload = () => note('external', false); image.onerror = () => note('external', true); image.src = 'https://example.com/beacon.png';`;
 export const interactiveJs = 'let n=0;document.querySelector("button").onclick=()=>document.querySelector("button").textContent="Count "+(++n);document.querySelector("input").oninput=e=>document.querySelector("#echo").textContent=e.target.value;';
 export async function seedArtifactRun(url: string, cookie = '', source: 'live' | 'fixture' = 'fixture') {
   const configuration = await enrollRuntime(url, undefined, cookie);
@@ -59,7 +70,7 @@ export async function seedArtifactRun(url: string, cookie = '', source: 'live' |
       }
       case 'html-interactive': {
         const entry = artifact('index.html', 'html', 'text/html', Buffer.from(interactiveHtml));
-        const assets = [artifact('assets/style.css', 'text', 'text/css', Buffer.from('body {background: rgb(20, 80, 130);} button {width: 180px;height:80px;font-size:24px;}')), artifact('assets/app.js', 'code', 'text/javascript', Buffer.from(interactiveJs)), artifact('assets/picture.png', 'image', 'image/png', png)];
+        const assets = [artifact('assets/style.css', 'text', 'text/css', Buffer.from('body {background: rgb(20, 80, 130);} button {width: 180px;height:80px;font-size:24px;}')), artifact('assets/app.js', 'code', 'text/javascript', Buffer.from(interactiveJs)), artifact('assets/picture.png', 'image', 'image/png', png), artifact('assets/probe.js', 'code', 'text/javascript', Buffer.from(probeJs)), artifact('assets/ü wide.css', 'text', 'text/css', Buffer.from('#probes {letter-spacing: 3px;}')), artifact('assets/vendor+chunk@1,a=b.css', 'text', 'text/css', Buffer.from('#echo {word-spacing: 2px;}')), artifact('page:2.css', 'text', 'text/css', Buffer.from('p {margin: 0;}'))];
         artifacts.push(entry, ...assets); result = { kind: 'html', entryArtifactId: entry.id, assetArtifactIds: artifacts.filter((asset) => asset.id !== entry.id && asset.kind !== 'diagnostic').map((asset) => asset.id) }; break;
       }
       case 'browser-scenario': { const video = artifact('recording.webm', 'recording', 'video/webm', recording), screenshot = artifact('screenshot.png', 'image', 'image/png', png); artifacts.push(video, screenshot); result = { kind: 'browser', recordingArtifactId: video.id, format: 'webm', screenshotArtifactIds: [screenshot.id] }; break; }

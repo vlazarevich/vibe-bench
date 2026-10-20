@@ -65,22 +65,14 @@ test('blind grading displays every rich result and saves judgments with session-
           (response) => response.url().endsWith('/preview') && response.request().method() === 'POST',
         );
         await result.getByRole('button', { name: 'Open interactive preview' }).click();
-        const openedResponse = await response,
-          opened = PreviewOpened.parse(await openedResponse.json());
-        const frame = result.getByRole('application');
-        await expect(frame).toBeVisible();
-        const before = await frame.getAttribute('src'),
-          bounds = await frame.boundingBox();
-        if (!bounds) throw new Error();
-        await frame.click({ position: { x: (50 * bounds.width) / 960, y: (40 * bounds.height) / 640 } });
-        await expect.poll(() => frame.getAttribute('src')).not.toBe(before);
-        const endpoint = `${openedResponse.url()}/${opened.previewId}`;
+        const openedResponse = await response;
+        PreviewOpened.parse(await openedResponse.json());
+        const frame = page.frameLocator('iframe[title="Interactive HTML preview"]');
+        await frame.getByRole('button', { name: 'Count 0' }).click();
+        await expect(frame.getByRole('button', { name: 'Count 1' })).toBeVisible();
         expect(
-          (
-            await foreign.request.post(`${endpoint}/input`, { headers: { origin: baseURL }, data: { kind: 'refresh' } })
-          ).status(),
+          (await foreign.request.post(openedResponse.url(), { headers: { origin: baseURL }, data: {} })).status(),
         ).toBe(404);
-        expect((await foreign.request.delete(endpoint, { headers: { origin: baseURL } })).status()).toBe(404);
       }
       if (title === 'browser-scenario') {
         const video = result.getByLabel('Browser recording');

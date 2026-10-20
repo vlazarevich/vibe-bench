@@ -2,7 +2,7 @@ import { modelCatalog } from './features/model-catalog.ts';
 import { readResults } from './features/results.ts';
 import { ResultsQuery } from '../../../packages/contracts/src/results.ts';
 import { registerGradingViewer } from './features/grading-viewer-routes.ts';
-import { registerArtifactViewer } from './features/artifact-viewer-routes.ts';
+import { registerArtifactViewer, registerPreviewFiles } from './features/artifact-viewer-routes.ts';
 import { randomBytes } from 'node:crypto';
 import Fastify from 'fastify';
 import cookie from '@fastify/cookie';
@@ -92,11 +92,12 @@ export async function createApp({
       .header('Cache-Control', 'no-store')
       .header('X-Content-Type-Options', 'nosniff')
       .header('Referrer-Policy', 'no-referrer');
+    const host = request.headers.host;
+    // Result previews may only frame granted bundles, and a framed preview cannot navigate elsewhere.
     reply.header(
       'Content-Security-Policy',
-      "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; media-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+      `default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; media-src 'self'; frame-src ${canonicalOrigin ?? `http://${host}`}/preview/; frame-ancestors 'none'; base-uri 'none'; form-action 'self'`,
     );
-    const host = request.headers.host;
     if (
       !host ||
       (canonicalOrigin ? host !== new URL(canonicalOrigin).host : !/^(127\.0\.0\.1|localhost):\d+$/.test(host))
@@ -119,7 +120,9 @@ export async function createApp({
     const path = request.url.split('?')[0] ?? '';
     const publicPath =
       ['/api/health', '/api/access/session', '/api/access/login', '/api/access/logout', '/login', '/'].includes(path) ||
-      /^\/assets\/[a-zA-Z0-9._-]+$/.test(path);
+      /^\/assets\/[a-zA-Z0-9._-]+$/.test(path) ||
+      // Preview files are authorized only by their capability token; the route ignores cookies.
+      /^\/preview\/[A-Za-z0-9_-]{43}\//.test(path);
     const gradingPath =
       path.startsWith('/api/grading-invitations/') ||
       path === '/api/blind-grading' ||
@@ -209,8 +212,9 @@ export async function createApp({
       .header('X-Content-Type-Options', 'nosniff')
       .send(bytes);
   });
-  const previews = registerArtifactViewer(app, pool);
-  registerGradingViewer(app, pool, previews);
+  registerArtifactViewer(app, pool);
+  registerGradingViewer(app, pool);
+  registerPreviewFiles(app, pool, (request) => canonicalOrigin ?? `http://${request.headers.host}`);
   app.get('/api/blind-grading/runs', async () => listGradingRuns(pool));
   app.post('/api/blind-grading', async (request, reply) => {
     const { reviewId, ...options } = StartGrading.parse(request.body);

@@ -72,9 +72,9 @@ The optional worker-only listener shares authority and database lifecycle, rejec
 
 ## Result viewing
 
-`packages/contracts/src/artifact-viewer.ts` owns strict supplied-URL result presentations and bounded preview inputs. `apps/server/src/features/artifact-viewer.ts` projects primary and declared result files, validates text bytes, and serializes isolated media decoding. Storage reads remain in `configured-runs.ts`. `artifact-viewer-routes.ts` owns management route validation.
+`packages/contracts/src/artifact-viewer.ts` owns strict supplied-URL result presentations and preview grants. `apps/server/src/features/artifact-viewer.ts` projects primary and declared result files and validates text bytes; `media-headers.ts` checks image and WebM headers without decoding. Storage reads remain in `configured-runs.ts`. `artifact-viewer-routes.ts` owns management route validation.
 
-`html-preview.ts` owns two bounded interactive sessions and exact manifest asset serving. `isolated-chromium.ts` owns Bubblewrap runtime mounts, network isolation, process deadlines, and teardown. `apps/web/src/result-viewer.tsx` renders the same presentation for any authorized caller. Run management loads a result only when its viewer is expanded. Grading and blind session authority belong to their existing owners.
+`html-preview.ts` owns preview grants stored in `preview_grants`, exact bundle file resolution, and the sandbox policy for `/preview/` responses. No browser runs on the server; `apps/web/src/html-result-preview.tsx` frames the bundle in a sandboxed iframe. `apps/web/src/result-viewer.tsx` renders the same presentation for any authorized caller. Run management loads a result only when its viewer is expanded. Grading and blind session authority belong to their existing owners.
 
 ## Configured-run grading
 

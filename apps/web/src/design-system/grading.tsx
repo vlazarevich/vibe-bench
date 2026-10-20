@@ -380,13 +380,14 @@ export interface ImageOutputProps {
   caption?: React.ReactNode | undefined;
   /** CSS aspect ratio of the frame. Default "4 / 3". */ ratio?: string | undefined;
   className?: string | undefined;
+  /** Called when the browser cannot decode the image. */ onError?: (() => void) | undefined;
 }
 /** An image result on a neutral checkerboard, fitted without cropping. */
-export function ImageOutput({ src, alt, caption, ratio = '4 / 3', className }: ImageOutputProps) {
+export function ImageOutput({ src, alt, caption, ratio = '4 / 3', className, onError }: ImageOutputProps) {
   return (
     <figure className={cx('vb-img', className)}>
       <div className="vb-img-frame" style={{ aspectRatio: ratio }}>
-        <img src={src} alt={alt} />
+        <img src={src} alt={alt} onError={onError} />
       </div>
       {caption && <figcaption>{caption}</figcaption>}
     </figure>

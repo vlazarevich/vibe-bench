@@ -82,50 +82,9 @@ export const ResultPresentation = z.discriminatedUnion('kind', [
     .strict(),
 ]);
 export type ResultPresentation = z.infer<typeof ResultPresentation>;
-export const PreviewInput = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('refresh') }).strict(),
-  z.object({ kind: z.literal('viewport'), size: z.enum(['desktop', 'tablet', 'mobile']) }).strict(),
-  z
-    .object({ kind: z.literal('click'), x: z.number().int().min(0).max(1279), y: z.number().int().min(0).max(899) })
-    .strict(),
-  z.object({ kind: z.literal('type'), text: Text.min(1).max(2000) }).strict(),
-  z
-    .object({
-      kind: z.literal('key'),
-      key: z.enum([
-        'Enter',
-        'Tab',
-        'Shift+Tab',
-        'Backspace',
-        'Delete',
-        'Escape',
-        'ArrowUp',
-        'ArrowDown',
-        'ArrowLeft',
-        'ArrowRight',
-        'Home',
-        'End',
-        'Space',
-      ]),
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal('scroll'),
-      deltaX: z.number().int().min(-2000).max(2000),
-      deltaY: z.number().int().min(-2000).max(2000),
-    })
-    .strict(),
-]);
-export type PreviewInput = z.infer<typeof PreviewInput>;
-export const PreviewFrame = z
-  .object({
-    width: z.number().int().min(1).max(1280).optional(),
-    height: z.number().int().min(1).max(900).optional(),
-    png: Text.max(6_000_000).regex(/^[A-Za-z0-9+/]+=*$/),
-    blockedRequests: z.number().int().nonnegative(),
-  })
-  .strict();
-export type PreviewFrame = z.infer<typeof PreviewFrame>;
-export const PreviewOpened = z.object({ previewId: z.uuid(), frame: PreviewFrame }).strict();
+/** Capability URL for one HTML bundle; the token is the only authority for its files. */
+// 240-character artifact names can percent-encode to about 2,200 characters.
+export const PreviewUrl = Text.max(2600).regex(/^\/preview\/[A-Za-z0-9_-]{43}\/[^?#\s\\]+$/);
+export const PreviewOpened = z.object({ frameUrl: PreviewUrl, expiresAt: z.iso.datetime() }).strict();
+export type PreviewOpened = z.infer<typeof PreviewOpened>;
 export const TextFile = z.object({ text: Text.max(8_000_000) }).strict();
