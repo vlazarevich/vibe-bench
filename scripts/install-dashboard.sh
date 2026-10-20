@@ -16,14 +16,25 @@ install_dashboard() {
     version=${release_url##*/}
   fi
   printf '%s\n' "$version" | awk '/^v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$/ { valid = 1 } END { exit !valid }' || fail 'Set VIBE_DASHBOARD_VERSION to a release tag such as v1.2.3.'
-  if [ "$(id -u)" = 0 ]; then default_dir=/opt/vibe-bench; else default_dir="$HOME/.local/share/vibe-bench"; fi
+  if [ "$(id -u)" = 0 ]; then
+    default_dir=/opt/vibe-bench default_state=/var/lib/vibe-bench
+  else
+    default_dir="$HOME/.local/share/vibe-bench" default_state="${XDG_STATE_HOME:-$HOME/.local/state}/vibe-bench"
+  fi
   install_dir=${VIBE_DASHBOARD_INSTALL_DIR:-$default_dir}
-  [ -n "$install_dir" ] || fail 'The installation directory must not be empty.'
+  state_dir=${VIBE_DASHBOARD_STATE_DIR:-$default_state}
+  [ -n "$install_dir" ] && [ -n "$state_dir" ] || fail 'The installation and state directories must not be empty.'
   parent=$(dirname "$install_dir")
   mkdir -p "$parent"
   parent=$(cd "$parent" && pwd -P)
   install_dir="$parent/$(basename "$install_dir")"
-  [ ! -e "$install_dir" ] || [ -f "$install_dir/dist/server/serve.mjs" ] || fail "$install_dir exists and is not a Vibe bench dashboard installation."
+  case "$state_dir" in /*) ;; *) fail 'VIBE_DASHBOARD_STATE_DIR must be an absolute path.';; esac
+  case "$state_dir/" in "$install_dir"/*) fail 'The state directory must be outside the installation, which upgrades replace.';; esac
+  if [ -e "$install_dir" ]; then
+    # Only a previous release install is replaced; a source checkout or other directory is left alone.
+    [ -f "$install_dir/VERSION" ] && [ -f "$install_dir/dist/server/serve.mjs" ] && [ ! -e "$install_dir/.git" ] || fail "$install_dir exists and is not a Vibe bench dashboard installation."
+    [ ! -e "$install_dir/.local" ] || fail "Database state was found inside the installation at $install_dir/.local. Stop the dashboard, move that directory outside the installation, set VIBE_LOCAL_ROOT to it in .env, then run the installer again."
+  fi
   temporary=$(mktemp -d "$parent/.vibe-bench-dashboard.XXXXXXXX")
   trap 'rm -rf "$temporary"' EXIT HUP INT TERM
   archive="vibe-bench-dashboard-$version-linux-x64.tar.gz"
@@ -37,17 +48,36 @@ install_dashboard() {
   staged="$temporary/vibe-bench-dashboard"
   [ "$(cat "$staged/VERSION")" = "$version" ] || fail 'The archive version does not match the release tag.'
   [ -f "$staged/dist/server/serve.mjs" ] || fail 'The release does not contain the dashboard server.'
-  # Settings kept beside a previous installation carry over; the database state lives elsewhere.
-  if [ -f "$install_dir/.env" ]; then cp -p "$install_dir/.env" "$staged/.env"; fi
+  # Settings carry over between versions. A first install points embedded state outside the installation.
+  if [ -f "$install_dir/.env" ]; then
+    cp -p "$install_dir/.env" "$staged/.env"
+  else
+    {
+      printf '# Created by install-dashboard.sh. .env.example lists every setting.\n'
+      printf 'VIBE_LOCAL_ROOT="%s"\n' "$state_dir"
+      printf 'VIBE_PORT=8080\n'
+      printf '# VIBE_APP_PASSWORD=replace-with-a-long-random-secret\n'
+    } > "$staged/.env"
+    chmod 600 "$staged/.env"
+  fi
+  upgraded=
   if [ -e "$install_dir" ]; then
     rm -rf "$install_dir.previous"
     mv "$install_dir" "$install_dir.previous"
+    upgraded=1
   fi
-  mv "$staged" "$install_dir"
+  if ! mv "$staged" "$install_dir"; then
+    if [ -n "$upgraded" ]; then mv "$install_dir.previous" "$install_dir"; fi
+    fail 'Installation failed; the previous version is unchanged.'
+  fi
   rm -rf "$install_dir.previous"
   printf 'Installed dashboard %s to %s\n' "$version" "$install_dir"
-  printf 'Configure it with %s/.env (see .env.example), then start it with:\n  cd %s && node --env-file-if-exists=.env dist/server/serve.mjs\n' "$install_dir" "$install_dir"
-  printf 'For a system service, see %s/deploy/systemd/vibe-bench.service.\n' "$install_dir"
+  if [ -n "$upgraded" ]; then
+    printf 'Restart the running dashboard or service to use the new version.\n'
+  else
+    printf 'Edit %s/.env (set VIBE_APP_PASSWORD before exposing it), then start it with:\n  cd %s && node --env-file-if-exists=.env dist/server/serve.mjs\n' "$install_dir" "$install_dir"
+    printf 'For a system service, see %s/deploy/systemd/vibe-bench.service.\n' "$install_dir"
+  fi
 }
 
 install_dashboard

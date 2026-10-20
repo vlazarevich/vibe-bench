@@ -34,7 +34,8 @@ COPY --from=build /src/dist/web ./dist/web
 # Embedded PostgreSQL refuses to run as root; /data holds its state when DATABASE_URL is unset.
 RUN mkdir /data && chown node:node /data
 USER node
-VOLUME /data
+# Mount a volume at /data for embedded state. Stop with a grace period of at least 60 seconds
+# (docker run --init --stop-timeout 60) so PostgreSQL shuts down cleanly.
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=90s --retries=3 \
   CMD ["node", "-e", "fetch(`http://127.0.0.1:${process.env.VIBE_PORT}/api/health`).then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]

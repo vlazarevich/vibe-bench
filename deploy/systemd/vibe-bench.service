@@ -12,7 +12,9 @@ Type=simple
 User=vibe-bench
 Group=vibe-bench
 WorkingDirectory=/opt/vibe-bench
-# Embedded PostgreSQL state when DATABASE_URL is unset in the environment file.
+# Defaults the environment file may override: a fixed port for the reverse proxy, and embedded
+# PostgreSQL state when DATABASE_URL is unset.
+Environment=VIBE_PORT=8080
 Environment=VIBE_LOCAL_ROOT=/var/lib/vibe-bench
 EnvironmentFile=/etc/vibe-bench/env
 ExecStart=/usr/bin/env node /opt/vibe-bench/dist/server/serve.mjs

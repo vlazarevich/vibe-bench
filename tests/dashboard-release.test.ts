@@ -54,7 +54,7 @@ test('the archive is self-contained, pinned to the lockfile, and links only insi
   expect(links.length).toBeGreaterThan(0);
 });
 
-test('the installer verifies, installs, keeps settings across upgrades, and the installed dashboard serves with a trimmed password', async () => {
+test('the installer keeps database state and settings outside what upgrades replace, and the installed dashboard serves with a trimmed password', async () => {
   const commands = join(root, 'commands');
   const installed = join(root, 'opt dir', 'vibe-bench');
   await mkdir(commands);
@@ -72,13 +72,18 @@ case "$url" in */releases/latest) printf 'https://github.com/example/fork/releas
 esac
 `, { mode: 0o755 });
   const source = await readFile('scripts/install-dashboard.sh');
-  const env = { ...process.env, PATH: `${commands}:${dirname(process.execPath)}:/usr/bin:/bin`, VIBE_REPOSITORY: 'example/fork', VIBE_DASHBOARD_INSTALL_DIR: installed, TEST_VERSION: version, TEST_ASSETS: assets };
+  const state = join(root, 'state dir');
+  const env = { ...process.env, PATH: `${commands}:${dirname(process.execPath)}:/usr/bin:/bin`, VIBE_REPOSITORY: 'example/fork', VIBE_DASHBOARD_INSTALL_DIR: installed, VIBE_DASHBOARD_STATE_DIR: state, TEST_VERSION: version, TEST_ASSETS: assets };
   const install = (overrides: Record<string, string> = {}) => execFileSync('/bin/sh', [], { input: source, env: { ...env, ...overrides }, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
+  expect(() => install({ VIBE_DASHBOARD_STATE_DIR: join(installed, 'data') })).toThrow(/outside the installation/);
+  expect(() => install({ VIBE_DASHBOARD_STATE_DIR: 'relative' })).toThrow(/absolute path/);
   expect(install()).toContain(`Installed dashboard ${version}`);
-  await writeFile(join(installed, '.env'), `VIBE_APP_PASSWORD=" kept secret "\n`);
-  expect(install({ VIBE_DASHBOARD_VERSION: version })).toContain('Installed');
-  expect(await readFile(join(installed, '.env'), 'utf8')).toContain('kept secret');
-  expect(await readdir(dirname(installed))).toEqual(['vibe-bench']);
+  // A first install points embedded state outside the installation, with a fixed port.
+  const created = await readFile(join(installed, '.env'), 'utf8');
+  expect(created).toContain(`VIBE_LOCAL_ROOT="${state}"`);
+  expect(created).toContain('VIBE_PORT=8080');
+  expect((await lstat(join(installed, '.env'))).mode & 0o777).toBe(0o600);
+  await writeFile(join(installed, '.env'), `${created}VIBE_APP_PASSWORD=" kept secret "\n`);
   const before = await sha256(join(installed, 'dist/server/serve.mjs'));
   const good = await readFile(join(assets, archiveName));
   await writeFile(join(assets, archiveName), 'corrupted archive');
@@ -89,13 +94,23 @@ esac
   await mkdir(join(root, 'occupied'));
   await writeFile(join(root, 'occupied', 'notes.txt'), 'unrelated');
   expect(() => install({ VIBE_DASHBOARD_INSTALL_DIR: join(root, 'occupied') })).toThrow(/not a Vibe bench dashboard installation/);
+  // A built source checkout has the server bundle but no VERSION marker, or has .git; it is never replaced.
+  const checkout = join(root, 'checkout');
+  await mkdir(join(checkout, 'dist/server'), { recursive: true });
+  await writeFile(join(checkout, 'dist/server/serve.mjs'), '');
+  expect(() => install({ VIBE_DASHBOARD_INSTALL_DIR: checkout })).toThrow(/not a Vibe bench dashboard installation/);
+  await writeFile(join(checkout, 'VERSION'), `${version}\n`);
+  await mkdir(join(checkout, '.git'));
+  expect(() => install({ VIBE_DASHBOARD_INSTALL_DIR: checkout })).toThrow(/not a Vibe bench dashboard installation/);
+  expect(await readdir(checkout)).toEqual(['.git', 'VERSION', 'dist']);
   await writeFile(join(commands, 'node'), '#!/bin/sh\nprintf "22\\n"\n', { mode: 0o755 });
   expect(() => install()).toThrow(/Node 24 is required/);
   await rm(join(commands, 'node'));
   expect(await sha256(join(installed, 'dist/server/serve.mjs'))).toBe(before);
 
   const port = await unusedPort();
-  const child = spawn(process.execPath, ['--env-file-if-exists=.env', 'dist/server/serve.mjs'], { cwd: installed, env: { PATH: process.env.PATH ?? '', VIBE_PORT: String(port), VIBE_LOCAL_ROOT: join(root, 'state') }, stdio: ['ignore', 'pipe', 'pipe'] });
+  // No VIBE_LOCAL_ROOT here: the installer's .env decides where the database lives.
+  const child = spawn(process.execPath, ['--env-file-if-exists=.env', 'dist/server/serve.mjs'], { cwd: installed, env: { PATH: process.env.PATH ?? '', VIBE_PORT: String(port) }, stdio: ['ignore', 'pipe', 'pipe'] });
   let output = '';
   child.stdout.on('data', (data) => { output += String(data); });
   child.stderr.on('data', (data) => { output += String(data); });
@@ -118,4 +133,15 @@ esac
     child.kill('SIGTERM');
     await exited;
   }
+  await lstat(join(state, 'postgres', 'PG_VERSION'));
+  await expect(lstat(join(installed, '.local'))).rejects.toThrow();
+  // Upgrading keeps the settings and leaves the database untouched.
+  expect(install({ VIBE_DASHBOARD_VERSION: version })).toContain('Restart the running dashboard');
+  expect(await readFile(join(installed, '.env'), 'utf8')).toContain('kept secret');
+  await lstat(join(state, 'postgres', 'PG_VERSION'));
+  expect(await readdir(dirname(installed))).toEqual(['vibe-bench']);
+  // State left inside an installation by an earlier manual setup blocks the upgrade instead of being deleted.
+  await mkdir(join(installed, '.local', 'postgres'), { recursive: true });
+  expect(() => install()).toThrow(/Database state was found inside the installation/);
+  await lstat(join(installed, '.local', 'postgres'));
 }, 240_000);

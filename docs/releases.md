@@ -21,20 +21,20 @@ Use this procedure to publish a version on GitHub. A release contains the Linux 
    ```
 
 5. Open **Actions → runtime release** on GitHub. Wait for both jobs to pass.
-6. Open **Releases** and inspect the draft. Check the generated notes and the five attached assets.
+6. Open **Releases** and inspect the draft. Check the generated notes and the eight attached assets.
 7. Publish the draft when you are ready to make that version installable.
-8. Open **Actions → container image** and wait for **Publish image to GHCR**. It builds the image from the tag, runs the compose smoke test on that exact image, then pushes `ghcr.io/<owner>/<repo>:<tag>`, and `:latest` for stable releases.
+8. Open **Actions → container image** and wait for **Publish image to GHCR**. It builds the image from the tag, runs the compose smoke test on that exact image, then pushes `ghcr.io/<owner>/<repo>:<tag>`, and `:latest` when it is the repository's latest stable release, so publishing a backport never moves `latest` backwards.
 9. For the first image only, open the package settings on GitHub and set its visibility to public, so `docker pull` works without logging in.
 
 The verification job runs the full application checks, compiles the runtime, tests the executable, and packages the dashboard. Only that job's verified assets reach the draft job. The draft job has release-write permission. Verification has read-only permission. Publishing the draft is a separate operator action.
 
-A release contains `vibe-runner-v0.1.0-linux-x64.tar.gz` with `install-runtime.sh`, `vibe-bench-dashboard-v0.1.0-linux-x64.tar.gz` with `install-dashboard.sh`, and one `SHA256SUMS` covering all four. The executable reports the tag through `--version`; the dashboard archive records it in `VERSION`. The container image is pushed only after the release is published, never for drafts. Forks publish to their own release page and `ghcr.io/<owner>/<repo>`. The workflow does not change `package.json` to stamp a release.
+A release contains `vibe-runner-v0.1.0-linux-x64.tar.gz` with `install-runtime.sh`, `vibe-bench-dashboard-v0.1.0-linux-x64.tar.gz` with `install-dashboard.sh`, `compose.yml` (defaulting to that release's image), `Caddyfile`, `compose.env.example`, and one `SHA256SUMS` covering the other seven. The executable reports the tag through `--version`; the dashboard archive records it in `VERSION`. The container image is pushed only after the release is published, never for drafts. Forks publish to their own release page and `ghcr.io/<owner>/<repo>`. The workflow does not change `package.json` to stamp a release.
 
 ## Retry a failed release
 
 If verification fails, fix the code through a reviewed PR and choose a new version tag. Do not move an existing tag to another commit.
 
-If verification passed but draft creation or asset upload failed, rerun the failed jobs. The workflow can replace assets on an unpublished draft. It refuses to replace a published release. Review all five assets before publishing a retried draft. If only the image push failed, rerun the container image workflow for that release.
+If verification passed but draft creation or asset upload failed, rerun the failed jobs. The workflow can replace assets on an unpublished draft. It refuses to replace a published release. Review all eight assets before publishing a retried draft. If only the image push failed, rerun the container image workflow for that release.
 
 If you need to withdraw a bad version, mark its release as a prerelease or remove its latest-release designation in GitHub. Publish a corrected version. Existing installations keep their installed executable until their operator runs the installer again.
 

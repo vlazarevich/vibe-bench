@@ -52,7 +52,7 @@ jobs:
         env:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: VIBE_SMOKE_IMAGE="$IMAGE:$RELEASE_TAG" sh scripts/smoke-compose.sh
-      - name: Push the version tag, and latest for stable releases
+      - name: Push the version tag, and latest for the repository's latest release
         env:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
           PRERELEASE: ${{ github.event.release.prerelease }}
@@ -60,7 +60,9 @@ jobs:
         run: |
           printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
           docker push "$IMAGE:$RELEASE_TAG"
-          if [ "$PRERELEASE" != true ]; then
+          # A backport published after a newer release must not move latest backwards.
+          latest=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)
+          if [ "$PRERELEASE" != true ] && [ "$latest" = "$RELEASE_TAG" ]; then
             docker tag "$IMAGE:$RELEASE_TAG" "$IMAGE:latest"
             docker push "$IMAGE:latest"
           fi

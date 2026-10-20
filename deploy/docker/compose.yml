@@ -1,5 +1,5 @@
 # Vibe bench dashboard with PostgreSQL 18, and Caddy for automatic HTTPS under the "https" profile.
-#   cp .env.example .env    # set POSTGRES_PASSWORD and VIBE_APP_PASSWORD at least
+#   cp compose.env.example .env    # set POSTGRES_PASSWORD and VIBE_APP_PASSWORD at least
 #   docker compose up -d                     # dashboard on http://127.0.0.1:8080
 #   docker compose --profile https up -d     # public HTTPS on VIBE_DOMAIN
 name: vibe-bench
@@ -25,13 +25,16 @@ services:
     build:
       context: ../..
     restart: unless-stopped
+    init: true
+    stop_grace_period: 60s
     depends_on:
       postgres:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql://vibe:${POSTGRES_PASSWORD}@postgres:5432/vibe
       VIBE_APP_PASSWORD: ${VIBE_APP_PASSWORD:?Set VIBE_APP_PASSWORD in .env; the container listens on the network}
-      VIBE_PUBLIC_URL: ${VIBE_PUBLIC_URL:-}
+      # Defaults to https://VIBE_DOMAIN when the https profile's domain is set.
+      VIBE_PUBLIC_URL: ${VIBE_PUBLIC_URL:-${VIBE_DOMAIN:+https://${VIBE_DOMAIN}}}
       # Caddy's fixed address below; client IPs for login throttling come from its forwarding headers.
       VIBE_TRUSTED_PROXY: ${VIBE_TRUSTED_PROXY:-${VIBE_CADDY_ADDRESS:-172.31.250.10}}
       ARTIFICIAL_ANALYSIS_API_KEY: ${ARTIFICIAL_ANALYSIS_API_KEY:-}
@@ -49,6 +52,8 @@ services:
         condition: service_healthy
     environment:
       VIBE_DOMAIN: ${VIBE_DOMAIN:-}
+    # Compose cannot require a variable only for this profile, so Caddy checks it before starting.
+    entrypoint: ['/bin/sh', '-c', 'test -n "$$VIBE_DOMAIN" || { echo "Set VIBE_DOMAIN in .env for the https profile." >&2; exit 1; }; exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile']
     ports:
       - 80:80
       - 443:443

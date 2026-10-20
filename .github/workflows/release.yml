@@ -42,11 +42,19 @@ jobs:
           RELEASE_TAG: ${{ github.ref_name }}
         run: pnpm build:dashboard "$RELEASE_TAG"
       - name: Collect release assets with one checksum file
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
         run: |
           mkdir release
           cp dist/runtime/vibe-runner-*-linux-x64.tar.gz dist/runtime/install-runtime.sh release/
           cp dist/dashboard/vibe-bench-dashboard-*-linux-x64.tar.gz dist/dashboard/install-dashboard.sh release/
+          # The release's compose file defaults to its own image version instead of latest.
+          sed "s/\${VIBE_VERSION:-latest}/\${VIBE_VERSION:-$RELEASE_TAG}/" deploy/docker/compose.yml > release/compose.yml
+          grep -qF "\${VIBE_VERSION:-$RELEASE_TAG}" release/compose.yml
+          cp deploy/docker/Caddyfile release/Caddyfile
+          cp deploy/docker/.env.example release/compose.env.example
           cat dist/runtime/SHA256SUMS dist/dashboard/SHA256SUMS > release/SHA256SUMS
+          (cd release && sha256sum compose.yml Caddyfile compose.env.example >> SHA256SUMS)
           (cd release && sha256sum --check SHA256SUMS)
       - uses: actions/upload-artifact@v4
         with:
