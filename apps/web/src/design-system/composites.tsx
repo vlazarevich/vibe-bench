@@ -511,7 +511,7 @@ export function Sidebar({
         href={it.href || '#'}
         aria-current={it.id === currentId ? 'page' : undefined}
         className="vb-side-link"
-        aria-label={collapsed ? it.label + (it.count ? `, ${it.count}` : '') : undefined}
+        aria-label={it.label + (it.count ? `, ${it.count}` : '')}
         onClick={(e) => {
           if (onNavigate) {
             e.preventDefault();
@@ -550,7 +550,7 @@ export function Sidebar({
         <button
           type="button"
           className="vb-side-link vb-side-btn"
-          aria-label={collapsed ? label : undefined}
+          aria-label={label}
           onClick={() => onThemeChange(next)}
         >
           <span className="vb-side-ico">
@@ -577,7 +577,7 @@ export function Sidebar({
       className="vb-side-link vb-side-btn vb-side-toggle"
       aria-expanded={!collapsed}
       aria-controls="vb-side-nav"
-      aria-label={collapsed ? toggleLabel : undefined}
+      aria-label={collapsed ? toggleLabel : 'Collapse'}
       onClick={() => setCollapsed(!collapsed)}
     >
       <span className="vb-side-ico">
@@ -598,7 +598,7 @@ export function Sidebar({
               <button
                 type="button"
                 className="vb-side-link vb-side-btn"
-                aria-label={collapsed ? action.label : undefined}
+                aria-label={action.label}
                 onClick={action.onClick}
               >
                 <span className="vb-side-ico">

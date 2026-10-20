@@ -44,6 +44,15 @@ test('protected dashboard login, rich result access, enrollment and revocation w
     const sidebar = page.getByRole('complementary');
     const logout = sidebar.getByRole('button', { name: 'Log out', exact: true });
     await expect(logout).toHaveText('Log out');
+    const viewport = page.viewportSize()!;
+    await page.setViewportSize({ width: 700, height: 800 });
+    await expect(logout).toHaveAccessibleName('Log out');
+    await expect(logout.locator('.vb-side-label')).toBeHidden();
+    await expect(logout).toHaveCSS('width', '47px');
+    await expect(sidebar.getByRole('link', { name: 'Runs', exact: true })).toBeVisible();
+    await expect(sidebar.getByRole('button', { name: 'Light mode', exact: true })).toBeVisible();
+    await expect(sidebar.getByRole('button', { name: 'Collapse', exact: true })).toBeVisible();
+    await page.setViewportSize(viewport);
     await page.getByRole('button', { name: 'Collapse', exact: true }).click();
     await expect(logout).toHaveText('');
     await expect(logout).toHaveAccessibleName('Log out');
