@@ -174,7 +174,7 @@ async function opencodeV2(timeoutMs: number, selected?: string): Promise<Harness
   if (providers.code !== 0) return { kind: 'unknown', reason: 'failed' };
   try {
     const providerList = z
-      .object({ data: z.array(z.object({ id: z.string(), integrationID: z.string() })).max(500) })
+      .object({ data: z.array(z.object({ id: z.string(), integrationID: z.string().optional() })).max(500) })
       .parse(JSON.parse(providers.output));
     const integrationList = z
       .object({
@@ -198,7 +198,8 @@ async function opencodeV2(timeoutMs: number, selected?: string): Promise<Harness
       .parse(JSON.parse(integrations.output));
     const go = providerList.data.find((provider) => provider.id === 'opencode-go');
     const connections =
-      integrationList.data.find((integration) => integration.id === go?.integrationID)?.connections ?? [];
+      integrationList.data.find((integration) => integration.id === (go?.integrationID ?? go?.id))
+        ?.connections ?? [];
     const connection = connections.find((connection) => !connection.status);
     if (!connection) return { kind: 'not-ready' };
     const readiness: HarnessReadiness = {
@@ -209,7 +210,7 @@ async function opencodeV2(timeoutMs: number, selected?: string): Promise<Harness
           ? { accountType: 'api-key' as const }
           : {}),
     };
-    const listed = await probe(executable, ['models'], timeoutMs);
+    const listed = await probe(executable, ['models'], timeoutMs, 200_000);
     const models =
       listed.kind === 'exited' && listed.code === 0
         ? [
@@ -222,7 +223,8 @@ async function opencodeV2(timeoutMs: number, selected?: string): Promise<Harness
           ].slice(0, 500)
         : [];
     return { ...readiness, ...(models.length ? { models } : {}) };
-  } catch {
+  } catch (error) {
+    if (error instanceof Interrupted) throw error;
     return { kind: 'unknown', reason: 'unrecognized' };
   }
 }

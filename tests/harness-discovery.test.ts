@@ -2,6 +2,8 @@ import { afterAll, beforeAll, expect, test } from 'vitest';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { discoverRuntime } from '../apps/runner/src/onboarding.ts';
 import { RuntimeId, ToolName } from '../packages/contracts/src/runtime.ts';
 
@@ -143,4 +145,60 @@ test('OpenCode v2 malformed metadata and failed API probes stay unknown', async 
       )
     ).opencodeGo,
   ).toEqual({ kind: 'unknown', reason: 'failed' });
+});
+
+test('unrelated local providers without integration IDs do not invalidate Go discovery', async () => {
+  const body = v2().replace(
+    "[{id:'opencode-go',integrationID:'opencode'}]",
+    "[{id:'local-provider'},{id:'opencode-go',integrationID:'opencode'}]",
+  );
+  expect((await discover('opencode', body)).opencodeGo).toMatchObject({
+    kind: 'ready',
+    models: ['opencode-go/model-a'],
+  });
+});
+
+test('Go provider without an integration ID uses its provider ID for the connection', async () => {
+  const body = v2()
+    .replace("{id:'opencode',connections:", "{id:'opencode-go',connections:")
+    .replace("{id:'opencode-go',integrationID:'opencode'}", "{id:'opencode-go'}");
+  expect((await discover('opencode', body)).opencodeGo).toMatchObject({
+    kind: 'ready',
+    models: ['opencode-go/model-a'],
+  });
+});
+
+test('large unfiltered OpenCode catalogs retain the Go models', async () => {
+  const body = v2().replace(
+    "console.log('opencode-go/model-a",
+    "console.log(Array.from({length:400},(_,i)=>'unrelated-provider/model-with-a-long-name-'+i).join('\\n')); console.log('opencode-go/model-a",
+  );
+  expect((await discover('opencode', body)).opencodeGo).toMatchObject({
+    kind: 'ready',
+    models: ['opencode-go/model-a'],
+  });
+});
+
+test('interrupting the OpenCode models subprocess aborts discovery', async () => {
+  const executable = join(root, 'interrupt-opencode');
+  await writeFile(
+    executable,
+    `#!${process.execPath}\n${v2().replace('if (process.argv.length !== 3 || false) process.exit(2);', "process.kill(process.ppid,'SIGTERM'); setInterval(()=>{},1000);")}`,
+    { mode: 0o700 },
+  );
+  const selected = Object.fromEntries(ToolName.options.map((tool) => [tool, join(root, 'missing')]));
+  selected.opencode = executable;
+  const script = join(root, 'interrupt.mts');
+  await writeFile(
+    script,
+    `
+    import {discoverRuntime} from ${JSON.stringify(resolve('apps/runner/src/onboarding.ts'))};
+    try {
+      await discoverRuntime({runtimeId:${JSON.stringify(randomUUID())},observation:1,selected:${JSON.stringify(selected)},timeoutMs:1000});
+      console.log('continued');
+    } catch(error) { console.log(error.constructor.name); }
+  `,
+  );
+  const result = await promisify(execFile)(process.execPath, ['--import', 'tsx', script]);
+  expect(result.stdout.trim()).toBe('Interrupted');
 });
