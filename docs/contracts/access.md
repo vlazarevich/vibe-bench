@@ -8,7 +8,7 @@ An optional shared app password grants full management and evaluation access. Em
 
 Opaque 256-bit session tokens live in HttpOnly, SameSite Strict cookies. PostgreSQL stores token hashes and a fixed 12-hour expiry. Logout deletes the dashboard session and clears the grading cookie. A salted scrypt password generation invalidates previous sessions after password changes, including transitions through passwordless mode. The app stores no plaintext password. HTTPS public origins add Secure to dashboard and grading cookies.
 
-Unsafe browser methods require the canonical Origin. Local defaults accept loopback Host values. Hosted configuration pins `VIBE_PUBLIC_URL` and its Host. `VIBE_TRUSTED_PROXY` lists trusted proxy addresses for client IP attribution. Untrusted forwarding headers grant no authority. The login boundary admits at most ten attempts per source and 100 total in each 15-minute window. Expired throttle rows are removed on the next attempt.
+Unsafe browser methods require the canonical Origin. Local defaults accept loopback Host values. Hosted configuration pins `VIBE_PUBLIC_URL` and its Host. `GET /api/health` alone answers under any Host so container and load-balancer probes can reach it by address; it reveals only readiness. `VIBE_TRUSTED_PROXY` lists trusted proxy addresses for client IP attribution. Untrusted forwarding headers grant no authority. The login boundary admits at most ten attempts per source and 100 total in each 15-minute window. Expired throttle rows are removed on the next attempt.
 
 ## Runtime authority
 

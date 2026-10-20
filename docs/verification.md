@@ -22,11 +22,17 @@ The worker verifies a real SQL connection on its newly allocated port before ann
 | `pnpm build` | Production Vite assets and the bundled dashboard process |
 | `pnpm test:browser` | Real Chromium configured Runs, grading, suite authoring, access, result viewing, and reload |
 | `pnpm build:runtime` | Standalone Linux x64 executable and checksummed release archive |
+| `pnpm build:dashboard` | Self-hosted dashboard archive, installer, and checksums |
+| `sh scripts/smoke-compose.sh` | Container image and compose deployment; needs a Docker daemon |
 | `pnpm test:binary` | Installed CLI, installer failures, and the configured-run matrix through the compiled executable |
 
 `tests/processes.test.ts` launches a process with a real descendant. It checks that the descendant is no longer alive after a timeout, normal parent completion, and owner interruption. Linux uses a process group. A Linux zombie is dead even if its PID remains visible pending reaping. The tests inspect process state instead of inferring termination from stopped output.
 
 `tests/spool.test.ts` races sixteen immutable receipt writes on the real filesystem, rejects conflicting content, and verifies that temporary files are removed. Receipts are linked into place once after fsync; duplicate deliveries compare the existing receipt instead of replacing it.
+
+`tests/dashboard-release.test.ts` packages the dashboard with a fixture web root and checks that the archive holds the bundled server, migrations, systemd unit, and lockfile-pinned production dependencies without development packages, with symlinks only inside the archive. Its installer runs against a fake `curl` for a fork repository: it installs, keeps `.env` across a reinstall, and rejects a corrupted archive, a bad tag, a malformed repository, an occupied foreign directory, and Node other than 24 while leaving the installation intact. The installed dashboard then starts with its embedded database, serves the web root, and accepts only the trimmed password.
+
+`.github/workflows/container.yml` runs `scripts/smoke-compose.sh` on GitHub-hosted Ubuntu for pull requests and `main`. It builds the image and starts PostgreSQL 18 and the dashboard with compose. It then checks container health, password mode, wrong and trimmed-password logins, all migrations, and login after a dashboard restart. On a published release the same script tests the exact image before it is pushed to GHCR. The job is informational; it is not yet a required check.
 
 CI requires `verify (self-hosted Linux)` from `.github/workflows/checks.yml`. This self-hosted Linux job is the only required platform check. A missing, skipped, or cancelled job is not passing evidence. Browser traces from failed jobs are uploaded. Test state, logs, screenshots, and traces stay under ignored `.artifacts/`.
 

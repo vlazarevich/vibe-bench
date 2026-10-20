@@ -34,7 +34,14 @@ const startup = (async () => {
   stop = async () => { await pool.end(); await stopDatabase(); };
   if (stopping) return;
   let ready = false;
-  const app = await createApp({ pool, webRoot, ready: () => ready });
+  const app = await createApp({
+    pool,
+    webRoot,
+    ready: () => ready,
+    password: config.password,
+    ...(config.publicUrl === undefined ? {} : { publicUrl: config.publicUrl }),
+    ...(config.trustedProxy === undefined ? {} : { trustedProxy: config.trustedProxy }),
+  });
   const worker = config.worker ? createWorkerApp({ pool }) : undefined;
   stop = async () => { await worker?.close(); await app.close(); await pool.end(); await stopDatabase(); };
   if (worker && config.worker) await worker.listen(config.worker);

@@ -247,8 +247,14 @@ test('canonical HTTPS origin controls host, CSRF and secure cookies and bounded 
     trustedProxy: ['127.0.0.1'],
   });
   try {
+    // Readiness probes connect by address, so health alone answers under any Host; nothing else does.
+    const probe = await secure.inject({ method: 'GET', url: '/api/health', headers: { host: '10.0.0.5:8080' } });
+    expect(probe.statusCode).toBe(200);
+    expect(probe.json()).toEqual({ ok: true });
+    for (const url of ['/api/health?x=1', '/api/access/session', '/'])
+      expect((await secure.inject({ method: 'GET', url, headers: { host: 'evil.example' } })).statusCode).toBe(403);
     expect(
-      (await secure.inject({ method: 'GET', url: '/api/health', headers: { host: 'evil.example' } })).statusCode,
+      (await secure.inject({ method: 'POST', url: '/api/health', headers: { host: 'evil.example' } })).statusCode,
     ).toBe(403);
     const response = await secure.inject({
       method: 'POST',

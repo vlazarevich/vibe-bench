@@ -9,6 +9,10 @@ const DatabaseUrl = z
 
 export type DashboardConfig = {
   database: { kind: 'external'; url: string } | { kind: 'embedded'; root: string };
+  /** Trimmed shared password; empty means intentional passwordless operation. */
+  password: string;
+  publicUrl: string | undefined;
+  trustedProxy: string[] | undefined;
   host: string;
   port: number;
   worker: { host: string; port: number } | undefined;
@@ -33,6 +37,12 @@ export function dashboardConfig(env: NodeJS.ProcessEnv = process.env): Dashboard
       url === undefined
         ? { kind: 'embedded', root: resolve(value('VIBE_LOCAL_ROOT') ?? '.local') }
         : { kind: 'external', url: DatabaseUrl.parse(url) },
+    password: value('VIBE_APP_PASSWORD') ?? '',
+    publicUrl: value('VIBE_PUBLIC_URL'),
+    trustedProxy: value('VIBE_TRUSTED_PROXY')
+      ?.split(',')
+      .map((entry) => entry.trim())
+      .filter(Boolean),
     host,
     port: Port.parse(value('VIBE_PORT') ?? 0),
     worker,

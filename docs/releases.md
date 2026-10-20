@@ -1,6 +1,6 @@
-# Release the runtime
+# Release the runtime and dashboard
 
-Use this procedure to produce a Linux x64 glibc runtime and publish it on GitHub. The runtime includes Node and its JavaScript dependencies. Users do not need a source checkout, Node, or pnpm to run it.
+Use this procedure to publish a version on GitHub. A release contains the Linux x64 glibc runtime, the self-hosted dashboard archive, and a container image. The runtime includes Node and its JavaScript dependencies; users do not need a source checkout, Node, or pnpm to run it. Installing the dashboard is covered in the [deployment guide](deployment.md).
 
 ## Prepare a release
 
@@ -21,18 +21,20 @@ Use this procedure to produce a Linux x64 glibc runtime and publish it on GitHub
    ```
 
 5. Open **Actions → runtime release** on GitHub. Wait for both jobs to pass.
-6. Open **Releases** and inspect the draft. Check the generated notes and the three attached assets.
+6. Open **Releases** and inspect the draft. Check the generated notes and the five attached assets.
 7. Publish the draft when you are ready to make that version installable.
+8. Open **Actions → container image** and wait for **Publish image to GHCR**. It builds the image from the tag, runs the compose smoke test on that exact image, then pushes `ghcr.io/<owner>/<repo>:<tag>`, and `:latest` for stable releases.
+9. For the first image only, open the package settings on GitHub and set its visibility to public, so `docker pull` works without logging in.
 
-The verification job runs the full application checks, compiles the runtime, and tests the executable. Only that job's verified assets reach the draft job. The draft job has release-write permission. Verification has read-only permission. Publishing the draft is a separate operator action.
+The verification job runs the full application checks, compiles the runtime, tests the executable, and packages the dashboard. Only that job's verified assets reach the draft job. The draft job has release-write permission. Verification has read-only permission. Publishing the draft is a separate operator action.
 
-A release contains the archive `vibe-runner-v0.1.0-linux-x64.tar.gz`, the installer `install-runtime.sh`, and `SHA256SUMS`. The executable reports the tag through `--version`. The workflow does not change `package.json` to stamp a release.
+A release contains `vibe-runner-v0.1.0-linux-x64.tar.gz` with `install-runtime.sh`, `vibe-bench-dashboard-v0.1.0-linux-x64.tar.gz` with `install-dashboard.sh`, and one `SHA256SUMS` covering all four. The executable reports the tag through `--version`; the dashboard archive records it in `VERSION`. The container image is pushed only after the release is published, never for drafts. Forks publish to their own release page and `ghcr.io/<owner>/<repo>`. The workflow does not change `package.json` to stamp a release.
 
 ## Retry a failed release
 
 If verification fails, fix the code through a reviewed PR and choose a new version tag. Do not move an existing tag to another commit.
 
-If verification passed but draft creation or asset upload failed, rerun the failed jobs. The workflow can replace assets on an unpublished draft. It refuses to replace a published release. Review all three assets before publishing a retried draft.
+If verification passed but draft creation or asset upload failed, rerun the failed jobs. The workflow can replace assets on an unpublished draft. It refuses to replace a published release. Review all five assets before publishing a retried draft. If only the image push failed, rerun the container image workflow for that release.
 
 If you need to withdraw a bad version, mark its release as a prerelease or remove its latest-release designation in GitHub. Publish a corrected version. Existing installations keep their installed executable until their operator runs the installer again.
 
@@ -46,7 +48,11 @@ pnpm exec playwright install chromium
 pnpm check
 pnpm build:runtime v0.0.0-dev
 pnpm test:binary
+pnpm build:dashboard v0.0.0-dev
+sh scripts/smoke-compose.sh   # needs access to a Docker daemon
 ```
+
+Find the dashboard archive under `dist/dashboard/`. `pnpm build` must run first; the archive installs production dependencies from the lockfile in a flat layout.
 
 Find the executable and release assets under `dist/runtime/`. The build uses Node's single-executable application support. It embeds a compressed bundle and the pinned Playwright library. Each invocation extracts those files into a fresh private temporary directory and removes them on normal exit. A killed process can leave its temporary directory behind. Runtime credentials and saved results use the configured state directory, independently of these temporary dependency files.
 
@@ -71,4 +77,4 @@ Pair after installation. Copy the command from **Runtimes → Add new**, then ru
 
 Linux x64 with glibc 2.28 or newer is the only published target. Git is needed for repository tasks. Browser and image tasks require the Chromium and FFmpeg revisions used by Playwright 1.56.1, plus their system libraries. On a machine with Node available for provisioning, `npx playwright@1.56.1 install --with-deps chromium` installs those prerequisites. Provisioning browsers is separate from runtime installation. A provisioned machine does not need Node afterward. Preserve the Playwright browser cache, or set `PLAYWRIGHT_BROWSERS_PATH` to its provisioned location.
 
-The runtime binary is independent of the server deployment. Releasing it does not deploy the dashboard, run database migrations, or configure HTTPS and backups.
+Releasing does not deploy any dashboard. Operators upgrade their own installations; migrations run when the new dashboard starts. HTTPS and backups remain deployment configuration.

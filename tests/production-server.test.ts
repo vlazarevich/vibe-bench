@@ -67,7 +67,8 @@ async function freshDatabase(name: string) {
 test('reads external and embedded database settings', () => {
   expect(dashboardConfig({ DATABASE_URL: 'postgres://u:p@db/x', POSTGRES_URL: 'postgres://other/y' })).toMatchObject({ database: { kind: 'external', url: 'postgres://u:p@db/x' }, host: '127.0.0.1', port: 0 });
   expect(dashboardConfig({ DATABASE_URL: ' ', POSTGRES_URL: 'postgresql://neon/z?sslmode=require' }).database).toEqual({ kind: 'external', url: 'postgresql://neon/z?sslmode=require' });
-  expect(dashboardConfig({ VIBE_LOCAL_ROOT: '/srv/vibe', VIBE_HOST: '0.0.0.0', VIBE_PORT: '8080', VIBE_APP_PASSWORD: 'secret' })).toEqual({ database: { kind: 'embedded', root: '/srv/vibe' }, host: '0.0.0.0', port: 8080, worker: undefined });
+  expect(dashboardConfig({ VIBE_LOCAL_ROOT: '/srv/vibe', VIBE_HOST: '0.0.0.0', VIBE_PORT: '8080', VIBE_APP_PASSWORD: ' secret ' })).toEqual({ database: { kind: 'embedded', root: '/srv/vibe' }, password: 'secret', host: '0.0.0.0', port: 8080, worker: undefined });
+  expect(dashboardConfig({ VIBE_APP_PASSWORD: '   ' }).password).toBe('');
   expect(dashboardConfig({ VIBE_WORKER_HOST: '127.0.0.1', VIBE_WORKER_PORT: '8081' }).worker).toEqual({ host: '127.0.0.1', port: 8081 });
   expect(() => dashboardConfig({ VIBE_HOST: '0.0.0.0' })).toThrow(/set VIBE_APP_PASSWORD/);
   expect(() => dashboardConfig({ VIBE_HOST: '192.168.1.5', VIBE_APP_PASSWORD: '  ' })).toThrow(/set VIBE_APP_PASSWORD/);
