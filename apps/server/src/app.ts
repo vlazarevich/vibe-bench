@@ -70,9 +70,12 @@ export async function createApp({
   pool,
   webRoot,
   ready = () => true,
-  password = process.env.VIBE_APP_PASSWORD,
-  publicUrl = process.env.VIBE_PUBLIC_URL,
-  trustedProxy = process.env.VIBE_TRUSTED_PROXY?.split(',').map((value) => value.trim()),
+  // Blank settings mean unset; compose and env files pass empty strings for omitted values.
+  password = process.env.VIBE_APP_PASSWORD?.trim() ?? '',
+  publicUrl = process.env.VIBE_PUBLIC_URL?.trim() || undefined,
+  trustedProxy = process.env.VIBE_TRUSTED_PROXY?.split(',')
+    .map((value) => value.trim())
+    .filter(Boolean),
 }: {
   pool: pg.Pool;
   webRoot?: string;

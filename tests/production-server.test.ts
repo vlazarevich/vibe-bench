@@ -142,3 +142,11 @@ test('terminated idle database connections do not stop the dashboard', async () 
     expect(dashboard.output()).toContain('PostgreSQL idle connection closed');
   } finally { expect(await stop(dashboard.child)).toBe(0); }
 }, 120_000);
+
+test('blank optional settings, as compose passes them, count as unset', async () => {
+  const url = await freshDatabase('blank_settings');
+  const dashboard = await launch({ DATABASE_URL: url, VIBE_PUBLIC_URL: '', VIBE_TRUSTED_PROXY: ' ', VIBE_APP_PASSWORD: '', VIBE_WORKER_HOST: '', VIBE_WORKER_PORT: '' });
+  try {
+    expect(await (await fetch(`${dashboard.origin}/api/access/session`)).json()).toMatchObject({ passwordRequired: false });
+  } finally { expect(await stop(dashboard.child)).toBe(0); }
+}, 120_000);
