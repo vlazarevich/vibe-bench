@@ -40,7 +40,7 @@ beforeAll(async () => {
         : name === 'claude'
           ? `if (process.argv.includes('status')) { process.stdout.write(JSON.stringify({loggedIn:true,token:'${secret}'})); process.stderr.write('warning'); } else process.stdout.write('2.3.4');`
           : name === 'opencode'
-            ? `if (process.argv.includes('list')) process.stdout.write('│ OpenAI api\\n1 credential'); else process.stdout.write('3.4.5');`
+            ? `if (process.argv.includes('list')) process.stdout.write('│ OpenAI api\\n1 credential'); else process.stdout.write('1.4.5');`
             : `process.stdout.write('git version 2.4.6 ${secret}');`;
     await writeFile(join(fixturePath, name), `#!${process.execPath}\n${body}\n`, { mode: 0o700 });
   }
