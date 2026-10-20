@@ -1,0 +1,40 @@
+# Vibe bench dashboard from the release archive. Install the archive to /opt/vibe-bench,
+# create the vibe-bench user, put settings in /opt/vibe-bench/.env, then:
+#   sudo cp /opt/vibe-bench/deploy/systemd/vibe-bench.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now vibe-bench
+[Unit]
+Description=Vibe bench dashboard
+Wants=network-online.target
+After=network-online.target postgresql.service
+
+[Service]
+Type=simple
+User=vibe-bench
+Group=vibe-bench
+WorkingDirectory=/opt/vibe-bench
+# Defaults the environment file may override: a fixed port for the reverse proxy, and embedded
+# PostgreSQL state when DATABASE_URL is unset.
+Environment=VIBE_PORT=8080
+Environment=VIBE_LOCAL_ROOT=/var/lib/vibe-bench
+# The installer's .env holds the settings; /etc/vibe-bench/env, if present, overrides them.
+EnvironmentFile=/opt/vibe-bench/.env
+EnvironmentFile=-/etc/vibe-bench/env
+ExecStart=/usr/bin/env node /opt/vibe-bench/dist/server/serve.mjs
+StateDirectory=vibe-bench
+StateDirectoryMode=0700
+# Signal only the dashboard; it stops its embedded database before exiting.
+KillMode=mixed
+TimeoutStopSec=60
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+
+[Install]
+WantedBy=multi-user.target

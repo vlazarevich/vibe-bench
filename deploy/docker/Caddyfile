@@ -1,0 +1,5 @@
+# Terminates HTTPS for VIBE_DOMAIN and forwards to the dashboard, preserving Host for its origin checks.
+{$VIBE_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy dashboard:8080
+}

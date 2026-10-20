@@ -70,9 +70,12 @@ export async function createApp({
   pool,
   webRoot,
   ready = () => true,
-  password = process.env.VIBE_APP_PASSWORD,
-  publicUrl = process.env.VIBE_PUBLIC_URL,
-  trustedProxy = process.env.VIBE_TRUSTED_PROXY?.split(',').map((value) => value.trim()),
+  // Blank settings mean unset; compose and env files pass empty strings for omitted values.
+  password = process.env.VIBE_APP_PASSWORD?.trim() ?? '',
+  publicUrl = process.env.VIBE_PUBLIC_URL?.trim() || undefined,
+  trustedProxy = process.env.VIBE_TRUSTED_PROXY?.split(',')
+    .map((value) => value.trim())
+    .filter(Boolean),
 }: {
   pool: pg.Pool;
   webRoot?: string;
@@ -98,9 +101,12 @@ export async function createApp({
       'Content-Security-Policy',
       `default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; media-src 'self'; frame-src ${canonicalOrigin ?? `http://${host}`}/preview/; frame-ancestors 'none'; base-uri 'none'; form-action 'self'`,
     );
+    // Container and load-balancer probes reach health by address; it reveals only readiness, so it skips the Host check.
+    const probe = request.method === 'GET' && request.url === '/api/health';
     if (
-      !host ||
-      (canonicalOrigin ? host !== new URL(canonicalOrigin).host : !/^(127\.0\.0\.1|localhost):\d+$/.test(host))
+      !probe &&
+      (!host ||
+        (canonicalOrigin ? host !== new URL(canonicalOrigin).host : !/^(127\.0\.0\.1|localhost):\d+$/.test(host)))
     )
       return reply.code(403).send({ error: 'Local access only' });
     if (

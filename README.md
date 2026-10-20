@@ -2,6 +2,8 @@
 
 Vibe bench authors versioned suites, executes configured task and entrant matrices, and grades results anonymously. A Linux dashboard stores immutable inputs and outcomes in PostgreSQL 18. The standalone `vibe-runner` pairs with that dashboard and initiates all execution traffic.
 
+To self-host the dashboard with Docker Compose or the release archive, follow the [deployment guide](docs/deployment.md). The steps below run it from a source checkout.
+
 ## Start the dashboard
 
 Use Linux, Node 24.21.0, and pnpm 11.22.0.
@@ -26,7 +28,7 @@ pnpm start
 
 Set `DATABASE_URL` to use an external PostgreSQL 18 database; `POSTGRES_URL` is accepted as a fallback name. External mode starts no embedded database, creates no `VIBE_LOCAL_ROOT` state, and takes no state-directory lock, so several dashboard processes may share one database. Interactive HTML preview sessions stay with the process that created them, so a load balancer must keep a browser on one process. Startup migrations hold a PostgreSQL advisory lock. Run `pnpm migrate` to apply migrations before starting traffic. Without `DATABASE_URL`, the dashboard owns embedded PostgreSQL under `VIBE_LOCAL_ROOT` as described above.
 
-The dashboard listens on `VIBE_HOST` (default `127.0.0.1`) and `VIBE_PORT` (default: a free port). A non-loopback `VIBE_HOST` requires `VIBE_APP_PASSWORD`; the dashboard refuses to start without it. The Host check blocks DNS rebinding in browsers but not scripted clients, so the password is the access control. Remote browsers also need `VIBE_PUBLIC_URL`. `GET /api/health` returns 200 after the database connection and listener are ready.
+The dashboard listens on `VIBE_HOST` (default `127.0.0.1`) and `VIBE_PORT` (default: a free port). A non-loopback `VIBE_HOST` requires `VIBE_APP_PASSWORD`; the dashboard refuses to start without it. The Host check blocks DNS rebinding in browsers but not scripted clients, so the password is the access control. Remote browsers also need `VIBE_PUBLIC_URL`, as does `VIBE_HOST=::1`, because without it only `127.0.0.1` and `localhost` Host values are accepted. `GET /api/health` returns 200 after the database connection and listener are ready.
 
 Copy `.env.example` to `.env` for dashboard configuration. Set `VIBE_APP_PASSWORD` to require a shared password, or leave it empty for intentional passwordless operation. Dashboard users can manage every runtime and schedule work. Runtime credentials remain required in either mode.
 
@@ -111,4 +113,5 @@ Checks exercise schemas, import boundaries, PostgreSQL, HTTP, subprocesses, Chro
 - [Runner protocol](docs/contracts/runner-protocol.md)
 - [Result viewing](docs/contracts/artifacts-evaluation.md)
 - [Development workflow](docs/agent-workflow.md)
+- [Dashboard deployment](docs/deployment.md)
 - [Release and installation](docs/releases.md)

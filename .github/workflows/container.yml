@@ -1,0 +1,70 @@
+name: container image
+on:
+  pull_request:
+  push:
+    branches: [main]
+  release:
+    types: [published]
+permissions:
+  contents: read
+jobs:
+  smoke:
+    name: container smoke (ubuntu)
+    if: github.event_name != 'release'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the image and test the compose deployment
+        run: sh scripts/smoke-compose.sh
+
+  publish:
+    name: Publish image to GHCR
+    if: github.event_name == 'release'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          fetch-depth: 0
+      - name: Require a release tag on main
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.-]+)?$ ]]
+          git merge-base --is-ancestor "$(git rev-parse "$RELEASE_TAG^{commit}")" origin/main
+      - name: Build the image
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY,,}"
+          echo "IMAGE=$image" >> "$GITHUB_ENV"
+          docker build \
+            --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
+            --label "org.opencontainers.image.version=$RELEASE_TAG" \
+            --label "org.opencontainers.image.revision=$(git rev-parse HEAD)" \
+            -t "$image:$RELEASE_TAG" .
+      - name: Test the exact image with compose
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: VIBE_SMOKE_IMAGE="$IMAGE:$RELEASE_TAG" sh scripts/smoke-compose.sh
+      - name: Push the version tag, and latest for the repository's latest release
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          PRERELEASE: ${{ github.event.release.prerelease }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker push "$IMAGE:$RELEASE_TAG"
+          # A backport published after a newer release must not move latest backwards.
+          # Before the first stable release there is no latest release, and the lookup fails.
+          latest=
+          if [ "$PRERELEASE" != true ]; then latest=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name || true); fi
+          if [ -n "$latest" ] && [ "$latest" = "$RELEASE_TAG" ]; then
+            docker tag "$IMAGE:$RELEASE_TAG" "$IMAGE:latest"
+            docker push "$IMAGE:latest"
+          fi

@@ -1,0 +1,15 @@
+.git
+.github
+node_modules
+dist
+.local
+.artifacts
+.env
+.env.*
+!.env.example
+coverage
+playwright-report
+test-results
+deploy
+docs
+tests

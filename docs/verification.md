@@ -22,11 +22,17 @@ The worker verifies a real SQL connection on its newly allocated port before ann
 | `pnpm build` | Production Vite assets and the bundled dashboard process |
 | `pnpm test:browser` | Real Chromium configured Runs, grading, suite authoring, access, result viewing, and reload |
 | `pnpm build:runtime` | Standalone Linux x64 executable and checksummed release archive |
+| `pnpm build:dashboard` | Self-hosted dashboard archive, installer, and checksums |
+| `sh scripts/smoke-compose.sh` | Container image and compose deployment; needs a Docker daemon |
 | `pnpm test:binary` | Installed CLI, installer failures, and the configured-run matrix through the compiled executable |
 
 `tests/processes.test.ts` launches a process with a real descendant. It checks that the descendant is no longer alive after a timeout, normal parent completion, and owner interruption. Linux uses a process group. A Linux zombie is dead even if its PID remains visible pending reaping. The tests inspect process state instead of inferring termination from stopped output.
 
 `tests/spool.test.ts` races sixteen immutable receipt writes on the real filesystem, rejects conflicting content, and verifies that temporary files are removed. Receipts are linked into place once after fsync; duplicate deliveries compare the existing receipt instead of replacing it.
+
+`tests/dashboard-release.test.ts` packages the dashboard with a fixture web root and checks that the archive holds the bundled server, migrations, systemd unit, and lockfile-pinned production dependencies without development packages, with symlinks only inside the archive. Its installer runs against a fake `curl` for a fork repository. A first install writes `.env` with port 8080 and a state directory outside the installation (mode 600). The installer rejects a state directory inside the installation (including symlinked and `..` spellings), a relative path or one unsafe to quote in `.env`, a corrupted archive, a bad tag, a malformed repository, an occupied foreign directory, a built source checkout (no `VERSION`, or `.git`), and Node other than 24, leaving the installation intact. The installed dashboard starts with no `VIBE_LOCAL_ROOT` in its environment, keeps its embedded database in that state directory, serves the web root, and accepts only the trimmed password. A reinstall keeps `.env` and the database. A `PG_VERSION` file anywhere inside an installation blocks the upgrade instead of deleting the database. A rerun after an interrupted directory swap recovers the previous settings before upgrading. The systemd unit reads the same installed `.env`, with an optional `/etc/vibe-bench/env` override.
+
+`.github/workflows/container.yml` runs `scripts/smoke-compose.sh` on GitHub-hosted Ubuntu for pull requests and `main`. It builds the image and starts PostgreSQL 18 and the dashboard with compose, with optional settings left blank as compose passes them. It then checks container health, password mode, wrong and trimmed-password logins, all migrations, and login after a dashboard restart. On a published release the same script tests the exact image before it is pushed to GHCR. The job is informational; it is not yet a required check.
 
 CI requires `verify (self-hosted Linux)` from `.github/workflows/checks.yml`. This self-hosted Linux job is the only required platform check. A missing, skipped, or cancelled job is not passing evidence. Browser traces from failed jobs are uploaded. Test state, logs, screenshots, and traces stay under ignored `.artifacts/`.
 
