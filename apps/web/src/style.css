@@ -246,12 +246,6 @@ pre {
   flex-direction: column;
   gap: 20px;
 }
-.logout {
-  position: fixed;
-  left: 16px;
-  bottom: 142px;
-  z-index: 20;
-}
 .attempt {
   background: var(--bg-surface);
   border: 1px solid var(--border-default);
@@ -334,6 +328,7 @@ fieldset {
   }
   .app-shell > .vb-side {
     width: 48px;
+    min-width: 48px;
   }
   .app-shell > .vb-side .vb-side-label,
   .app-shell > .vb-side .vb-side-count {

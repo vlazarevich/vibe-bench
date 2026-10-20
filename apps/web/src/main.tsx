@@ -5,7 +5,7 @@ import './design-system/tokens.css';
 import './design-system/components.css';
 import './style.css';
 import { Sidebar, type SidebarItem } from './design-system';
-import { Access } from './access.tsx';
+import { Access, useDashboardAccess } from './access.tsx';
 import { Runtimes } from './runtimes.tsx';
 import { Suites } from './suites.tsx';
 import { BlindGrading } from './blind-grading.tsx';
@@ -18,11 +18,12 @@ const nav: SidebarItem[] = [
   { id: 'results', label: 'Results', icon: 'nav-reports', href: '/?view=results' },
 ];
 function App() {
+  const { logout } = useDashboardAccess();
   const params = new URLSearchParams(location.search),
     view = params.get('view') ?? 'runs';
   const focused = view === 'grading' && (params.has('review') || params.has('shared'));
   const [theme, setTheme] = useState<'light' | 'dark'>(() =>
-    localStorage.getItem('vb-theme') === 'dark' ? 'dark' : 'light',
+    document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light',
   );
   const [collapsed, setCollapsed] = useState(() => params.has('grading') || localStorage.getItem('vb-sidebar') === 'collapsed');
   document.documentElement.dataset.theme = theme;
@@ -32,6 +33,7 @@ function App() {
         <Sidebar
           items={nav}
           currentId={view === 'grading' ? 'runs' : view}
+          footerActions={logout ? [{ id: 'logout', label: 'Log out', icon: 'logout', onClick: logout }] : []}
           theme={theme}
           onThemeChange={(value) => {
             setTheme(value);

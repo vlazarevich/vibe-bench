@@ -1,5 +1,9 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { SessionStatus } from '../../../packages/contracts/src/access.ts';
+import { Button } from './design-system';
+
+const DashboardAccess = createContext<{ logout?: () => void }>({});
+export const useDashboardAccess = () => useContext(DashboardAccess);
 
 export function Access({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<ReturnType<typeof SessionStatus.parse> | null>(null);
@@ -58,32 +62,32 @@ export function Access({ children }: { children: ReactNode }) {
               required
             />
           </label>
-          <button className="vb-btn vb-btn-primary" type="submit">
+          <Button variant="primary" type="submit">
             Sign in
-          </button>
+          </Button>
         </form>
         {error && <p role="alert">{error}</p>}
       </main>
     );
   return (
-    <>
-      {session.passwordRequired && (
-        <button
-          className="vb-btn vb-btn-quiet logout"
-          onClick={() => {
-            void fetch('/api/access/logout', { method: 'POST' })
-              .then((response) => {
-                if (!response.ok) throw new Error('Logout failed');
-                location.assign('/login');
-              })
-              .catch(() => setError('Logout failed. Retry.'));
-          }}
-        >
-          Log out
-        </button>
-      )}
+    <DashboardAccess.Provider
+      value={
+        session.passwordRequired
+          ? {
+              logout: () => {
+                void fetch('/api/access/logout', { method: 'POST' })
+                  .then((response) => {
+                    if (!response.ok) throw new Error('Logout failed');
+                    location.assign('/login');
+                  })
+                  .catch(() => setError('Logout failed. Retry.'));
+              },
+            }
+          : {}
+      }
+    >
       {error && <p role="alert">{error}</p>}
       {children}
-    </>
+    </DashboardAccess.Provider>
   );
 }

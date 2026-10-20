@@ -400,6 +400,28 @@ async function codexModels(
   }
 }
 
+export function runtimeOsLabel(osRelease: string, kernelRelease: string) {
+  const fields = new Map<string, string>();
+  for (const line of osRelease.split(/\r?\n/)) {
+    const match = /^(PRETTY_NAME|NAME|VERSION_ID|BUILD_ID)=(.*)$/.exec(line.trim());
+    if (!match) continue;
+    let value = match[2]!.trim();
+    if (value.startsWith('"') && value.endsWith('"'))
+      value = value.slice(1, -1).replace(/\\(["\\$`])/g, '$1');
+    else if (value.startsWith("'") && value.endsWith("'")) value = value.slice(1, -1);
+    fields.set(match[1]!, value);
+  }
+  const name = fields.get('PRETTY_NAME') || fields.get('NAME');
+  if (!name) return `Linux ${kernelRelease}`.slice(0, 200);
+  const version = fields.get('VERSION_ID') || fields.get('BUILD_ID');
+  const includesVersion =
+    version &&
+    new RegExp(
+      `(^|[^a-zA-Z0-9])${version.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^a-zA-Z0-9])`,
+    ).test(name);
+  return (version && !includesVersion ? `${name} ${version}` : name).slice(0, 200);
+}
+
 export async function discoverRuntime({
   runtimeId,
   observation,
@@ -422,8 +444,8 @@ export async function discoverRuntime({
     machine: {
       hostname: hostname().slice(0, 255),
       os: await readFile('/etc/os-release', 'utf8')
-        .then((text) => /^PRETTY_NAME=(.*)$/m.exec(text)?.[1]?.replace(/^"|"$/g, '') ?? `Linux ${release()}`)
-        .catch(() => `Linux ${release()}`),
+        .then((text) => runtimeOsLabel(text, release()))
+        .catch(() => runtimeOsLabel('', release())),
       platform: platform(),
       architecture: arch(),
       logicalCpus: availableParallelism(),

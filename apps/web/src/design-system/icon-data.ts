@@ -1,5 +1,7 @@
-// Solar line icons (CC BY 4.0, 480 Design), three plain system glyphs (close, plus, check) and the official app marks. Generated: do not edit by hand.
+// Supplied Solar line icons (CC BY 4.0, 480 Design), plain system glyphs and official app marks.
 export const ICONS: Record<string, string> = {
+  logout:
+    '<path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 5H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h3m2-7h10m-4-4 4 4-4 4"/>',
   reset:
     '<path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="m18.364 8.05l-.707-.707a8 8 0 1 0 2.28 4.658m-1.573-3.95h-4.243m4.243 0V3.807"/>',
   'expand-all':
