@@ -8,11 +8,7 @@ If an authorized change alters an engineering contract, update that contract and
 
 ## Isolate the work
 
-The initial architecture setup is the only exception allowing edits on main. Later changes use both a separate `codex/<description>` branch and a separate worktree.
-
-After the initial commit exists on origin/main, create a worktree from the latest main. Inspect existing worktrees before creating or reusing one. Never overwrite another agent's work.
-
-Give each writer its own database, ports, local state, and artifact directory. Coordinate changes to shared contracts and migrations before dependent work.
+The initial architecture setup is the only exception allowing edits on main. Later changes use a separate `feat/<description>` or `fix/<description>` or similar branch.
 
 ## Implement and open a PR
 
@@ -37,8 +33,6 @@ gh pr merge <number> --squash --match-head-commit <reviewed-head-sha> --delete-b
 ```
 
 Verify that the PR merged and record the merge commit. Refresh main before dependent work. A pending auto-merge request is not a completed merge.
-
-Inspect worktree status and merged ancestry before cleanup. Preserve uncommitted work and use the managing tool for managed worktrees.
 
 ## Handle blocks honestly
 

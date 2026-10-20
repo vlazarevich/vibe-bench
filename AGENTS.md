@@ -12,9 +12,7 @@ The repository implements a local text comparison loop. Follow the working comma
 
 ## Workflow
 
-The initial architecture setup is the sole exception allowing work on main. Every later change requires both a separate `codex/<description>` branch and a separate worktree, followed by a PR. The user authorizes automatic merging after required checks and independent review pass. Follow [agent-workflow.md](docs/agent-workflow.md). A current instruction to hold commits or merges takes precedence.
-
-Give parallel writers separate worktrees, databases, ports, and local state directories. One agent owns a PR. Coordinate shared contract and migration changes before dependent work.
+The initial architecture setup is the sole exception allowing work on main. Every later change requires a separate `feat/<description>` or `fix/<description>` or similar branch, followed by a PR. The user authorizes automatic merging after required checks and independent review pass. Follow [agent-workflow.md](docs/agent-workflow.md). A current instruction to hold commits or merges takes precedence.
 
 ## Engineering rules
 

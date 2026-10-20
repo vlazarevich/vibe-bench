@@ -15,31 +15,31 @@ flowchart LR
 
 ## Implemented ownership
 
-| Path | Responsibility |
-| --- | --- |
-| `packages/contracts/src/suites.ts` | Suite content, draft readiness, ratings, authoring schemas |
-| `packages/contracts/src/access.ts` | Pairing enrollment, credentials, private configuration |
-| `packages/contracts/src/runtime.ts` | Tool discovery observations and receipts without capacity |
-| `packages/contracts/src/configured-runs.ts`, `work.ts`, `task-io.ts` | Immutable run inputs, lifecycle, assignments, outcomes, repository declarations |
-| `packages/contracts/src/blind-grading.ts` | Anonymous navigation, result cards, criterion judgments |
-| `apps/server/src/features/suites.ts` | Immutable execution content, revision replacement, exact-base saves |
-| `apps/server/src/features/access.ts` | Browser sessions, single-use enrollment, revocation, abandonment |
-| `apps/server/src/features/runtimes.ts` | Immutable observations, sequence ordering, stable receipts |
-| `apps/server/src/features/configured-runs.ts` | Matrix creation, claims, preparation, outcomes, artifacts |
-| `apps/server/src/features/blind-grading.ts` | Immutable mappings, cell judgments, scoped authority |
-| `apps/server/src/app.ts`, `worker-routes.ts` | HTTP validation, dashboard and runtime authority, cookies, Origin policy |
-| `apps/server/src/db.ts` | Pool and ordered transactional migrations |
-| `apps/runner/src/cli.ts`, `configuration.ts` | Commander interface, pairing, cached status, private state |
-| `apps/runner/src/onboarding.ts` | Shared executable resolution, bounded discovery, acknowledged capabilities |
-| `apps/runner/src/execution.ts` | Sequential configured execution and durable report recovery |
-| `apps/runner/src/materials.ts`, `adapters.ts`, `artifacts.ts`, `browser-scenario.ts` | Attempt checkout, harness protocols, collection, browser recording |
-| `apps/runner/src/spool.ts`, `processes/` | Flushed atomic writes, bounded subprocess lifetime and Linux process groups |
-| `apps/web/src/` | Runs, suite editor, runtime pairing, grading, result viewers, Results pivots |
-| `apps/web/src/design-system/` | Supplied design tokens, reusable components, local fonts and icon assets |
-| `packages/contracts/src/dashboard.ts`, `model-catalog.ts`, `results.ts` | Dashboard projections, catalog metadata and aggregation inputs |
-| `apps/server/src/features/results.ts`, `model-catalog.ts` | Submitted-grade queries and cached Artificial Analysis enrichment |
-| `scripts/local.ts`, `local-lock.ts` | Per-worktree dashboard lifecycle and state lock |
-| `scripts/local-database.ts`, `database-worker.ts` | Database owner lifetime and shutdown |
+| Path                                                                                 | Responsibility                                                                  |
+| ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------- |
+| `packages/contracts/src/suites.ts`                                                   | Suite content, draft readiness, ratings, authoring schemas                      |
+| `packages/contracts/src/access.ts`                                                   | Pairing enrollment, credentials, private configuration                          |
+| `packages/contracts/src/runtime.ts`                                                  | Tool discovery observations and receipts without capacity                       |
+| `packages/contracts/src/configured-runs.ts`, `work.ts`, `task-io.ts`                 | Immutable run inputs, lifecycle, assignments, outcomes, repository declarations |
+| `packages/contracts/src/blind-grading.ts`                                            | Anonymous navigation, result cards, criterion judgments                         |
+| `apps/server/src/features/suites.ts`                                                 | Immutable execution content, revision replacement, exact-base saves             |
+| `apps/server/src/features/access.ts`                                                 | Browser sessions, single-use enrollment, revocation, abandonment                |
+| `apps/server/src/features/runtimes.ts`                                               | Immutable observations, sequence ordering, stable receipts                      |
+| `apps/server/src/features/configured-runs.ts`                                        | Matrix creation, claims, preparation, outcomes, artifacts                       |
+| `apps/server/src/features/blind-grading.ts`                                          | Immutable mappings, cell judgments, scoped authority                            |
+| `apps/server/src/app.ts`, `worker-routes.ts`                                         | HTTP validation, dashboard and runtime authority, cookies, Origin policy        |
+| `apps/server/src/db.ts`                                                              | Pool and ordered transactional migrations                                       |
+| `apps/runner/src/cli.ts`, `configuration.ts`                                         | Commander interface, pairing, cached status, private state                      |
+| `apps/runner/src/onboarding.ts`                                                      | Shared executable resolution, bounded discovery, acknowledged capabilities      |
+| `apps/runner/src/execution.ts`                                                       | Sequential configured execution and durable report recovery                     |
+| `apps/runner/src/materials.ts`, `adapters.ts`, `artifacts.ts`, `browser-scenario.ts` | Attempt checkout, harness protocols, collection, browser recording              |
+| `apps/runner/src/spool.ts`, `processes/`                                             | Flushed atomic writes, bounded subprocess lifetime and Linux process groups     |
+| `apps/web/src/`                                                                      | Runs, suite editor, runtime pairing, grading, result viewers, Results pivots    |
+| `apps/web/src/design-system/`                                                        | Supplied design tokens, reusable components, local fonts and icon assets        |
+| `packages/contracts/src/dashboard.ts`, `model-catalog.ts`, `results.ts`              | Dashboard projections, catalog metadata and aggregation inputs                  |
+| `apps/server/src/features/results.ts`, `model-catalog.ts`                            | Submitted-grade queries and cached Artificial Analysis enrichment               |
+| `scripts/local.ts`, `local-lock.ts`                                                  | Dashboard lifecycle and state lock                                              |
+| `scripts/local-database.ts`, `database-worker.ts`                                    | Database owner lifetime and shutdown                                            |
 
 Feature queries stay with the owner of their invariants. Schemas validate external boundaries and derive application types. Framework objects and SQL rows stay in their modules. Browser code imports explicit management or anonymous schemas. `pnpm boundaries` enforces application ownership.
 
@@ -72,6 +72,7 @@ The optional worker-only listener shares authority and database lifecycle, rejec
 `packages/contracts/src/artifact-viewer.ts` owns strict supplied-URL result presentations and bounded preview inputs. `apps/server/src/features/artifact-viewer.ts` projects primary and declared result files, validates text bytes, and serializes isolated media decoding. Storage reads remain in `configured-runs.ts`. `artifact-viewer-routes.ts` owns management route validation.
 
 `html-preview.ts` owns two bounded interactive sessions and exact manifest asset serving. `isolated-chromium.ts` owns Bubblewrap runtime mounts, network isolation, process deadlines, and teardown. `apps/web/src/result-viewer.tsx` renders the same presentation for any authorized caller. Run management loads a result only when its viewer is expanded. Grading and blind session authority belong to their existing owners.
+
 ## Configured-run grading
 
 The grading feature reads immutable configured-run inputs and outcomes. It stores one immutable session mapping and one mutable row per completed card and assigned criterion. Each cell has its own version and transaction lock. Session authority uses its own grading cookie. Runs opens the grading overview; shared invitations bypass dashboard management. Active grading mounts only scoped task/result reads.
