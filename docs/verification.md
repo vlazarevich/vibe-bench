@@ -6,6 +6,8 @@ The application, database, and execution runtime require Linux verification.
 
 ## Checks
 
+`tests/vercel.test.ts` runs the packaged Vercel handler outside the repository using real HTTP and PostgreSQL: concurrent cold starts, shared sessions and persistence across instances, a 6 MiB response, Host/Origin protection and startup failure recovery. `pnpm build:vercel` emits the deployment tree without provider credentials. This verifies the package locally, not a live Vercel/Neon installation. See the [hosted verification checklist](vercel.md#build-and-verification).
+
 `tests/production-server.test.ts` builds the dashboard bundle into a temporary directory and runs it from outside the repository. Two bundled processes start concurrently against one external PostgreSQL database, serve health and web assets, apply migrations once, create no local state, and exit cleanly without stopping that database. The bundled migration command is idempotent and refuses to run without `DATABASE_URL`. Embedded mode creates its state, rejects a second owner, and stops PostgreSQL on shutdown. Terminating the dashboard's idle database connections, as a restart or a hosted provider's idle timeout does, leaves the process running and healthy.
 
 The persistence test reopens the same database three times to exercise shutdown completion. `tests/database-lifecycle.test.ts` forcibly terminates the owning Node process, verifies that the real postmaster and workers exit and the TCP port closes, then reopens the database and checks saved data. The app startup test interrupts the dashboard after observing a real PostgreSQL process. Test cleanup uses the pinned `pg_ctl` against only its own temporary database if an assertion fails.
@@ -22,6 +24,7 @@ The worker verifies a real SQL connection on its newly allocated port before ann
 | `pnpm build` | Production Vite assets and the bundled dashboard process |
 | `pnpm test:browser` | Real Chromium configured Runs, grading, suite authoring, access, result viewing, and reload |
 | `pnpm build:runtime` | Standalone Linux x64 executable and checksummed release archive |
+| `pnpm build:vercel` | Streaming Node function with bundled migrations and web assets for Vercel |
 | `pnpm build:dashboard` | Self-hosted dashboard archive, installer, and checksums |
 | `sh scripts/smoke-compose.sh` | Container image and compose deployment; needs a Docker daemon |
 | `pnpm test:binary` | Installed CLI, installer failures, and the configured-run matrix through the compiled executable |

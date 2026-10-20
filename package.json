@@ -19,7 +19,8 @@
     "build:runtime": "node scripts/build-runtime.mjs",
     "build:dashboard": "node scripts/build-dashboard.mjs",
     "test:binary": "node --test tests/runtime-binary.test.mjs && VIBE_RUNTIME_BINARY=\"$PWD/dist/runtime/vibe-runner\" pnpm exec vitest run tests/configured-loop.test.ts",
-    "runner": "node --import tsx apps/runner/src/cli-main.ts"
+    "runner": "node --import tsx apps/runner/src/cli-main.ts",
+    "build:vercel": "vite build --config apps/web/vite.config.ts && node scripts/build-vercel.mjs"
   },
   "dependencies": {
     "@fastify/cookie": "11.0.2",

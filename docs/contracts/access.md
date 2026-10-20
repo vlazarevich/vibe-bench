@@ -10,6 +10,8 @@ Opaque 256-bit session tokens live in HttpOnly, SameSite Strict cookies. Postgre
 
 Unsafe browser methods require the canonical Origin. Local defaults accept loopback Host values. Hosted configuration pins `VIBE_PUBLIC_URL` and its Host. `GET /api/health` alone answers under any Host so container and load-balancer probes can reach it by address; it reveals only readiness. `VIBE_TRUSTED_PROXY` lists trusted proxy addresses for client IP attribution. Untrusted forwarding headers grant no authority. The login boundary admits at most ten attempts per source and 100 total in each 15-minute window. Expired throttle rows are removed on the next attempt.
 
+The Vercel entry point requires a nonempty password and external database. An explicit `VIBE_PUBLIC_URL` wins; otherwise production uses the Vercel project production domain (deployment domain fallback) and previews use the deployment domain. These system values pin the HTTPS origin before serving requests. Forwarding headers cannot select another origin.
+
 ## Runtime authority
 
 The server owns a stable installation UUID and runtime UUIDs. **Connect runtime** issues a single-use 15-minute enrollment token. **Replace credential** explicitly targets an existing runtime. The copyable base64url token is a secret, not encrypted content.
