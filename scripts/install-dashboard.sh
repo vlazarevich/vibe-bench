@@ -5,7 +5,7 @@ install_dashboard() {
   fail() { printf '%s\n' "$*" >&2; exit 1; }
   [ "$(uname -s)" = Linux ] && [ "$(uname -m)" = x86_64 ] || fail 'Only Linux x64 is supported.'
   command -v getconf >/dev/null 2>&1 && getconf GNU_LIBC_VERSION >/dev/null 2>&1 || fail 'The dashboard requires glibc. musl is not supported.'
-  for tool in curl tar sha256sum mktemp awk; do command -v "$tool" >/dev/null 2>&1 || fail "Required command is missing: $tool"; done
+  for tool in curl tar sha256sum mktemp awk realpath find head; do command -v "$tool" >/dev/null 2>&1 || fail "Required command is missing: $tool"; done
   command -v node >/dev/null 2>&1 || fail 'Node 24 is required. Install it, then run the installer again.'
   [ "$(node -p 'process.versions.node.split(".")[0]')" = 24 ] || fail "Node 24 is required; found $(node --version)."
   version=${VIBE_DASHBOARD_VERSION:-}
@@ -29,11 +29,19 @@ install_dashboard() {
   parent=$(cd "$parent" && pwd -P)
   install_dir="$parent/$(basename "$install_dir")"
   case "$state_dir" in /*) ;; *) fail 'VIBE_DASHBOARD_STATE_DIR must be an absolute path.';; esac
-  case "$state_dir/" in "$install_dir"/*) fail 'The state directory must be outside the installation, which upgrades replace.';; esac
+  case "$state_dir" in *'"'* | *'\'* | *'
+'*) fail 'VIBE_DASHBOARD_STATE_DIR must not contain quotes, backslashes, or newlines.';; esac
+  # Compare canonical paths so a symlinked spelling cannot place state inside the installation.
+  canonical_state=$(realpath -m -- "$state_dir")
+  case "$canonical_state/" in "$install_dir"/*) fail 'The state directory must be outside the installation, which upgrades replace.';; esac
+  # Recover from an upgrade interrupted between its two moves: the previous installation is complete.
+  if [ ! -e "$install_dir" ] && [ -d "$install_dir.previous" ]; then mv "$install_dir.previous" "$install_dir"; fi
   if [ -e "$install_dir" ]; then
     # Only a previous release install is replaced; a source checkout or other directory is left alone.
     [ -f "$install_dir/VERSION" ] && [ -f "$install_dir/dist/server/serve.mjs" ] && [ ! -e "$install_dir/.git" ] || fail "$install_dir exists and is not a Vibe bench dashboard installation."
-    [ ! -e "$install_dir/.local" ] || fail "Database state was found inside the installation at $install_dir/.local. Stop the dashboard, move that directory outside the installation, set VIBE_LOCAL_ROOT to it in .env, then run the installer again."
+    # Upgrades replace the whole directory, so any PostgreSQL data inside it would be deleted.
+    database=$(find "$install_dir" -path "$install_dir/node_modules" -prune -o -name PG_VERSION -print | head -n 1)
+    [ -z "$database" ] || fail "Database state was found inside the installation at $(dirname "$database"). Stop the dashboard, move its state directory outside the installation, set VIBE_LOCAL_ROOT to it in .env, then run the installer again."
   fi
   temporary=$(mktemp -d "$parent/.vibe-bench-dashboard.XXXXXXXX")
   trap 'rm -rf "$temporary"' EXIT HUP INT TERM
@@ -67,13 +75,19 @@ install_dashboard() {
     upgraded=1
   fi
   if ! mv "$staged" "$install_dir"; then
-    if [ -n "$upgraded" ]; then mv "$install_dir.previous" "$install_dir"; fi
+    if [ -n "$upgraded" ]; then
+      mv "$install_dir.previous" "$install_dir" || fail "Installation failed and the previous version remains at $install_dir.previous. Move it back to $install_dir."
+    fi
     fail 'Installation failed; the previous version is unchanged.'
   fi
   rm -rf "$install_dir.previous"
   printf 'Installed dashboard %s to %s\n' "$version" "$install_dir"
   if [ -n "$upgraded" ]; then
     printf 'Restart the running dashboard or service to use the new version.\n'
+  elif [ "$(id -u)" = 0 ]; then
+    # Embedded PostgreSQL refuses to run as root, so a root install runs as the systemd service.
+    printf 'Set VIBE_APP_PASSWORD in %s/.env, which the service reads, then follow docs/deployment.md to install\n' "$install_dir"
+    printf '%s/deploy/systemd/vibe-bench.service and start it.\n' "$install_dir"
   else
     printf 'Edit %s/.env (set VIBE_APP_PASSWORD before exposing it), then start it with:\n  cd %s && node --env-file-if-exists=.env dist/server/serve.mjs\n' "$install_dir" "$install_dir"
     printf 'For a system service, see %s/deploy/systemd/vibe-bench.service.\n' "$install_dir"

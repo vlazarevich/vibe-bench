@@ -61,8 +61,10 @@ jobs:
           printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
           docker push "$IMAGE:$RELEASE_TAG"
           # A backport published after a newer release must not move latest backwards.
-          latest=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)
-          if [ "$PRERELEASE" != true ] && [ "$latest" = "$RELEASE_TAG" ]; then
+          # Before the first stable release there is no latest release, and the lookup fails.
+          latest=
+          if [ "$PRERELEASE" != true ]; then latest=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name || true); fi
+          if [ -n "$latest" ] && [ "$latest" = "$RELEASE_TAG" ]; then
             docker tag "$IMAGE:$RELEASE_TAG" "$IMAGE:latest"
             docker push "$IMAGE:latest"
           fi

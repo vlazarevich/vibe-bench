@@ -54,7 +54,7 @@ curl --proto '=https' --tlsv1.2 -fsSL https://github.com/vlazarevich/vibe-bench/
 
 The installer verifies the release checksum and installs to `~/.local/share/vibe-bench`, or `/opt/vibe-bench` as root. `VIBE_DASHBOARD_VERSION` pins a version, `VIBE_DASHBOARD_INSTALL_DIR` changes the location, and `VIBE_REPOSITORY=<owner>/<repo>` installs from a fork's releases.
 
-A first install writes `.env` beside the program with port 8080 and `VIBE_LOCAL_ROOT` pointing outside the installation: `~/.local/state/vibe-bench`, or `/var/lib/vibe-bench` as root, or `VIBE_DASHBOARD_STATE_DIR`. Reinstalling replaces the program, keeps `.env`, and refuses to proceed if database state is found inside the installation. It replaces only a previous release installation, never a source checkout. Restart the dashboard after an upgrade.
+A first install writes `.env` beside the program with port 8080 and `VIBE_LOCAL_ROOT` pointing outside the installation: `~/.local/state/vibe-bench`, or `/var/lib/vibe-bench` as root, or `VIBE_DASHBOARD_STATE_DIR`. Reinstalling replaces the program and keeps `.env`; `VIBE_DASHBOARD_STATE_DIR` then has no effect, because `VIBE_LOCAL_ROOT` in the kept `.env` decides. The installer refuses to proceed if any PostgreSQL data is found inside the installation, and replaces only a previous release installation, never a source checkout. An upgrade interrupted midway is completed or rolled back on the next run. Restart the dashboard after an upgrade.
 
 Run it directly:
 
@@ -64,17 +64,16 @@ cd ~/.local/share/vibe-bench
 node --env-file-if-exists=.env dist/server/serve.mjs
 ```
 
-Or as a systemd service from `/opt/vibe-bench`:
+Or, installed as root to `/opt/vibe-bench`, as a systemd service. Embedded PostgreSQL refuses to run as root, so a root install runs only this way:
 
 ```sh
 sudo useradd --system --home /var/lib/vibe-bench --shell /usr/sbin/nologin vibe-bench
-sudo install -d -m 0750 /etc/vibe-bench
-sudo cp /opt/vibe-bench/.env.example /etc/vibe-bench/env    # edit it; keep it readable only by root
+sudoedit /opt/vibe-bench/.env    # set VIBE_APP_PASSWORD, VIBE_PUBLIC_URL, and DATABASE_URL if external
 sudo cp /opt/vibe-bench/deploy/systemd/vibe-bench.service /etc/systemd/system/
 sudo systemctl daemon-reload && sudo systemctl enable --now vibe-bench
 ```
 
-The unit listens on `127.0.0.1:8080`, keeps embedded database state in `/var/lib/vibe-bench`, and expects `node` on the system `PATH`; settings in `/etc/vibe-bench/env` override those defaults. Put a reverse proxy such as Caddy or nginx in front for HTTPS. After an upgrade, run `sudo systemctl restart vibe-bench`.
+The service reads `/opt/vibe-bench/.env`, the same file the installer created and keeps across upgrades, and then `/etc/vibe-bench/env` if that exists. It listens on `127.0.0.1:8080`, keeps embedded database state in `/var/lib/vibe-bench`, and expects `node` on the system `PATH`. Put a reverse proxy such as Caddy or nginx in front for HTTPS. After an upgrade, run `sudo systemctl restart vibe-bench`.
 
 ## Settings
 

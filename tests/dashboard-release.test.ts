@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, test } from 'vitest';
 import { execFileSync, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { lstat, mkdir, mkdtemp, readFile, readdir, readlink, rm, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, mkdtemp, readFile, readdir, readlink, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { setTimeout } from 'node:timers/promises';
 import { unusedPort } from '../scripts/local-database.ts';
@@ -77,6 +77,12 @@ esac
   const install = (overrides: Record<string, string> = {}) => execFileSync('/bin/sh', [], { input: source, env: { ...env, ...overrides }, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
   expect(() => install({ VIBE_DASHBOARD_STATE_DIR: join(installed, 'data') })).toThrow(/outside the installation/);
   expect(() => install({ VIBE_DASHBOARD_STATE_DIR: 'relative' })).toThrow(/absolute path/);
+  expect(() => install({ VIBE_DASHBOARD_STATE_DIR: join(root, 'quoted"state') })).toThrow(/must not contain quotes/);
+  // A symlinked spelling of a path inside the installation is still inside it.
+  await mkdir(dirname(installed), { recursive: true });
+  await symlink(dirname(installed), join(root, 'alias'));
+  expect(() => install({ VIBE_DASHBOARD_STATE_DIR: join(root, 'alias', 'vibe-bench', 'data') })).toThrow(/outside the installation/);
+  expect(() => install({ VIBE_DASHBOARD_STATE_DIR: join(root, 'alias') + '/missing/../vibe-bench/data' })).toThrow(/outside the installation/);
   expect(install()).toContain(`Installed dashboard ${version}`);
   // A first install points embedded state outside the installation, with a fixed port.
   const created = await readFile(join(installed, '.env'), 'utf8');
@@ -140,8 +146,17 @@ esac
   expect(await readFile(join(installed, '.env'), 'utf8')).toContain('kept secret');
   await lstat(join(state, 'postgres', 'PG_VERSION'));
   expect(await readdir(dirname(installed))).toEqual(['vibe-bench']);
-  // State left inside an installation by an earlier manual setup blocks the upgrade instead of being deleted.
-  await mkdir(join(installed, '.local', 'postgres'), { recursive: true });
-  expect(() => install()).toThrow(/Database state was found inside the installation/);
-  await lstat(join(installed, '.local', 'postgres'));
+  // An upgrade interrupted between its two moves is completed from the intact previous installation.
+  await rename(installed, `${installed}.previous`);
+  expect(install()).toContain('Restart the running dashboard');
+  expect(await readFile(join(installed, '.env'), 'utf8')).toContain('kept secret');
+  expect(await readdir(dirname(installed))).toEqual(['vibe-bench']);
+  // PostgreSQL data anywhere inside an installation, from any VIBE_LOCAL_ROOT, blocks the upgrade instead of being deleted.
+  for (const inside of ['.local/postgres', 'data/db/postgres']) {
+    await mkdir(join(installed, inside), { recursive: true });
+    await writeFile(join(installed, inside, 'PG_VERSION'), '18\n');
+    expect(() => install()).toThrow(/Database state was found inside the installation/);
+    await lstat(join(installed, inside, 'PG_VERSION'));
+    await rm(join(installed, inside.split('/')[0] ?? ''), { recursive: true });
+  }
 }, 240_000);

@@ -1,5 +1,5 @@
 # Vibe bench dashboard from the release archive. Install the archive to /opt/vibe-bench,
-# create the vibe-bench user, put settings in /etc/vibe-bench/env, then:
+# create the vibe-bench user, put settings in /opt/vibe-bench/.env, then:
 #   sudo cp /opt/vibe-bench/deploy/systemd/vibe-bench.service /etc/systemd/system/
 #   sudo systemctl daemon-reload && sudo systemctl enable --now vibe-bench
 [Unit]
@@ -16,7 +16,9 @@ WorkingDirectory=/opt/vibe-bench
 # PostgreSQL state when DATABASE_URL is unset.
 Environment=VIBE_PORT=8080
 Environment=VIBE_LOCAL_ROOT=/var/lib/vibe-bench
-EnvironmentFile=/etc/vibe-bench/env
+# The installer's .env holds the settings; /etc/vibe-bench/env, if present, overrides them.
+EnvironmentFile=/opt/vibe-bench/.env
+EnvironmentFile=-/etc/vibe-bench/env
 ExecStart=/usr/bin/env node /opt/vibe-bench/dist/server/serve.mjs
 StateDirectory=vibe-bench
 StateDirectoryMode=0700

@@ -22,7 +22,7 @@ Use this procedure to publish a version on GitHub. A release contains the Linux 
 
 5. Open **Actions → runtime release** on GitHub. Wait for both jobs to pass.
 6. Open **Releases** and inspect the draft. Check the generated notes and the eight attached assets.
-7. Publish the draft when you are ready to make that version installable.
+7. Publish the draft when you are ready to make that version installable. When publishing a backport for an older line, untick **Set as the latest release**; GitHub ticks it by default, and both the release page and the image's `latest` tag follow it.
 8. Open **Actions → container image** and wait for **Publish image to GHCR**. It builds the image from the tag, runs the compose smoke test on that exact image, then pushes `ghcr.io/<owner>/<repo>:<tag>`, and `:latest` when it is the repository's latest stable release, so publishing a backport never moves `latest` backwards.
 9. For the first image only, open the package settings on GitHub and set its visibility to public, so `docker pull` works without logging in.
 

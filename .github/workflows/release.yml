@@ -48,9 +48,10 @@ jobs:
           mkdir release
           cp dist/runtime/vibe-runner-*-linux-x64.tar.gz dist/runtime/install-runtime.sh release/
           cp dist/dashboard/vibe-bench-dashboard-*-linux-x64.tar.gz dist/dashboard/install-dashboard.sh release/
-          # The release's compose file defaults to its own image version instead of latest.
-          sed "s/\${VIBE_VERSION:-latest}/\${VIBE_VERSION:-$RELEASE_TAG}/" deploy/docker/compose.yml > release/compose.yml
+          # The release's compose file defaults to its own image and has no source build to fall back on.
+          sed -e "s/\${VIBE_VERSION:-latest}/\${VIBE_VERSION:-$RELEASE_TAG}/" -e '/^    build:$/,/^      context: \.\.\/\.\.$/d' deploy/docker/compose.yml > release/compose.yml
           grep -qF "\${VIBE_VERSION:-$RELEASE_TAG}" release/compose.yml
+          ! grep -q 'build:' release/compose.yml
           cp deploy/docker/Caddyfile release/Caddyfile
           cp deploy/docker/.env.example release/compose.env.example
           cat dist/runtime/SHA256SUMS dist/dashboard/SHA256SUMS > release/SHA256SUMS
