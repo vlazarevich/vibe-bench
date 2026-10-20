@@ -86,12 +86,12 @@ test('HTML preview grants serve only the granted bundle, without cookies, under 
   const policy = entry.headers.get('content-security-policy') ?? '';
   for (const directive of ['sandbox allow-scripts allow-forms', `script-src ${bundle} `, "connect-src 'none'", "form-action 'none'", "frame-src 'none'", `frame-ancestors ${url}`]) expect(policy).toContain(directive);
   expect(await entry.text()).toBe(interactiveHtml);
-  for (const asset of ['assets/style.css?v=1', 'assets/%C3%BC%20wide.css', 'assets/vendor+chunk@1,a=b.css', 'assets/vendor%2Bchunk%401%2Ca%3Db.css', 'assets/probe.js', 'assets/picture.png', 'extra.txt']) {
+  for (const asset of ['assets/style.css?v=1', 'assets/%C3%BC%20wide.css', 'assets/vendor+chunk@1,a=b.css', 'assets/vendor%2Bchunk%401%2Ca%3Db.css', 'page:2.css', 'page%3A2.css', './page:2.css', 'assets/probe.js', 'assets/picture.png', 'extra.txt']) {
     const response = await fetch(bundle + asset);
     expect(response.status).toBe(200);
     expect(response.headers.get('content-security-policy')).toBe(policy);
   }
-  for (const missing of ['diagnostics/log.html', 'assets/missing.js', '..%2f..%2fapi%2fhealth', 'ASSETS/probe.js']) expect((await fetch(bundle + missing)).status).toBe(404);
+  for (const missing of ['diagnostics/log.html', 'assets/missing.js', '..%2f..%2fapi%2fhealth', 'ASSETS/probe.js', 'zz:2.css']) expect((await fetch(bundle + missing)).status).toBe(404);
   expect((await fetch(`${url}/preview/${'A'.repeat(43)}/index.html`)).status).toBe(404);
   expect((await fetch(bundle + 'assets/%E0%A4%A.css')).status).toBe(400);
   expect((await fetch(`${url}/preview/short/index.html`)).status).not.toBe(200);

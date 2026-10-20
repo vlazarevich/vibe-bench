@@ -105,6 +105,8 @@ test('concurrent editor retains local changes until explicit history recovery', 
   await page.getByRole('button', { name: 'New suite', exact: true }).click();
   await page.getByLabel('Suite title').fill('Conflict draft');
   await saved(page, 'Create suite');
+  // The editor records the suite in the URL after refreshing the list, which trails the save status.
+  await expect(page).toHaveURL(/[?&]suite=[0-9a-f-]{36}/);
   const second = await context.newPage();
   await second.goto(page.url());
   await expect(second.getByLabel('Suite title')).toHaveValue('Conflict draft');

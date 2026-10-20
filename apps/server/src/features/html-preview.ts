@@ -16,7 +16,8 @@ const encodedPath = (name: string) => name.split('/').map(encodeURIComponent).jo
  */
 function pathKey(path: string) {
   try {
-    return new URL(path, 'https://preview.invalid/').pathname.split('/').map(decodeURIComponent).join('/');
+    // `./` keeps a first segment such as `page:2.html` relative instead of parsing it as a URL scheme.
+    return new URL(`./${path}`, 'https://preview.invalid/').pathname.split('/').map(decodeURIComponent).join('/');
   } catch {
     return null;
   }
