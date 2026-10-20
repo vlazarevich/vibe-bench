@@ -70,7 +70,7 @@ test('protected dashboard login, rich result access, enrollment and revocation w
     const blocked = await fetch(url + '/api/worker/claims', {
       method: 'POST',
       headers: { authorization: `Bearer ${receipt.credentialId}.${secret}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ protocol: 1, runtimeId: receipt.runtimeId, requestId: randomUUID() }),
+      body: JSON.stringify({ protocol: 2, runtimeId: receipt.runtimeId, requestId: randomUUID() }),
     });
     expect(blocked.status).toBe(401);
     const cookies = await context.cookies();

@@ -198,12 +198,12 @@ test('run management shows terminal reasons and downloads files without executin
     await (
       await request.post('/api/worker/claims', {
         headers: { authorization: runtimeCredentials.get(runtimeId) ?? '' },
-        data: { protocol: 1, runtimeId, requestId: randomUUID() },
+        data: { protocol: 2, runtimeId, requestId: randomUUID() },
       })
     ).json(),
   );
   if (claim.kind !== 'assigned') throw new Error('Expected fixture assignment');
-  const identity = { protocol: 1, runtimeId, assignmentId: claim.assignmentId, runId: claim.runId };
+  const identity = { protocol: 2, runtimeId, assignmentId: claim.assignmentId, runId: claim.runId };
   expect(
     (
       await request.post('/api/worker/preparations', {
@@ -252,6 +252,21 @@ test('run management shows terminal reasons and downloads files without executin
               reason: 'Time limit exceeded. Increase the time limit and create a new run.',
               artifacts: [],
             };
+    if (index === 0)
+      expect(
+        (
+          await request.post('/api/worker/artifact-chunks', {
+            headers: { authorization: runtimeCredentials.get(runtimeId) ?? '' },
+            data: {
+              ...identity,
+              attemptId: attempt.attemptId,
+              artifactId: artifact.id,
+              offset: 0,
+              base64: artifactBytes.toString('base64'),
+            },
+          })
+        ).ok(),
+      ).toBeTruthy();
     const response = await request.post('/api/worker/attempts', {
       headers: { authorization: runtimeCredentials.get(runtimeId) ?? '' },
       data: {
@@ -260,7 +275,6 @@ test('run management shows terminal reasons and downloads files without executin
         kind: 'terminal',
         attemptId: attempt.attemptId,
         outcome,
-        artifacts: index === 0 ? [{ ...artifact, base64: artifactBytes.toString('base64') }] : [],
         observed: { executableVersion: null, model: null },
       },
     });

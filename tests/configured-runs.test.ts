@@ -11,7 +11,8 @@ import { createSuite, saveSuite } from '../apps/server/src/features/suites.ts';
 import { registerRuntime } from '../apps/server/src/features/runtimes.ts';
 import { RuntimeRegistration, ToolName } from '../packages/contracts/src/runtime.ts';
 import { ConfiguredRunView, CreateConfiguredRun, RunPreview } from '../packages/contracts/src/configured-runs.ts';
-import { AttemptReport, ClaimReceipt, RunAssignment, WORK_BODY_LIMIT } from '../packages/contracts/src/work.ts';
+import { ARTIFACT_CHUNK_BYTES, AttemptReport, ClaimReceipt, RunAssignment, WORK_BODY_LIMIT } from '../packages/contracts/src/work.ts';
+import { artifactChunks, deliverTerminal } from './worker-delivery.ts';
 import { Definition } from '../packages/contracts/src/suites.ts';
 import { contentDigest } from '../packages/contracts/src/canonical.ts';
 import { definition } from './suite-fixtures.ts';
@@ -47,14 +48,14 @@ async function create(input: CreateConfiguredRun) {
   const response = await post('/api/configured-runs', input); expect(response.status, await response.clone().text()).toBe(200); return ConfiguredRunView.parse(await response.json());
 }
 async function claim(runtimeId: string) {
-  const response = await post('/api/worker/claims', { protocol: 1, requestId: randomUUID(), runtimeId }, workerUrl);
+  const response = await post('/api/worker/claims', { protocol: 2, requestId: randomUUID(), runtimeId }, workerUrl);
   expect(response.status, await response.clone().text()).toBe(200); return RunAssignment.parse(await response.json());
 }
-function identity(assignment: RunAssignment) { return { protocol: 1, reportId: randomUUID(), runtimeId: assignment.snapshot.runtimeId, assignmentId: assignment.assignmentId, runId: assignment.runId }; }
+function identity(assignment: RunAssignment) { return { protocol: 2, reportId: randomUUID(), runtimeId: assignment.snapshot.runtimeId, assignmentId: assignment.assignmentId, runId: assignment.runId }; }
 async function prepare(assignment: RunAssignment) { const report = { ...identity(assignment), preparation: { kind: 'none' } }; expect((await post('/api/worker/preparations', report, workerUrl)).status).toBe(200); return report; }
 function terminal(assignment: RunAssignment, ordinal = 0) {
   const attempt = assignment.attempts[ordinal]; if (!attempt) throw new Error('Missing test attempt');
-  return AttemptReport.parse({ ...identity(assignment), kind: 'terminal', attemptId: attempt.attemptId, outcome: { kind: 'completed', result: { kind: 'text' }, summary: 'Saved answer', artifacts: [] }, artifacts: [], observed: { executableVersion: 'fixture', model: null } });
+  return AttemptReport.parse({ ...identity(assignment), kind: 'terminal', attemptId: attempt.attemptId, outcome: { kind: 'completed', result: { kind: 'text' }, summary: 'Saved answer', artifacts: [] }, observed: { executableVersion: 'fixture', model: null } });
 }
 async function start(assignment: RunAssignment, ordinal = 0) {
   const attempt = assignment.attempts[ordinal]; if (!attempt) throw new Error('Missing test attempt');
@@ -83,7 +84,7 @@ test('preview normalizes category/task unions, pins historical content, and atom
 
 test('claim receipts survive duplicate races, idle replay, mismatched runtime, and runtime capacity', async () => {
   const { input } = await setup();
-  const idleRequest = { protocol: 1, runtimeId: input.runtimeId, requestId: randomUUID() };
+  const idleRequest = { protocol: 2, runtimeId: input.runtimeId, requestId: randomUUID() };
   expect(await (await post('/api/worker/claims', idleRequest, workerUrl)).json()).toEqual({ kind: 'idle', requestId: idleRequest.requestId });
   const first = await create(input); await create({ ...input, requestId: randomUUID() });
   expect(await (await post('/api/worker/claims', idleRequest, workerUrl)).json()).toEqual({ kind: 'idle', requestId: idleRequest.requestId });
@@ -137,10 +138,18 @@ test('server persists actual artifact bytes, validates metadata/digests/results,
   const { input } = await setup(value, 1); const view = await create(input); const assignment = await claim(input.runtimeId); await prepare(assignment); await start(assignment);
   const bytes = Buffer.from('<html><script>alert(1)</script></html>');
   const metadata = { id: randomUUID(), name: 'index.html', kind: 'html', mediaType: 'text/html', bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') };
-  const report = { ...terminal(assignment), outcome: { kind: 'completed', result: { kind: 'html', entryArtifactId: metadata.id, assetArtifactIds: [] }, summary: 'Built HTML', artifacts: [metadata] }, artifacts: [{ ...metadata, base64: bytes.toString('base64') }] };
-  expect((await post('/api/worker/attempts', { ...report, artifacts: [{ ...report.artifacts[0], base64: Buffer.from('bad').toString('base64') }] }, workerUrl)).status).toBe(409);
+  const report = { ...terminal(assignment), outcome: { kind: 'completed', result: { kind: 'html', entryArtifactId: metadata.id, assetArtifactIds: [] }, summary: 'Built HTML', artifacts: [metadata] } };
+  const [chunk] = artifactChunks(report, [{ id: metadata.id, base64: bytes.toString('base64') }]); if (!chunk) throw new Error('Missing chunk');
+  const altered = { ...chunk, base64: Buffer.from('bad').toString('base64') };
+  expect((await post('/api/worker/attempts', report, workerUrl)).status).toBe(409);
+  for (let replay = 0; replay < 2; replay++) expect(await (await post('/api/worker/artifact-chunks', chunk, workerUrl)).json()).toEqual({ artifactId: metadata.id, offset: 0, bytes: bytes.length });
+  expect((await post('/api/worker/artifact-chunks', altered, workerUrl)).status).toBe(409);
+  expect((await post('/api/worker/attempts', { ...report, outcome: { ...report.outcome, artifacts: [{ ...metadata, sha256: 'c'.repeat(64) }] } }, workerUrl)).status).toBe(409);
   expect((await post('/api/worker/attempts', { ...report, outcome: { ...report.outcome, result: { ...report.outcome.result, entryArtifactId: randomUUID() } } }, workerUrl)).status).toBe(409);
   expect((await post('/api/worker/attempts', report, workerUrl)).status).toBe(200);
+  expect((await post('/api/worker/artifact-chunks', chunk, workerUrl)).status).toBe(200);
+  expect((await post('/api/worker/artifact-chunks', altered, workerUrl)).status).toBe(409);
+  expect((await pool.query('SELECT 1 FROM artifact_chunks WHERE attempt_id = $1', [report.attemptId])).rowCount).toBe(0);
   const downloaded = await fetch(url + `/api/configured-runs/${view.runId}/artifacts/${metadata.id}`);
   expect(downloaded.headers.get('content-type')).toBe('application/octet-stream'); expect(downloaded.headers.get('content-disposition')).toContain('attachment'); expect(downloaded.headers.get('x-content-type-options')).toBe('nosniff'); expect(Buffer.from(await downloaded.arrayBuffer())).toEqual(bytes);
   expect((await fetch(url + `/api/configured-runs/${randomUUID()}/artifacts/${metadata.id}`)).status).toBe(404);
@@ -160,13 +169,14 @@ test('repository manifests are pinned and declared outputs cannot silently disap
 
 test('both listeners reject browser worker calls and enforce schemas and report body limits', async () => {
   for (const endpoint of [url, workerUrl]) {
-    for (const path of ['/api/worker/claims', '/api/worker/preparations', '/api/worker/attempts', '/api/worker/registrations']) {
+    for (const path of ['/api/worker/claims', '/api/worker/preparations', '/api/worker/attempts', '/api/worker/artifact-chunks', '/api/worker/registrations']) {
       expect((await post(path, {}, endpoint, { origin: endpoint })).status).toBe(403);
       expect((await post(path, {}, endpoint, { 'sec-fetch-site': 'same-origin' })).status).toBe(403);
       expect((await post(path, {}, endpoint, { 'sec-fetch-dest': 'document' })).status).toBe(403);
       expect((await post(path, {}, endpoint)).status).toBe(401);
     }
-    expect((await post('/api/worker/attempts', { padding: 'x'.repeat(WORK_BODY_LIMIT) }, endpoint)).status).toBe(413);
+    for (const path of ['/api/worker/attempts', '/api/worker/artifact-chunks'])
+      expect((await post(path, { padding: 'x'.repeat(WORK_BODY_LIMIT) }, endpoint)).status).toBe(413);
   }
   expect((await fetch(url + '/api/configured-runs', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })).status).toBe(403);
   expect((await fetch(workerUrl + '/api/configured-runs')).status).toBe(404);
@@ -180,7 +190,7 @@ test('empty or fabricated required media cannot turn execution into a completed 
       const artifact = { id: randomUUID(), name: taskKind === 'image-generation' ? 'result.png' : 'recording.webm', kind: taskKind === 'image-generation' ? 'image' : 'recording', mediaType: taskKind === 'image-generation' ? 'image/png' : 'video/webm', bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') };
       const result = taskKind === 'image-generation' ? { kind: 'image', artifactIds: [artifact.id] } : { kind: 'browser', recordingArtifactId: artifact.id, format: 'webm', screenshotArtifactIds: [] };
       const report = { ...terminal(assignment), outcome: { kind: 'completed', result, summary: 'Generated', artifacts: [artifact] }, artifacts: [{ ...artifact, base64: bytes.toString('base64') }] };
-      expect((await post('/api/worker/attempts', report, workerUrl)).status).toBe(409);
+      expect((await deliverTerminal((path, body) => post(path, body, workerUrl), report)).status).toBe(409);
     }
   }
 });
@@ -198,5 +208,39 @@ test('freeform protocol text rejects PostgreSQL-invalid characters and paths at 
   expect((await post('/api/configured-runs', { ...input, entrants: input.entrants.map((entrant) => ({ ...entrant, model: 'bad\u0000model' })) })).status).toBe(400);
   await create(input); const assignment = await claim(input.runtimeId); await prepare(assignment);
   expect((await post('/api/worker/attempts', { ...terminal(assignment), outcome: { kind: 'failed', reason: 'bad\uD800reason', artifacts: [] } }, workerUrl)).status).toBe(400);
-  expect((await post('/api/worker/attempts', { ...terminal(assignment), artifacts: [{ id: randomUUID(), name: '../outside', kind: 'text', mediaType: 'text/plain', bytes: 0, sha256: 'a'.repeat(64), base64: '' }] }, workerUrl)).status).toBe(400);
+  expect((await post('/api/worker/attempts', { ...terminal(assignment), outcome: { kind: 'failed', reason: 'Escaping output', artifacts: [{ id: randomUUID(), name: '../outside', kind: 'text', mediaType: 'text/plain', bytes: 0, sha256: 'a'.repeat(64) }] } }, workerUrl)).status).toBe(400);
+});
+
+test('artifact chunks assemble multi-chunk outputs, enforce authority and alignment, and are discarded on abandonment', async () => {
+  const { input } = await setup(undefined, 2); const view = await create(input); const assignment = await claim(input.runtimeId); await prepare(assignment); await start(assignment);
+  const bytes = Buffer.alloc(ARTIFACT_CHUNK_BYTES * 2 + 17); for (let index = 0; index < bytes.length; index++) bytes[index] = (index * 31) % 251;
+  const metadata = { id: randomUUID(), name: 'large.txt', kind: 'text', mediaType: 'text/plain', bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') };
+  const report = { ...terminal(assignment), outcome: { kind: 'completed', result: { kind: 'text' }, summary: 'Large answer', artifacts: [metadata] } };
+  const chunks = artifactChunks(report, [{ id: metadata.id, base64: bytes.toString('base64') }]);
+  expect(chunks.map((chunk) => chunk.offset)).toEqual([0, ARTIFACT_CHUNK_BYTES, ARTIFACT_CHUNK_BYTES * 2]);
+  const [first, second, last] = chunks; if (!first || !second || !last) throw new Error('Missing chunks');
+  expect((await post('/api/worker/artifact-chunks', { ...first, offset: 1 }, workerUrl)).status).toBe(400);
+  expect((await post('/api/worker/artifact-chunks', { ...first, protocol: 1 }, workerUrl)).status).toBe(426);
+  expect(await (await post('/api/worker/claims', { protocol: 1, requestId: randomUUID(), runtimeId: input.runtimeId }, workerUrl)).json()).toEqual({ error: 'Update vibe-runner: this dashboard requires worker protocol 2' });
+  expect((await post('/api/worker/artifact-chunks', { ...first, attemptId: randomUUID() }, workerUrl)).status).toBe(409);
+  const other = await setup(undefined, 1);
+  expect((await post('/api/worker/artifact-chunks', { ...first, runtimeId: other.input.runtimeId }, workerUrl)).status).toBe(409);
+  expect((await post('/api/worker/artifact-chunks', last, workerUrl)).status).toBe(200);
+  expect((await post('/api/worker/artifact-chunks', first, workerUrl)).status).toBe(200);
+  expect((await post('/api/worker/attempts', report, workerUrl)).status).toBe(409);
+  expect((await post('/api/worker/artifact-chunks', second, workerUrl)).status).toBe(200);
+  const unlisted = randomUUID();
+  for (const offset of [0, ARTIFACT_CHUNK_BYTES]) expect((await post('/api/worker/artifact-chunks', { ...first, artifactId: unlisted, offset, base64: Buffer.from('short').toString('base64') }, workerUrl)).status).toBe(200);
+  expect((await post('/api/worker/attempts', report, workerUrl)).status).toBe(200);
+  expect((await pool.query('SELECT 1 FROM artifact_chunks WHERE artifact_id = $1', [unlisted])).rowCount).toBe(0);
+  const downloaded = await fetch(url + `/api/configured-runs/${view.runId}/artifacts/${metadata.id}`);
+  expect(Buffer.from(await downloaded.arrayBuffer()).equals(bytes)).toBe(true);
+  await start(assignment, 1);
+  const pending = { ...terminal(assignment, 1) };
+  const [staged] = artifactChunks(pending, [{ id: randomUUID(), base64: Buffer.from('staged before cancellation').toString('base64') }]); if (!staged) throw new Error('Missing chunk');
+  expect((await post('/api/worker/artifact-chunks', staged, workerUrl)).status).toBe(200);
+  expect((await pool.query('SELECT 1 FROM artifact_chunks WHERE attempt_id = $1', [pending.attemptId])).rowCount).toBe(1);
+  expect((await post(`/api/configured-runs/${view.runId}/cancel`, {})).status).toBe(200);
+  expect((await pool.query('SELECT 1 FROM artifact_chunks WHERE attempt_id = $1', [pending.attemptId])).rowCount).toBe(0);
+  expect((await post('/api/worker/artifact-chunks', staged, workerUrl)).status).toBe(409);
 });

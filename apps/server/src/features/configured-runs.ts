@@ -17,6 +17,9 @@ import {
   RunPreview,
 } from '../../../../packages/contracts/src/configured-runs.ts';
 import {
+  ARTIFACT_CHUNK_BYTES,
+  ArtifactChunk,
+  ArtifactChunkReceipt,
   AttemptReport,
   ClaimReceipt,
   ClaimRequest,
@@ -359,6 +362,100 @@ export async function acceptPreparation(pool: pg.Pool, report: PreparationReport
     authorization,
   );
 }
+/** Stages one artifact slice. Identical replays succeed, including after the terminal report moved the bytes. */
+export async function acceptArtifactChunk(
+  pool: pg.Pool,
+  chunk: ArtifactChunk,
+  authorization?: string,
+): Promise<ArtifactChunkReceipt> {
+  const bytes = Buffer.from(chunk.base64, 'base64');
+  if (bytes.toString('base64') !== chunk.base64 || bytes.length > ARTIFACT_CHUNK_BYTES)
+    throw new Conflict('Artifact chunk is not canonical base64 within the chunk size');
+  if (chunk.offset + bytes.length > MAX_ARTIFACT_BYTES) throw new Conflict('Artifact chunk exceeds the artifact limit');
+  const receipt = ArtifactChunkReceipt.parse({ artifactId: chunk.artifactId, offset: chunk.offset, bytes: bytes.length });
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await lockRuntime(client, chunk.runtimeId);
+    if (authorization !== undefined) await authorizeRuntime(client, chunk.runtimeId, authorization);
+    if ((await client.query('SELECT 1 FROM run_abandonments WHERE run_id=$1', [chunk.runId])).rowCount)
+      throw new Conflict('Run was abandoned');
+    if (
+      !(
+        await client.query(
+          'SELECT 1 FROM work_claims c JOIN configured_attempts a ON a.run_id = c.run_id WHERE c.assignment_id = $1 AND c.runtime_id = $2 AND c.run_id = $3 AND a.id = $4',
+          [chunk.assignmentId, chunk.runtimeId, chunk.runId, chunk.attemptId],
+        )
+      ).rowCount
+    )
+      throw new Conflict('Artifact chunk does not belong to this runtime assignment');
+    const accepted = await client.query(
+      'SELECT attempt_id, substring(bytes FROM $2::integer + 1 FOR $3::integer) AS slice FROM configured_artifacts WHERE id = $1',
+      [chunk.artifactId, chunk.offset, bytes.length],
+    );
+    if (accepted.rowCount) {
+      if (accepted.rows[0].attempt_id !== chunk.attemptId || !bytes.equals(accepted.rows[0].slice))
+        throw new Conflict('Artifact chunk differs from accepted bytes');
+      await client.query('COMMIT');
+      return receipt;
+    }
+    if ((await client.query('SELECT 1 FROM attempt_outcomes WHERE attempt_id = $1', [chunk.attemptId])).rowCount)
+      throw new Conflict('Attempt already has a terminal outcome');
+    const staged = await client.query(
+      'SELECT attempt_id, chunk_offset, bytes FROM artifact_chunks WHERE artifact_id = $1',
+      [chunk.artifactId],
+    );
+    if (staged.rows.some((row) => row.attempt_id !== chunk.attemptId))
+      throw new Conflict('Artifact ID belongs to another attempt');
+    const same = staged.rows.find((row) => row.chunk_offset === chunk.offset);
+    if (same) {
+      if (!bytes.equals(same.bytes)) throw new Conflict('Artifact chunk differs from staged bytes');
+      await client.query('COMMIT');
+      return receipt;
+    }
+    const totals = await client.query(
+      'SELECT coalesce(sum(length(bytes)), 0)::integer AS bytes, count(DISTINCT artifact_id)::integer AS artifacts, bool_or(artifact_id = $2) AS known FROM artifact_chunks WHERE attempt_id = $1',
+      [chunk.attemptId, chunk.artifactId],
+    );
+    const total = totals.rows[0];
+    if (total.bytes + bytes.length > MAX_ARTIFACT_BYTES || (!total.known && total.artifacts >= 32))
+      throw new Conflict('Staged artifacts exceed the attempt limits');
+    await client.query('INSERT INTO artifact_chunks(artifact_id, chunk_offset, attempt_id, bytes) VALUES($1,$2,$3,$4)', [
+      chunk.artifactId,
+      chunk.offset,
+      chunk.attemptId,
+      bytes,
+    ]);
+    await client.query('COMMIT');
+    return receipt;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+type StagedArtifact = z.infer<typeof ArtifactMetadata> & { data: Buffer };
+/** Assembles each listed artifact from contiguous aligned chunks; incomplete staging fails the size or digest check. */
+async function assembleArtifacts(client: pg.PoolClient, attemptId: string, listed: z.infer<typeof ArtifactMetadata>[]) {
+  const rows = await client.query(
+    'SELECT artifact_id, chunk_offset, bytes FROM artifact_chunks WHERE attempt_id = $1 ORDER BY artifact_id, chunk_offset',
+    [attemptId],
+  );
+  const chunks = new Map<string, Buffer[]>();
+  for (const row of rows.rows) {
+    // Staged slices the outcome does not list are discarded with the rest of the staging rows.
+    if (!listed.some((artifact) => artifact.id === row.artifact_id)) continue;
+    const list = chunks.get(row.artifact_id) ?? [];
+    if (row.chunk_offset !== list.length * ARTIFACT_CHUNK_BYTES || list.some((part) => part.length !== ARTIFACT_CHUNK_BYTES))
+      throw new Conflict('Artifact chunks are not contiguous');
+    list.push(row.bytes);
+    chunks.set(row.artifact_id, list);
+  }
+  return listed.map((artifact): StagedArtifact => ({ ...artifact, data: Buffer.concat(chunks.get(artifact.id) ?? []) }));
+}
+
 export async function acceptAttemptReport(pool: pg.Pool, report: AttemptReport, authorization?: string) {
   return acceptWorkReport(
     pool,
@@ -397,14 +494,16 @@ export async function acceptAttemptReport(pool: pg.Pool, report: AttemptReport, 
         throw new Conflict('Started attempts must fail rather than skip');
       if (preparation.kind === 'failed' && report.outcome.kind === 'completed')
         throw new Conflict('Cannot complete after preparation failed');
-      validateArtifacts(report, snapshot, slot.rows[0].task_id, preparation);
-      for (const artifact of report.artifacts) {
+      const artifacts = await assembleArtifacts(client, report.attemptId, report.outcome.artifacts);
+      validateArtifacts(report, artifacts, snapshot, slot.rows[0].task_id, preparation);
+      for (const { data, ...metadata } of artifacts) {
         const inserted = await client.query(
           'INSERT INTO configured_artifacts(id, attempt_id, metadata, bytes) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING',
-          [artifact.id, report.attemptId, artifactMetadata(artifact), Buffer.from(artifact.base64, 'base64')],
+          [metadata.id, report.attemptId, ArtifactMetadata.parse(metadata), data],
         );
         if (!inserted.rowCount) throw new Conflict('Artifact ID was already used');
       }
+      await client.query('DELETE FROM artifact_chunks WHERE attempt_id = $1', [report.attemptId]);
       await client.query('INSERT INTO attempt_outcomes(attempt_id, outcome, observed) VALUES($1,$2,$3)', [
         report.attemptId,
         report.outcome,
@@ -415,36 +514,25 @@ export async function acceptAttemptReport(pool: pg.Pool, report: AttemptReport, 
   );
 }
 
-function artifactMetadata(artifact: z.infer<typeof ArtifactMetadata> & { base64: string }) {
-  const { base64: _base64, ...metadata } = artifact;
-  return ArtifactMetadata.parse(metadata);
-}
-
 function validateArtifacts(
   report: Extract<AttemptReport, { kind: 'terminal' }>,
+  uploaded: StagedArtifact[],
   snapshot: ExecutionSnapshot,
   taskId: string,
   preparation: Preparation,
 ) {
-  const artifacts = new Map(report.artifacts.map((artifact) => [artifact.id, artifact]));
-  if (new Set(report.artifacts.map((artifact) => artifact.name)).size !== report.artifacts.length)
+  const artifacts = new Map(uploaded.map((artifact) => [artifact.id, artifact]));
+  if (new Set(uploaded.map((artifact) => artifact.name)).size !== uploaded.length)
     throw new Conflict('Artifact paths must be unique');
   if (
-    artifacts.size !== report.artifacts.length ||
-    report.artifacts.reduce((total, artifact) => total + artifact.bytes, 0) > MAX_ARTIFACT_BYTES
+    artifacts.size !== uploaded.length ||
+    uploaded.reduce((total, artifact) => total + artifact.bytes, 0) > MAX_ARTIFACT_BYTES
   )
     throw new Conflict('Artifact IDs must be unique and total bytes bounded');
-  if (
-    contentDigest(report.outcome.artifacts) !==
-    contentDigest(report.artifacts.map((artifact) => artifactMetadata(artifact)))
-  )
-    throw new Conflict('Artifact metadata does not match uploaded artifacts');
-  for (const artifact of report.artifacts) {
-    const bytes = Buffer.from(artifact.base64, 'base64');
+  for (const artifact of uploaded) {
     if (
-      bytes.length !== artifact.bytes ||
-      bytes.toString('base64') !== artifact.base64 ||
-      createHash('sha256').update(bytes).digest('hex') !== artifact.sha256
+      artifact.data.length !== artifact.bytes ||
+      createHash('sha256').update(artifact.data).digest('hex') !== artifact.sha256
     )
       throw new Conflict('Artifact size or digest does not match its bytes');
   }
@@ -453,7 +541,7 @@ function validateArtifacts(
     const declared = preparation.manifest.tasks[TaskId.parse(taskId)];
     if (declared)
       for (const output of declared.outputs) {
-        if (!report.artifacts.some((artifact) => artifact.name === output.path && artifact.kind === output.kind))
+        if (!uploaded.some((artifact) => artifact.name === output.path && artifact.kind === output.kind))
           throw new Conflict('A declared output is missing from the completed result');
       }
   }
@@ -478,7 +566,7 @@ function validateArtifacts(
   function requireArtifact(id: string, kind: string) {
     const artifact = artifacts.get(id);
     if (!artifact || artifact.kind !== kind) throw new Conflict('Result references a missing or incompatible artifact');
-    const bytes = Buffer.from(artifact.base64, 'base64');
+    const bytes = artifact.data;
     if (kind !== 'code' && bytes.length === 0) throw new Conflict('Required artifacts must contain bytes');
     if (
       kind === 'recording' &&

@@ -12,7 +12,7 @@ Creation accepts a stable request ID. An identical replay returns the original c
 
 ## Outbound worker protocol
 
-The runtime initiates every request. The worker API exposes pairing enrollment, status, revocation, registration, claims, preparation reports, and attempt reports. The separate worker listener rejects browser requests. Runtime and assignment IDs establish record membership. Individually revocable runtime credentials authorize every worker request on both listeners. The [access contract](access.md) defines enrollment and dashboard authority.
+The runtime initiates every request. The worker API exposes pairing enrollment, status, revocation, registration, claims, preparation reports, artifact chunks, and attempt reports. The separate worker listener rejects browser requests. Runtime and assignment IDs establish record membership. Individually revocable runtime credentials authorize every worker request on both listeners. The [access contract](access.md) defines enrollment and dashboard authority.
 
 A runtime claims one whole run and executes its attempts in order. One unfinished assignment prevents that runtime from claiming another run. Execution is sequential, with no slots or advertised capacity. Claims have durable request IDs. Replaying a claim returns the same assignment or idle receipt, even if new work arrived afterward.
 
@@ -67,7 +67,7 @@ The result descriptor records the task's output shape.
 
 Final answers are separate from diagnostic artifacts. Available raw harness metadata remains diagnostic evidence, without invented usage or cost values. An unavailable capability known before execution produces a skip with a reason. A denial, process error, or missing required output discovered during execution produces a failure. Other attempts continue.
 
-Each artifact records its name, kind, media type, byte count, and SHA-256 digest. Terminal reports carry bounded bytes. The server verifies size, digest, and result associations before storing bytes and accepting the outcome atomically. Total artifact bytes per attempt are limited to 8,000,000. Downloads are inert attachments. Management result previews use the strict `ResultPresentation` schema and supplied local URLs. HTML bundles do not start application servers or execute in the dashboard. A disposable Chromium process inside Bubblewrap namespaces renders saved assets and returns PNG frames. See the [artifact viewing boundary](artifacts-evaluation.md).
+Each artifact records its name, kind, media type, byte count, and SHA-256 digest. Artifact bytes arrive beforehand as bounded chunks, and terminal reports carry only metadata; the [runner protocol](runner-protocol.md) defines chunk alignment and replay. The server assembles the chunks and verifies size, digest, and result associations before storing bytes and accepting the outcome atomically. Total artifact bytes per attempt are limited to 8,000,000. Downloads are inert attachments. Management result previews use the strict `ResultPresentation` schema and supplied local URLs. HTML bundles do not start application servers or execute in the dashboard. A disposable Chromium process inside Bubblewrap namespaces renders saved assets and returns PNG frames. See the [artifact viewing boundary](artifacts-evaluation.md).
 
 ## Evidence
 

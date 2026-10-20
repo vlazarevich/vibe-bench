@@ -222,10 +222,10 @@ test('revocation abandons assigned unfinished work and credential replacement ca
       body: JSON.stringify(body),
     });
   const assignment = await (
-    await worker('/api/worker/claims', { protocol: 1, requestId: randomUUID(), runtimeId: configuration.runtimeId })
+    await worker('/api/worker/claims', { protocol: 2, requestId: randomUUID(), runtimeId: configuration.runtimeId })
   ).json();
   const preparation = {
-    protocol: 1,
+    protocol: 2,
     reportId: randomUUID(),
     runtimeId: configuration.runtimeId,
     assignmentId: assignment.assignmentId,
@@ -353,10 +353,10 @@ test('pairing retries replay durable exchanges after lost responses; revocation 
         body: JSON.stringify(body),
       });
     const assignment = await (
-      await workerPost('/api/worker/claims', { protocol: 1, requestId: randomUUID(), runtimeId: authority.runtimeId })
+      await workerPost('/api/worker/claims', { protocol: 2, requestId: randomUUID(), runtimeId: authority.runtimeId })
     ).json();
     const report = {
-      protocol: 1,
+      protocol: 2,
       reportId: randomUUID(),
       runtimeId: authority.runtimeId,
       assignmentId: assignment.assignmentId,
@@ -364,13 +364,12 @@ test('pairing retries replay durable exchanges after lost responses; revocation 
       kind: 'terminal',
       attemptId: assignment.attempts[0].attemptId,
       outcome: { kind: 'skipped', reason: 'fixture unavailable', artifacts: [] },
-      artifacts: [],
       observed: { executableVersion: null, model: null },
     };
     expect(
       (
         await workerPost('/api/worker/preparations', {
-          protocol: 1,
+          protocol: 2,
           reportId: randomUUID(),
           runtimeId: authority.runtimeId,
           assignmentId: assignment.assignmentId,

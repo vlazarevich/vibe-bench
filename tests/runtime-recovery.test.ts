@@ -110,7 +110,7 @@ test('SIGTERM exits the continuous worker after stopping the active child instea
   let child: ReturnType<typeof spawn> | undefined;
   try {
     const configuration = await system.enroll(stateRoot, system.workerUrl); await system.createRun(configuration.runtimeId, 'live');
-    const claim = await fetch(system.workerUrl + '/api/worker/claims', { method: 'POST', headers: { 'content-type': 'application/json', authorization: runtimeAuthorization(configuration) }, body: JSON.stringify({ protocol: 1, requestId: randomUUID(), runtimeId: configuration.runtimeId }) });
+    const claim = await fetch(system.workerUrl + '/api/worker/claims', { method: 'POST', headers: { 'content-type': 'application/json', authorization: runtimeAuthorization(configuration) }, body: JSON.stringify({ protocol: 2, requestId: randomUUID(), runtimeId: configuration.runtimeId }) });
     const assignment = RunAssignment.parse(await claim.json());
     const { durableWrite } = await import('../apps/runner/src/spool.ts');
     await durableWrite(join(runtimeRoot(stateRoot, configuration), 'work', 'assignment.json'), assignment);

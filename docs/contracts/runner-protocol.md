@@ -1,6 +1,6 @@
 # Runner protocol and process ownership
 
-The implemented CLI is `vibe-runner`. Executable schemas live in `runtime.ts`, `access.ts`, `configured-runs.ts`, and `work.ts`. Scheduling leases and ownership generations remain design guidance. Protocol 1 implements whole-run claims, immutable reports and heartbeat cancellation.
+The implemented CLI is `vibe-runner`. Executable schemas live in `runtime.ts`, `access.ts`, `configured-runs.ts`, and `work.ts`. Scheduling leases and ownership generations remain design guidance. Work protocol 2 implements whole-run claims, immutable reports, chunked artifact delivery and heartbeat cancellation. Claims, preparation and attempt reports, and artifact chunks carry `protocol: 2`; any other declared version receives HTTP 426 with an instruction to update `vibe-runner`, so an outdated runner never claims work it cannot report. Runtime registrations keep their own protocol 1 schema.
 
 ## Connection and authority
 
@@ -17,6 +17,10 @@ Use at-least-once transport and at-most-once acceptance of terminal outcomes. Do
 Write reports and stable report IDs to the runner's durable spool before transmission. Flush temporary files and atomically rename them. Remove an entry only after a durable receipt.
 
 The server stores a command receipt and payload digest in the same transaction as its effect. Repeating the ID and digest returns the existing receipt; changed content under the same ID conflicts. An authenticated replay may retrieve its accepted receipt without reapplying a stale mutation.
+
+Every worker request body stays under 4,100,000 bytes (`WORK_BODY_LIMIT`) so a serverless deployment can accept it. Artifact bytes therefore travel separately from the terminal report as `ArtifactChunk` requests. Each chunk names its runtime, assignment, run, attempt, and artifact; offsets are multiples of `ARTIFACT_CHUNK_BYTES` (3,000,000), and only the final chunk of an artifact may be shorter. Empty artifacts send no chunks. The server stages chunks in `artifact_chunks` under the runtime lock. An identical chunk replay returns the same receipt, both while staged and after the terminal report moved the bytes into immutable storage; different bytes at the same artifact offset conflict. Staging per attempt is bounded by the 8,000,000-byte and 32-artifact limits.
+
+The terminal report lists artifact metadata in its outcome and carries no bytes. Acceptance assembles each listed artifact from contiguous chunks, verifies size and SHA-256, applies the existing result checks, stores the artifacts and outcome atomically, and discards the attempt's staging rows. Slices for artifacts the outcome does not list are ignored and discarded. Abandonment and cancellation discard staged chunks for unfinished attempts. The runner spool keeps artifact bytes inside its saved terminal entry; recovery resends every chunk, then the report. A saved claim request from an older protocol cannot be replayed, so the runner replaces it with a fresh protocol-2 request. Saved reports from an older protocol are not converted.
 
 Sequence reports per assignment. Publish a terminal outcome only when referenced objects are verified and declared required outputs exist. A lost response after commit must not produce another result.
 

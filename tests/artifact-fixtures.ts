@@ -1,3 +1,4 @@
+import { deliverTerminal } from './worker-delivery.ts';
 import { enrollRuntime, runtimeAuthorization } from './runtime-auth.ts';
 import { randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, readFile } from 'node:fs/promises';
@@ -39,9 +40,9 @@ export async function seedArtifactRun(url: string, cookie = '', source: 'live' |
   const tasks = kinds.map((kind) => ({ id: randomUUID(), title: kind, kind, prompt: 'Artifact viewer fixture', criterionIds: value.evaluation.criteria.map((criterion) => criterion.id) }));
   const suite = SuiteView.parse(await post('/api/suites', { definition: { ...value, title: `Artifact suite ${randomUUID()}`, categories: [{ id: randomUUID(), title: 'Results', tasks }], materials: { kind: 'repository', url: 'https://example.invalid/repo.git', requestedRef: 'main' } } }));
   const run = ConfiguredRunView.parse(await post('/api/configured-runs', { requestId: randomUUID(), contentId: suite.content.contentId, runtimeId, selection: { kind: 'all' }, source, entrants: [{ id: randomUUID(), harness: 'codex', model: 'viewer-fixture', settings: { timeoutMs: 3000 } }] }));
-  const assignment = RunAssignment.parse(await post('/api/worker/claims', { protocol: 1, requestId: randomUUID(), runtimeId }));
+  const assignment = RunAssignment.parse(await post('/api/worker/claims', { protocol: 2, requestId: randomUUID(), runtimeId }));
   const manifest = { version: 1, tasks: Object.fromEntries(tasks.map((task) => [task.id, { inputs: [], outputs: [{ path: 'extra.txt', kind: 'text' }, { path: 'binary.dat', kind: 'code' }], browser: null }])) };
-  const identity = () => ({ protocol: 1, reportId: randomUUID(), runtimeId, assignmentId: assignment.assignmentId, runId: run.runId });
+  const identity = () => ({ protocol: 2, reportId: randomUUID(), runtimeId, assignmentId: assignment.assignmentId, runId: run.runId });
   await post('/api/worker/preparations', { ...identity(), preparation: { kind: 'repository', commit: 'a'.repeat(40), manifestDigest: contentDigest(manifest), manifest } });
   const records = [];
   for (const attempt of assignment.attempts) {
@@ -65,7 +66,7 @@ export async function seedArtifactRun(url: string, cookie = '', source: 'live' |
       default: throw new Error('Unexpected task');
     }
     await post('/api/worker/attempts', { ...identity(), kind: 'started', attemptId: attempt.attemptId, startedAt: new Date().toISOString() });
-    await post('/api/worker/attempts', { ...identity(), kind: 'terminal', attemptId: attempt.attemptId, outcome: { kind: 'completed', result, summary: 'Short summary only', artifacts: metadata(artifacts) }, artifacts, observed: { executableVersion: 'fixture', model: null } });
+    await deliverTerminal(post, { ...identity(), kind: 'terminal', attemptId: attempt.attemptId, outcome: { kind: 'completed', result, summary: 'Short summary only', artifacts: metadata(artifacts) }, artifacts, observed: { executableVersion: 'fixture', model: null } });
     records.push({ attemptId: attempt.attemptId, kind: result.kind, artifacts, resultUrl: `/api/configured-runs/${run.runId}/attempts/${attempt.attemptId}/result` });
   }
   return { run, records };

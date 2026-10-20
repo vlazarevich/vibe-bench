@@ -1,9 +1,10 @@
 import Fastify from 'fastify';
 import type pg from 'pg';
 import { z } from 'zod';
+import { WORK_PROTOCOL } from '../../../packages/contracts/src/work.ts';
 import { registerWorkerRoutes } from './worker-routes.ts';
 import { Unauthorized } from './features/access.ts';
-import { Conflict, NotFound } from './errors.ts';
+import { Conflict, NotFound, UnsupportedProtocol } from './errors.ts';
 
 export function createWorkerApp({ pool }: { pool: pg.Pool }) {
   const app = Fastify({ logger: false, bodyLimit: 32_000 });
@@ -16,6 +17,8 @@ export function createWorkerApp({ pool }: { pool: pg.Pool }) {
     if (error instanceof NotFound) return reply.code(404).send({ error: 'Not found' });
     if (error instanceof Unauthorized) return reply.code(401).send({ error: 'Unauthorized' });
     if (error instanceof Conflict) return reply.code(409).send({ error: error.message });
+    if (error instanceof UnsupportedProtocol)
+      return reply.code(426).send({ error: `Update vibe-runner: this dashboard requires worker protocol ${WORK_PROTOCOL}` });
     if (error instanceof Error && 'statusCode' in error) {
       if (error.statusCode === 400) return reply.code(400).send({ error: 'Invalid request' });
       if (error.statusCode === 413) return reply.code(413).send({ error: 'Request too large' });
