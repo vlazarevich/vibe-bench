@@ -14,6 +14,20 @@ pnpm local
 
 Open the printed URL. The dashboard starts without seeded runs. Database files live under `.local/`, or the dashboard's `VIBE_LOCAL_ROOT`. A state-directory lock prevents simultaneous dashboard owners. Stop with Ctrl+C before starting another owner.
 
+### Run a production build
+
+```sh
+pnpm install --frozen-lockfile
+pnpm build
+pnpm start
+```
+
+`pnpm build` writes web assets to `dist/web` and the bundled dashboard process to `dist/server`. `pnpm start` runs `dist/server/serve.mjs` and loads `.env` if present. The bundle resolves its assets and migrations relative to itself, so the working directory does not matter. It still needs the installed `node_modules` for embedded PostgreSQL and preview Chromium.
+
+Set `DATABASE_URL` to use an external PostgreSQL 18 database; `POSTGRES_URL` is accepted as a fallback name. External mode starts no embedded database, creates no `VIBE_LOCAL_ROOT` state, and takes no state-directory lock, so several dashboard processes may share one database. Interactive HTML preview sessions stay with the process that created them, so a load balancer must keep a browser on one process. Startup migrations hold a PostgreSQL advisory lock. Run `pnpm migrate` to apply migrations before starting traffic. Without `DATABASE_URL`, the dashboard owns embedded PostgreSQL under `VIBE_LOCAL_ROOT` as described above.
+
+The dashboard listens on `VIBE_HOST` (default `127.0.0.1`) and `VIBE_PORT` (default: a free port). A non-loopback `VIBE_HOST` requires `VIBE_APP_PASSWORD`; the dashboard refuses to start without it. The Host check blocks DNS rebinding in browsers but not scripted clients, so the password is the access control. Remote browsers also need `VIBE_PUBLIC_URL`. `GET /api/health` returns 200 after the database connection and listener are ready.
+
 Copy `.env.example` to `.env` for dashboard configuration. Set `VIBE_APP_PASSWORD` to require a shared password, or leave it empty for intentional passwordless operation. Dashboard users can manage every runtime and schedule work. Runtime credentials remain required in either mode.
 
 Remote dashboards require `VIBE_PUBLIC_URL=https://your-host.example`. A trusted reverse proxy must preserve the public Host and terminate HTTPS. `VIBE_TRUSTED_PROXY` lists trusted proxy addresses or CIDRs. Unsafe browser requests require the canonical Origin. Login sessions expire after 12 hours; password changes and mode changes invalidate earlier sessions. Login is limited to ten attempts per source and 100 installation-wide per 15 minutes.

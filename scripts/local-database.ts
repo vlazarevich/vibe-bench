@@ -4,6 +4,9 @@ import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 
+declare const __VIBE_BUNDLED__: boolean | undefined;
+const bundled = typeof __VIBE_BUNDLED__ === 'boolean' && __VIBE_BUNDLED__;
+
 export async function unusedPort() {
   const server = createServer();
   await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
@@ -15,8 +18,9 @@ export async function unusedPort() {
 
 export async function startDatabase(directory: string) {
   const port = await unusedPort();
-  const worker = fileURLToPath(new URL('./database-worker.ts', import.meta.url));
-  const args = ['--import', 'tsx', worker, directory, String(port)];
+  const args = bundled
+    ? [fileURLToPath(new URL('./database-worker.mjs', import.meta.url)), directory, String(port)]
+    : ['--import', 'tsx', fileURLToPath(new URL('./database-worker.ts', import.meta.url)), directory, String(port)];
   const child = spawn(process.execPath, args, { stdio: ['pipe', 'pipe', 'pipe'], detached: true });
   let diagnostics = '';
   child.stderr.on('data', (chunk) => { diagnostics = (diagnostics + String(chunk)).slice(-8000); });

@@ -1,6 +1,12 @@
 import { readFile } from 'node:fs/promises';
 import pg from 'pg';
 
+declare const __VIBE_BUNDLED__: boolean | undefined;
+const migrations = new URL(
+  typeof __VIBE_BUNDLED__ === 'boolean' && __VIBE_BUNDLED__ ? './migrations/' : '../../../db/migrations/',
+  import.meta.url,
+);
+
 export async function connectDatabase(connectionString: string) {
   const pool = new pg.Pool({ connectionString, max: 8 });
   try {
@@ -21,7 +27,7 @@ export async function connectDatabase(connectionString: string) {
         '009-dashboard-design.sql',
       ]) {
         if ((await client.query('SELECT name FROM schema_migrations WHERE name = $1', [name])).rowCount) continue;
-        await client.query(await readFile(new URL(`../../../db/migrations/${name}`, import.meta.url), 'utf8'));
+        await client.query(await readFile(new URL(name, migrations), 'utf8'));
         await client.query('INSERT INTO schema_migrations(name) VALUES($1)', [name]);
       }
       await client.query('COMMIT');
