@@ -1,7 +1,6 @@
 import { mkdtemp, writeFile, readFile, rm, realpath } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { chromium } from '@playwright/test';
 import { z } from 'zod';
 
 export async function isolatedChromium() {
@@ -9,8 +8,10 @@ export async function isolatedChromium() {
   const executable = join(directory, 'chromium');
   const pidFile = join(directory, 'browser.pid');
   const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
-  let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
+  let browser: import('@playwright/test').Browser | undefined;
   try {
+    // Loaded on first preview so the dashboard starts without the browser driver installed.
+    const { chromium } = await import('@playwright/test');
     const browserDirectory = dirname(await realpath(chromium.executablePath()));
     await writeFile(executable, `#!/bin/sh\nprintf '%s' "$$" > ${quote(pidFile)}\nexec /usr/bin/bwrap --unshare-all --die-with-parent --new-session --cap-drop ALL --ro-bind /usr/lib /usr/lib --ro-bind /lib /lib --ro-bind /lib64 /lib64 --ro-bind ${quote(browserDirectory)} /browser --ro-bind /usr/share/fonts /usr/share/fonts --ro-bind /etc/fonts /etc/fonts --proc /proc --dev /dev --tmpfs /tmp --tmpfs /home --setenv HOME /tmp --setenv TMPDIR /tmp --chdir /tmp /browser/chrome "$@"\n`, { mode: 0o700 });
     browser = await chromium.launch({ executablePath: executable, env: { PATH: '/usr/bin', HOME: '/tmp', TMPDIR: '/tmp' }, timeout: 10_000, args: ['--disable-background-networking', '--disable-quic', '--force-webrtc-ip-handling-policy=disable_non_proxied_udp'] });

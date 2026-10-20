@@ -26,7 +26,7 @@ pnpm start
 
 Set `DATABASE_URL` to use an external PostgreSQL 18 database; `POSTGRES_URL` is accepted as a fallback name. External mode starts no embedded database, creates no `VIBE_LOCAL_ROOT` state, and takes no state-directory lock, so several dashboard processes may share one database. Interactive HTML preview sessions stay with the process that created them, so a load balancer must keep a browser on one process. Startup migrations hold a PostgreSQL advisory lock. Run `pnpm migrate` to apply migrations before starting traffic. Without `DATABASE_URL`, the dashboard owns embedded PostgreSQL under `VIBE_LOCAL_ROOT` as described above.
 
-The dashboard listens on `VIBE_HOST` (default `127.0.0.1`) and `VIBE_PORT` (default: a free port). Binding a non-loopback address does not by itself allow remote browsers: set `VIBE_PUBLIC_URL` for remote access. `GET /api/health` returns 200 after the database connection and listener are ready.
+The dashboard listens on `VIBE_HOST` (default `127.0.0.1`) and `VIBE_PORT` (default: a free port). A non-loopback `VIBE_HOST` requires `VIBE_APP_PASSWORD`; the dashboard refuses to start without it. The Host check blocks DNS rebinding in browsers but not scripted clients, so the password is the access control. Remote browsers also need `VIBE_PUBLIC_URL`. `GET /api/health` returns 200 after the database connection and listener are ready.
 
 Copy `.env.example` to `.env` for dashboard configuration. Set `VIBE_APP_PASSWORD` to require a shared password, or leave it empty for intentional passwordless operation. Dashboard users can manage every runtime and schedule work. Runtime credentials remain required in either mode.
 
