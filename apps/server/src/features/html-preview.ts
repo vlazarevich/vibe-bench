@@ -9,9 +9,19 @@ import { NotFound } from '../errors.ts';
 export const PREVIEW_LIFETIME_MS = 30 * 60_000;
 export const PreviewToken = z.string().regex(/^[A-Za-z0-9_-]{43}$/);
 const hash = (token: string) => createHash('sha256').update(token).digest('hex');
-/** Bundle paths and request paths compare after the same URL normalization, so encoding differences cannot alias. */
-const normalized = (path: string) => new URL(path, 'https://preview.invalid/').pathname;
 const encodedPath = (name: string) => name.split('/').map(encodeURIComponent).join('/');
+/**
+ * Bundle names and request paths compare as decoded segments after the same URL normalization, so a browser that
+ * sends `a+b.js` and one that sends `a%2Bb.js` both reach that asset, and dot segments resolve before matching.
+ */
+function pathKey(path: string) {
+  try {
+    return new URL(path, 'https://preview.invalid/').pathname.split('/').map(decodeURIComponent).join('/');
+  } catch {
+    return null;
+  }
+}
+const nameKey = (name: string) => pathKey(name.replaceAll('%', '%25').replaceAll('?', '%3F').replaceAll('#', '%23'));
 
 /** Issues a capability for one authorized HTML result. The caller has already checked dashboard or grading authority. */
 export async function grantPreview(pool: pg.Pool, attemptId: string, saved: SavedResult) {
@@ -43,10 +53,11 @@ export async function readPreviewFile(pool: pg.Pool, token: string, requestPath:
   const outcome = AttemptOutcome.parse(grant.rows[0].outcome);
   if (outcome.kind !== 'completed' || outcome.result.kind !== 'html') throw new NotFound();
   const bundle = new Set([outcome.result.entryArtifactId, ...outcome.result.assetArtifactIds]);
-  const wanted = normalized(requestPath);
-  const metadata = outcome.artifacts.find(
-    (file) => bundle.has(file.id) && file.kind !== 'diagnostic' && normalized(encodedPath(file.name)) === wanted,
-  );
+  const wanted = pathKey(requestPath);
+  const metadata =
+    wanted === null
+      ? undefined
+      : outcome.artifacts.find((file) => bundle.has(file.id) && file.kind !== 'diagnostic' && nameKey(file.name) === wanted);
   if (!metadata) throw new NotFound();
   const stored = await pool.query('SELECT bytes FROM configured_artifacts WHERE id = $1 AND attempt_id = $2', [
     metadata.id,

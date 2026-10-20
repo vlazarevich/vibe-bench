@@ -86,13 +86,14 @@ test('HTML preview grants serve only the granted bundle, without cookies, under 
   const policy = entry.headers.get('content-security-policy') ?? '';
   for (const directive of ['sandbox allow-scripts allow-forms', `script-src ${bundle} `, "connect-src 'none'", "form-action 'none'", "frame-src 'none'", `frame-ancestors ${url}`]) expect(policy).toContain(directive);
   expect(await entry.text()).toBe(interactiveHtml);
-  for (const asset of ['assets/style.css?v=1', 'assets/%C3%BC%20wide.css', 'assets/probe.js', 'assets/picture.png', 'extra.txt']) {
+  for (const asset of ['assets/style.css?v=1', 'assets/%C3%BC%20wide.css', 'assets/vendor+chunk@1,a=b.css', 'assets/vendor%2Bchunk%401%2Ca%3Db.css', 'assets/probe.js', 'assets/picture.png', 'extra.txt']) {
     const response = await fetch(bundle + asset);
     expect(response.status).toBe(200);
     expect(response.headers.get('content-security-policy')).toBe(policy);
   }
   for (const missing of ['diagnostics/log.html', 'assets/missing.js', '..%2f..%2fapi%2fhealth', 'ASSETS/probe.js']) expect((await fetch(bundle + missing)).status).toBe(404);
   expect((await fetch(`${url}/preview/${'A'.repeat(43)}/index.html`)).status).toBe(404);
+  expect((await fetch(bundle + 'assets/%E0%A4%A.css')).status).toBe(400);
   expect((await fetch(`${url}/preview/short/index.html`)).status).not.toBe(200);
   const hashes = (await pool.query('SELECT token_hash FROM preview_grants')).rows.map((row) => row.token_hash);
   expect(hashes).not.toContain(token);
@@ -101,6 +102,12 @@ test('HTML preview grants serve only the granted bundle, without cookies, under 
   await pool.query("UPDATE preview_grants SET expires_at = now() - interval '1 second' WHERE token_hash = $1", [createHash('sha256').update(token).digest('hex')]);
   expect((await fetch(url + opened.frameUrl)).status).toBe(404);
   expect((await fetch(url + again.frameUrl)).status).toBe(200);
+});
+
+test('preview links fit the longest multibyte artifact names', () => {
+  const name = '漢'.repeat(240);
+  const frameUrl = `/preview/${'A'.repeat(43)}/${encodeURIComponent(name)}`;
+  expect(PreviewOpened.parse({ frameUrl, expiresAt: new Date().toISOString() }).frameUrl).toBe(frameUrl);
 });
 
 test('media is checked from headers only and bounded by declared dimensions', () => {

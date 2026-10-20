@@ -121,7 +121,7 @@ export async function createApp({
     const publicPath =
       ['/api/health', '/api/access/session', '/api/access/login', '/api/access/logout', '/login', '/'].includes(path) ||
       /^\/assets\/[a-zA-Z0-9._-]+$/.test(path) ||
-      // Preview files are authorized by their capability token; sandboxed frames send no cookies.
+      // Preview files are authorized only by their capability token; the route ignores cookies.
       /^\/preview\/[A-Za-z0-9_-]{43}\//.test(path);
     const gradingPath =
       path.startsWith('/api/grading-invitations/') ||

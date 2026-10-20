@@ -10,7 +10,7 @@ import { NotFound } from '../errors.ts';
 
 const Params = z.object({ id: ConfiguredRunId, attemptId: ConfiguredAttemptId });
 const baseRoute = '/api/configured-runs/:id/attempts/:attemptId';
-/** Serves granted HTML bundles without cookies; `origin` is the dashboard's canonical origin for the request. */
+/** Serves granted HTML bundles by token alone, ignoring cookies; `origin` is the dashboard's canonical origin. */
 export function registerPreviewFiles(app: FastifyInstance, pool: pg.Pool, origin: (request: FastifyRequest) => string) {
   app.get('/preview/:token/*', async (request, reply) => {
     const { token } = z.object({ token: PreviewToken }).parse(request.params);

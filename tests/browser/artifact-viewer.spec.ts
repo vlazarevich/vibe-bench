@@ -49,6 +49,7 @@ test('all saved result viewers render, interact, download, and survive reload', 
   expect(await frame.locator('body').evaluate((body) => getComputedStyle(body).backgroundColor)).toBe('rgb(20, 80, 130)');
   await expect.poll(() => frame.locator('img').evaluate((image: HTMLImageElement) => image.naturalWidth)).toBe(1);
   await expect.poll(() => frame.locator('#probes').evaluate((element) => getComputedStyle(element).letterSpacing)).toBe('3px');
+  await expect.poll(() => frame.locator('#echo').evaluate((element) => getComputedStyle(element).wordSpacing)).toBe('2px');
   // Every hostile probe in the bundle is contained by the sandbox and the preview policy.
   await expect(frame.locator('#probes')).toHaveText(
     /^cookie:blocked external:blocked fetch:blocked parent:blocked popup:blocked storage:blocked top:(blocked|attempted)$/,

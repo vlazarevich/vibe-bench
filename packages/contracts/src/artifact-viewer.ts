@@ -83,7 +83,8 @@ export const ResultPresentation = z.discriminatedUnion('kind', [
 ]);
 export type ResultPresentation = z.infer<typeof ResultPresentation>;
 /** Capability URL for one HTML bundle; the token is the only authority for its files. */
-export const PreviewUrl = Text.max(2000).regex(/^\/preview\/[A-Za-z0-9_-]{43}\/[^?#\s\\]+$/);
+// 240-character artifact names can percent-encode to about 2,200 characters.
+export const PreviewUrl = Text.max(2600).regex(/^\/preview\/[A-Za-z0-9_-]{43}\/[^?#\s\\]+$/);
 export const PreviewOpened = z.object({ frameUrl: PreviewUrl, expiresAt: z.iso.datetime() }).strict();
 export type PreviewOpened = z.infer<typeof PreviewOpened>;
 export const TextFile = z.object({ text: Text.max(8_000_000) }).strict();
