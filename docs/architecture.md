@@ -38,7 +38,8 @@ flowchart LR
 | `apps/web/src/design-system/`                                                        | Supplied design tokens, reusable components, local fonts and icon assets        |
 | `packages/contracts/src/dashboard.ts`, `model-catalog.ts`, `results.ts`              | Dashboard projections, catalog metadata and aggregation inputs                  |
 | `apps/server/src/features/results.ts`, `model-catalog.ts`                            | Submitted-grade queries and cached Artificial Analysis enrichment               |
-| `scripts/local.ts`, `local-lock.ts`                                                  | Dashboard lifecycle and state lock                                              |
+| `scripts/serve.ts`, `dashboard-config.ts`, `local-lock.ts`                          | Dashboard lifecycle, process settings, embedded state lock                      |
+| `scripts/build-server.mjs`, `migrate.ts`                                             | Bundled dashboard process with migrations; external database migration          |
 | `scripts/local-database.ts`, `database-worker.ts`                                    | Database owner lifetime and shutdown                                            |
 
 Feature queries stay with the owner of their invariants. Schemas validate external boundaries and derive application types. Framework objects and SQL rows stay in their modules. Browser code imports explicit management or anonymous schemas. `pnpm boundaries` enforces application ownership.
@@ -46,6 +47,8 @@ Feature queries stay with the owner of their invariants. Schemas validate extern
 ## Dashboard lifecycle and persistence
 
 `pnpm local` builds assets, starts pinned embedded PostgreSQL 18, and serves Fastify on loopback. It creates no fixture runs or runner connection files. Dashboard data lives under `.local/` or `VIBE_LOCAL_ROOT`. Tests allocate separate directories and ports.
+
+`pnpm build` also bundles `scripts/serve.ts`, `migrate.ts`, and the database worker into `dist/server` with a copy of `db/migrations`. The bundle locates web assets, migrations, and the worker relative to itself. `DATABASE_URL` or `POSTGRES_URL` selects an external database: the process starts no embedded PostgreSQL, writes no local state, and takes no lock, so multiple dashboard processes can share the database. `VIBE_HOST` selects the listener address; the Host and Origin policy still requires `VIBE_PUBLIC_URL` for remote browsers.
 
 An abstract Unix socket keyed by the canonical state path excludes concurrent dashboard owners. The lock remains until shutdown completes and is released on process death. A dedicated worker owns PostgreSQL, verifies its SQL connection before readiness, and shuts down on owner-pipe closure. Startup and shutdown timeouts terminate its process group. Early shutdown handlers cover interruption during database startup. Saved files remain intact; incomplete first initialization is not automatically repaired.
 

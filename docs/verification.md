@@ -6,6 +6,8 @@ The application, database, and execution runtime require Linux verification.
 
 ## Checks
 
+`tests/production-server.test.ts` builds the dashboard bundle into a temporary directory and runs it from outside the repository. Two bundled processes start concurrently against one external PostgreSQL database, serve health and web assets, apply migrations once, create no local state, and exit cleanly without stopping that database. The bundled migration command is idempotent and refuses to run without `DATABASE_URL`. Embedded mode creates its state, rejects a second owner, and stops PostgreSQL on shutdown.
+
 The persistence test reopens the same database three times to exercise shutdown completion. `tests/database-lifecycle.test.ts` forcibly terminates the owning Node process, verifies that the real postmaster and workers exit and the TCP port closes, then reopens the database and checks saved data. The app startup test interrupts the dashboard after observing a real PostgreSQL process. Test cleanup uses the pinned `pg_ctl` against only its own temporary database if an assertion fails.
 
 Lifecycle tests allow initial startup and crash recovery on slow CI hosts. These budgets do not extend the database worker's 90-second startup deadline or 40-second shutdown deadline.
@@ -17,7 +19,7 @@ The worker verifies a real SQL connection on its newly allocated port before ann
 | `pnpm typecheck` | Strict schemas and application types compile |
 | `pnpm boundaries` | Application imports respect web, server, runner and contract ownership |
 | `pnpm test` | Real PostgreSQL, real HTTP, fixture CLI subprocesses and process-tree behavior |
-| `pnpm build` | Production Vite assets |
+| `pnpm build` | Production Vite assets and the bundled dashboard process |
 | `pnpm test:browser` | Real Chromium configured Runs, grading, suite authoring, access, result viewing, and reload |
 | `pnpm build:runtime` | Standalone Linux x64 executable and checksummed release archive |
 | `pnpm test:binary` | Installed CLI, installer failures, and the configured-run matrix through the compiled executable |

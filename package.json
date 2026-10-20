@@ -7,7 +7,9 @@
     "node": ">=24.0.0 <25"
   },
   "scripts": {
-    "build": "vite build --config apps/web/vite.config.ts",
+    "build": "vite build --config apps/web/vite.config.ts && node scripts/build-server.mjs",
+    "start": "node --env-file-if-exists=.env dist/server/serve.mjs",
+    "migrate": "node --env-file-if-exists=.env --import tsx scripts/migrate.ts",
     "typecheck": "tsc --noEmit",
     "boundaries": "tsx scripts/check-boundaries.ts",
     "test": "vitest run",
