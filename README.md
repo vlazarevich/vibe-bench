@@ -2,7 +2,9 @@
 
 Vibe bench authors versioned suites, executes configured task and entrant matrices, and grades results anonymously. A Linux dashboard stores immutable inputs and outcomes in PostgreSQL 18. The standalone `vibe-runner` pairs with that dashboard and initiates all execution traffic.
 
-To self-host the dashboard with Docker Compose or the release archive, follow the [deployment guide](docs/deployment.md). The steps below run it from a source checkout.
+To self-host the dashboard with Docker Compose or the release archive, follow the [deployment guide](docs/deployment.md). For Vercel with Neon or an existing PostgreSQL database, use the [Vercel guide](docs/vercel.md). The steps below run it from a source checkout.
+
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fvlazarevich%2Fvibe-bench&env=VIBE_APP_PASSWORD&envDescription=Set+a+long+random+dashboard+password.+See+the+deployment+guide+for+database+and+preview+setup.&envLink=https%3A%2F%2Fgithub.com%2Fvlazarevich%2Fvibe-bench%2Fblob%2Fmain%2Fdocs%2Fvercel.md&products=%5B%7B%22type%22%3A%22integration%22%2C%22protocol%22%3A%22storage%22%2C%22productSlug%22%3A%22neon%22%2C%22integrationSlug%22%3A%22neon%22%7D%5D)
 
 ## Start the dashboard
 
@@ -24,9 +26,9 @@ pnpm build
 pnpm start
 ```
 
-`pnpm build` writes web assets to `dist/web` and the bundled dashboard process to `dist/server`. `pnpm start` runs `dist/server/serve.mjs` and loads `.env` if present. The bundle resolves its assets and migrations relative to itself, so the working directory does not matter. It still needs the installed `node_modules` for embedded PostgreSQL and preview Chromium.
+`pnpm build` writes web assets to `dist/web` and the bundled dashboard process to `dist/server`. `pnpm start` runs `dist/server/serve.mjs` and loads `.env` if present. The bundle resolves its assets and migrations relative to itself, so the working directory does not matter. It still needs the installed `node_modules` for embedded PostgreSQL. The server runs no browser.
 
-Set `DATABASE_URL` to use an external PostgreSQL 18 database; `POSTGRES_URL` is accepted as a fallback name. External mode starts no embedded database, creates no `VIBE_LOCAL_ROOT` state, and takes no state-directory lock, so several dashboard processes may share one database. Interactive HTML preview sessions stay with the process that created them, so a load balancer must keep a browser on one process. Startup migrations hold a PostgreSQL advisory lock. Run `pnpm migrate` to apply migrations before starting traffic. Without `DATABASE_URL`, the dashboard owns embedded PostgreSQL under `VIBE_LOCAL_ROOT` as described above.
+Set `DATABASE_URL` to use an external PostgreSQL 18 database; `POSTGRES_URL` is accepted as a fallback name. External mode starts no embedded database, creates no `VIBE_LOCAL_ROOT` state, and takes no state-directory lock, so several dashboard processes may share one database. HTML preview grants live in PostgreSQL and work across processes; previews execute in the viewer’s sandboxed browser frame. Startup migrations hold a PostgreSQL advisory lock. Run `pnpm migrate` to apply migrations before starting traffic. Without `DATABASE_URL`, the dashboard owns embedded PostgreSQL under `VIBE_LOCAL_ROOT` as described above.
 
 The dashboard listens on `VIBE_HOST` (default `127.0.0.1`) and `VIBE_PORT` (default: a free port). A non-loopback `VIBE_HOST` requires `VIBE_APP_PASSWORD`; the dashboard refuses to start without it. The Host check blocks DNS rebinding in browsers but not scripted clients, so the password is the access control. Remote browsers also need `VIBE_PUBLIC_URL`, as does `VIBE_HOST=::1`, because without it only `127.0.0.1` and `localhost` Host values are accepted. `GET /api/health` returns 200 after the database connection and listener are ready.
 

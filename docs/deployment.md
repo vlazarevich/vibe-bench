@@ -1,5 +1,7 @@
 # Deploy the dashboard
 
+For Vercel with Neon or an existing PostgreSQL database, see the [Vercel guide](vercel.md).
+
 The dashboard is one Node 24 process serving the web app, the dashboard API, and the worker API. It stores everything in PostgreSQL 18: its own embedded server by default, or an external one through `DATABASE_URL`. Runners connect outbound to it; see the [release guide](releases.md) to install them.
 
 Choose one of these:
