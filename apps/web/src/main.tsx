@@ -31,6 +31,8 @@ function App() {
     <div className="app-shell">
       {!focused && (
         <Sidebar
+          brand={<><img className="app-brand-icon" src="/assets/vibe-bench.svg" width={32} height={32} alt="" /><span className="app-brand-name">Vibe<b>Bench</b></span></>}
+          brandShort={<img className="app-brand-icon" src="/assets/vibe-bench.svg" width={32} height={32} alt="Vibe bench" />}
           items={nav}
           currentId={view === 'grading' ? 'runs' : view}
           footerActions={logout ? [{ id: 'logout', label: 'Log out', icon: 'logout', onClick: logout }] : []}

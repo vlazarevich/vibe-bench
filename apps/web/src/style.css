@@ -1,3 +1,12 @@
+.app-shell > .vb-side .vb-side-brand {
+  gap: 8px;
+  padding: 0 8px;
+}
+.app-brand-icon {
+  display: block;
+  flex: 0 0 32px;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -334,12 +343,8 @@ fieldset {
   .app-shell > .vb-side .vb-side-count {
     display: none;
   }
-  .app-shell > .vb-side .vb-side-brand {
-    font-size: 0;
-  }
-  .app-shell > .vb-side .vb-side-brand:after {
-    content: 'VB';
-    font-size: 16px;
+  .app-shell > .vb-side .app-brand-name {
+    display: none;
   }
   .form-grid {
     grid-template-columns: 1fr;
