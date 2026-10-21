@@ -103,6 +103,12 @@ pnpm test:binary
 
 Checks exercise schemas, import boundaries, PostgreSQL, HTTP, subprocesses, Chromium, installers, and the compiled executable. State and evidence stay under ignored `.artifacts/`. CI requires `verify (self-hosted Linux)`. Missing or skipped checks are not passing evidence. Fixture checks do not establish live provider access.
 
+## Brand assets
+
+The sidebar and favicon use the symmetrical vector source at `apps/web/public/assets/vibe-bench.svg`.
+Regenerate the 16, 32, 48, 180, 192, and 512 pixel PNGs and multi-size ICO with
+`sh scripts/build-icons.sh` (requires librsvg's `rsvg-convert` and ImageMagick's `magick`).
+
 ## Engineering reference
 
 - [Architecture and module ownership](docs/architecture.md)
